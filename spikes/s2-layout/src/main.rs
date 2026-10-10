@@ -79,7 +79,9 @@ fn dump() {
         );
         for i in 0..w.child_view_count() as i32 {
             // count includes the overlay host, which child_view_at doesn't return.
-            let Some(v) = w.child_view_at(i) else { continue };
+            let Some(v) = w.child_view_at(i) else {
+                continue;
+            };
             eprintln!(
                 "s2:  child {i} {:?} pref {:?} visible {} {}",
                 v.bounds(),
@@ -93,7 +95,8 @@ fn dump() {
                 "s2: overlay {:?} visible {} view {:?}",
                 o.bounds(),
                 o.is_visible(),
-                o.contents_view().map(|v| (v.bounds(), v.is_visible(), v.is_drawn()))
+                o.contents_view()
+                    .map(|v| (v.bounds(), v.is_visible(), v.is_drawn()))
             );
         }
         eprintln!(

@@ -19,8 +19,9 @@ Each done item links its evidence (file, commit, or session-log date).
 - [x] S2 Views layout — tabbar + content panel + statusbar + overlay; tab swap keeps state (2026-10-10, `spikes/s2-layout`: bars 24 px, content flex 752 px, overlay 600×120 docked above statusbar and toggles; after swap 1→0 Wikipedia `scrollY` 1500 and JS var kept, hidden tab reports `visibilityState=hidden`).
 - [ ] S3 key interception — `on_pre_key_event` consumes keys in an Alloy BrowserView on Wayland.
 - [x] S4 VA-API — hw decode H.264/VP8/VP9/AV1 listed, AV1 YouTube smooth (2026-10-10).
-- [ ] S5 per-site dark mode — `Emulation.setAutoDarkModeOverride` per tab.
-- [ ] S6 synthetic input — `Input.dispatchMouseEvent` / `insertText` via `execute_dev_tools_method`.
+- [x] S5 per-site dark mode — `Emulation.setAutoDarkModeOverride` per tab (2026-10-10, `spikes/s5-s6/s5-darkmode.mjs`, two targets in one cefsimple: override on A → A luma 241→43, B stays 241; survives reload + navigation; with `--enable-features=WebContentsForceDark`, `{enabled:false}` lights only A).
+- [ ] S5b override lifetime via `execute_dev_tools_method` — CDP override dies with its DevTools session; check whether CEF's in-process `execute_dev_tools_method` keeps it alive (else need `add_dev_tools_message_observer`/persistent session per tab).
+- [x] S6 synthetic input — `Input.dispatchMouseEvent` / `insertText` (2026-10-10, `spikes/s5-s6/s6-input.mjs` over remote port: the-internet.herokuapp.com/login → "You logged into a secure area!", all events `isTrusted=true`). `insertText` sends no key events. Via `execute_dev_tools_method` not yet run (same CDP method; covered by S5b).
 - [~] S7 Alloy style enough — Google sign-in passes (2026-10-10). Left: permission + certificate handlers fire.
 - [ ] S8 renderer hooks — `on_context_created` + V8 fn + `on_focused_node_changed` round-trip.
 - [ ] S9 baseline vs Chrome 155 — startup, idle RSS, Speedometer 3.1, scrolling.
@@ -39,6 +40,8 @@ Each done item links its evidence (file, commit, or session-log date).
 ## Decisions
 
 Newest first. Settled — don't reopen without new evidence.
+
+- 2026-10-10 — Dark mode design: start with `--enable-features=WebContentsForceDark`, per-site exclusion = `Emulation.setAutoDarkModeOverride {enabled:false}` on that tab. Override is per tab (survives reload/navigation, so re-apply per site on each navigation) and lasts only as long as the DevTools session that set it. Pages can't detect it; verify with screenshots.
 
 - 2026-10-10 — Views sizing: `ViewDelegate::preferred_size` must return non-zero width AND height (0 → `gfx::Size` empty → CEF uses the default, i.e. the whole window). Docked overlays (`add_overlay_view`) size from the contents view's preferred size; `set_size` is ignored. Window `child_view_count` includes the overlay host, which `child_view_at` returns as None.
 - 2026-10-10 — Tabs: one BrowserView per tab, swapped in/out of a fill-layout content Panel + `was_hidden`; a detached tab's browser is created only when first attached and must be closed by hand on window destroy.
