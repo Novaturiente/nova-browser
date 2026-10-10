@@ -1,0 +1,10 @@
+[package]
+name = "s7-handlers"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+cef = { path = "../../../cef-rs/cef" }

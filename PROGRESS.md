@@ -23,7 +23,8 @@ Each done item links its evidence (file, commit, or session-log date).
 - [x] S5 per-site dark mode — `Emulation.setAutoDarkModeOverride` per tab (2026-10-10, `spikes/s5-s6/s5-darkmode.mjs`, two targets in one cefsimple: override on A → A luma 241→43, B stays 241; survives reload + navigation; with `--enable-features=WebContentsForceDark`, `{enabled:false}` lights only A).
 - [x] S5b override lifetime via `execute_dev_tools_method` (2026-10-10, `spikes/s2-layout` title `nova:dark`: one call, no observer → content luma 249 → 37, still dark after 10 s, after navigation, after tab swap away/back; CEF's in-process session persists per browser).
 - [x] S6 synthetic input — `Input.dispatchMouseEvent` / `insertText` (2026-10-10, `spikes/s5-s6/s6-input.mjs` over remote port: the-internet.herokuapp.com/login → "You logged into a secure area!", all events `isTrusted=true`). `insertText` sends no key events. Via `execute_dev_tools_method` not yet run (same CDP method; covered by S5b).
-- [~] S7 Alloy style enough — Google sign-in passes (2026-10-10). Left: permission + certificate handlers fire.
+- [x] S7 Alloy style enough — Google sign-in passes; permission + certificate handlers fire, no Chrome UI (2026-10-10, `spikes/s7-handlers/drive.sh`, logs `/tmp/s7-*.log`: notifications/geolocation/clipboard → `on_show_permission_prompt`, mic/cam → `on_request_media_access_permission`, page sees allow/deny; expired/self-signed badssl → `on_certificate_error` -201/-202; held prompt answered later works).
+- [ ] S7b decide cert-deny UX — on deny CEF shows Chrome's interstitial (`chrome-error://chromewebdata/`) whose "Proceed" link bypasses our handler. Options: own error page on load error, or accept it. Needs user decision before Phase 7.
 - [x] S8 renderer hooks — `on_context_created` + V8 fn + `on_focused_node_changed` round-trip (2026-10-10, `bash spikes/s8-renderer/drive.sh`, re-run by main session: `nova.send` → browser → `nova.reply` → page JS (`novaReplies=["ack:hello","ack:from-devtools"]`); focus msgs for input/password/textarea/contenteditable=editable, button/A not, blur → empty; works after navigation, in about:blank iframe and cross-site OOPIF).
 - [ ] S9 baseline vs Chrome 155 — startup, idle RSS, Speedometer 3.1, scrolling.
 
@@ -41,6 +42,8 @@ Each done item links its evidence (file, commit, or session-log date).
 ## Decisions
 
 Newest first. Settled — don't reopen without new evidence.
+
+- 2026-10-10 — Prompts (S7): always answer permission callbacks (allow/deny/hold-then-answer); returning 0 makes prompt-type requests hang. Prompts queue one at a time per tab. Media grants aren't persisted by CEF → own per-origin store (Phase 7). Always implement JsDialogHandler (worker reported a Chrome-style alert when unhandled; screenshot didn't confirm — handle it anyway). Permission bit constants live in `sys`.
 
 - 2026-10-10 — Renderer bridge (S8): one binary; pass the App to `execute_process` too (else renderer has no handler). `window.nova.send` via V8 handler → `frame.send_process_message`; insert mode from `on_focused_node_changed` + `node.is_editable()`. Treat new context/navigation as focus reset (unloading frame's messages are lost). Identify renderers by frame, not pid (sandbox pid ns). Bindings: V8 exception out-param needs `e.try_set(..)` (assigning is silently lost); enter `frame.v8_context()` by hand outside `on_context_created`; Views delegate macros need `struct X {}` not `struct X;`.
 
