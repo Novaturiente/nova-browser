@@ -6,7 +6,7 @@ session; update before ending one (rules in `AGENTS.md`).
 ## Now
 
 - **Phase:** 0 (spikes)
-- **Next action:** S7 leftovers (permission + certificate handlers fire, in a `spikes/s7-handlers` copy) and S1 leftovers (`<select>`, clipboard); then S9 alone. S3b + HiDPI need the user.
+- **Next action:** S9 baseline vs Chrome 155, run alone (no parallel builds). Then one user session for S1/S3b leftovers + S7b decision → Phase 0 exit.
 - **Blockers:** none
 
 ## Checklist
@@ -15,7 +15,7 @@ Status: `[ ]` todo · `[~]` in progress / partial · `[x]` done · `[-]` dropped
 Each done item links its evidence (file, commit, or session-log date).
 
 ### Phase 0 — spikes (PLAN.md §6)
-- [~] S1 native Wayland — renders natively (2026-10-10). Left: HiDPI, clipboard, `<select>`.
+- [~] S1 native Wayland — renders natively (2026-10-10). `<select>` + clipboard pass automated (2026-10-10, `S1_SENDSHORTCUT=1 spikes/s1-wayland/run.sh`, `/tmp/s1/final/out.txt`): native popup placed under the select, 20 rows, ArrowDown×3+Enter → `value=o3` + input/change; `wl-copy` → Ctrl+V pastes; copy-out reaches `wl-paste` after one real key press (compositor `send_shortcut`), CDP-only input never sets the Wayland selection (no input serial). eDP-1 scale 1, DPR 1. Left, needs user: real Ctrl+C → `wl-paste`, real mouse click on a popup option, primary selection after a mouse drag, HiDPI on a scale>1 monitor.
 - [x] S2 Views layout — tabbar + content panel + statusbar + overlay; tab swap keeps state (2026-10-10, `spikes/s2-layout`: bars 24 px, content flex 752 px, overlay 600×120 docked above statusbar and toggles; after swap 1→0 Wikipedia `scrollY` 1500 and JS var kept, hidden tab reports `visibilityState=hidden`).
 - [x] S3 key interception — `on_pre_key_event` consumes keys in an Alloy BrowserView on Wayland (2026-10-10, `spikes/s3-keys/run.sh`, real Wayland keys via `wtype`: `j`/`k`/Esc consumed → page gets no keydown/keypress/keyup, input value `"abx"` from `ajkb<Esc>xq`; works with input or body focused; repeats consumed too).
 - [ ] S3b needs user: real keyboard — Shift+letter chars, `e.code`/`native_key_code`, Escape-KEYUP asymmetry, key-repeat feel, IME/compose (no fcitx/ibus here).
@@ -42,6 +42,8 @@ Each done item links its evidence (file, commit, or session-log date).
 ## Decisions
 
 Newest first. Settled — don't reopen without new evidence.
+
+- 2026-10-10 — Tests that copy to the system clipboard need one real input event first (Wayland `set_selection` needs an input serial); CDP-only input can't. Use compositor `send_shortcut` in automated tests. `<select>` popup options can't be clicked via CDP mouse (events go to the page) — use keys.
 
 - 2026-10-10 — Prompts (S7): always answer permission callbacks (allow/deny/hold-then-answer); returning 0 makes prompt-type requests hang. Prompts queue one at a time per tab. Media grants aren't persisted by CEF → own per-origin store (Phase 7). Always implement JsDialogHandler (worker reported a Chrome-style alert when unhandled; screenshot didn't confirm — handle it anyway). Permission bit constants live in `sys`.
 
@@ -70,7 +72,8 @@ Newest first. One entry per session: date, what changed, evidence, what's next.
 - Phase 0 batch: S2, S3, S5, S5b, S6, S8 pass (S3, S5+S6, S8 by `worker` subagents, evidence re-checked here; S8 `drive.sh` re-run). S2 fixes: non-empty `preferred_size`, overlay sizing. S5b showed `execute_dev_tools_method` override persists.
 - Added S3b (real keyboard, needs user). Found: `<iframe srcdoc>` in a `data:` page hangs that page (not our hooks) — note only.
 - Subagents had no `process` tool; they used `timeout`/`systemd-run --user` wrappers instead.
-- Next: S7 + S1 leftovers, then S9 alone.
+- S7 pass (handlers fire, no Chrome UI); S7b cert-deny UX needs user decision. S1: `<select>` + clipboard pass automated; real-input checks left for user.
+- Next: S9 alone, then user session (S1/S3b, S7b).
 
 ### 2026-10-10
 - Wrote PLAN.md (rev 1–3). Diagnosed qutebrowser slowness (ananicy nice 16 / idle I/O inherited from `ly-dm`).
