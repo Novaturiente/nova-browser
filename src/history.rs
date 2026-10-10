@@ -331,7 +331,11 @@ mod tests {
     fn import_merges_by_recency_and_is_idempotent() {
         let db = open(std::path::Path::new(":memory:")).unwrap();
         visit_row(&db, "https://new.com/", 100).unwrap();
-        db.execute("UPDATE history SET title = 'New' WHERE url = 'https://new.com/'", []).unwrap();
+        db.execute(
+            "UPDATE history SET title = 'New' WHERE url = 'https://new.com/'",
+            [],
+        )
+        .unwrap();
         let rows: Vec<crate::import::Row> = vec![
             ("https://old.com/".into(), "Old".into(), 10, 3),
             ("https://new.com/".into(), "".into(), 50, 7),
@@ -355,7 +359,10 @@ mod tests {
             ]
         );
         // the trigram index follows the rebuilt table
-        assert_eq!(search(&db, "old", 10).unwrap(), [("https://old.com/".into(), "Old".into())]);
+        assert_eq!(
+            search(&db, "old", 10).unwrap(),
+            [("https://old.com/".into(), "Old".into())]
+        );
     }
 
     /// Phase 3 exit check (PLAN.md §8): completion under 16 ms over 100k rows.

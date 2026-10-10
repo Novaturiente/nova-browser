@@ -69,7 +69,10 @@ fn main() {
     if argv.get(1).map(String::as_str) == Some("--import") {
         let data = xdg_dir("XDG_DATA_HOME", ".local/share");
         std::fs::create_dir_all(&data).expect("create data dir");
-        if let Err(e) = import::main(argv.get(2).map(String::as_str), &data.join("history.sqlite")) {
+        if let Err(e) = import::main(
+            argv.get(2).map(String::as_str),
+            &data.join("history.sqlite"),
+        ) {
             eprintln!("novabrowser: import: {e}");
             std::process::exit(1);
         }

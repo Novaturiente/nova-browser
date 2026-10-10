@@ -39,12 +39,14 @@ Each done item links its evidence (file, commit, or session-log date).
 - [ ] 7 Privacy, blocking, prompts
 - [ ] 8 Sessions and daily driving (revisit codecs option A first)
 - [ ] 9 Packaging and upkeep
-- [ ] 10 Password manager (added 2026-10-11 by user; design first, PLAN.md Phase 10)
+- [ ] 10 Password manager integration — Bitwarden via `rbw`, no own store (PLAN.md Phase 10, rev 2026-10-11)
 - [x] History import `novabrowser --import [profile]` (2026-10-11; `src/import.rs`, `history::import`). Chromium `History`, Firefox `places.sqlite`, qutebrowser `history.sqlite`; works on a copy (db + WAL). Run into `/tmp/nova-imp`: no-arg lists 7 profiles here; Zen 11711 + Helium 6584 + Chrome 562 + qutebrowser 1778 → 14245 URLs, re-import unchanged, Zen import 2.0 s; tests `reads_chromium_firefox_qutebrowser`, `import_merges_by_recency_and_is_idempotent` (32 green). Not run on the real profile (`~/.local/share/novabrowser`) — user's call.
 
 ## Decisions
 
 Newest first. Settled — don't reopen without new evidence.
+
+- 2026-10-11 — Passwords (user, supersedes the built-in manager below): integrate external managers instead of storing secrets. Main backend Bitwarden via `rbw` (logged in on this laptop); features: field detection, suggestion overlay, user-triggered fill, TOTP, generate, save/update prompt. Updates/saves go through an `$VISUAL` helper (rbw `add`/`edit` only take secrets via an editor), not `bw`. `pass`/KeePassXC via Phase 6 userscripts (qute-pass etc. unchanged).
 
 - 2026-10-11 — Import (user): history via CLI `--import` with auto-detect, now; bookmarks imported when the bookmark store is built (Phase 8); passwords → a built-in password manager, added to the plan as Phase 10 (assistant recommended CSV → `pass` instead; risk: security-critical scope). Import merge = per URL newest time, newest non-empty title, max visits (idempotent), then renumber ids by recency.
 
@@ -86,6 +88,7 @@ Newest first. Settled — don't reopen without new evidence.
 Newest first. One entry per session: date, what changed, evidence, what's next.
 
 ### 2026-10-11 (session 2, import)
+- Phase 10 rewritten: password manager integration (Bitwarden/rbw + editor helper) instead of a built-in store.
 - Added `novabrowser --import` (history from Chromium/Firefox/qutebrowser profiles); PLAN.md: Phase 8 bookmark import, new Phase 10 password manager.
 - Next: Phase 4.
 

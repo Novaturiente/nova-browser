@@ -412,16 +412,35 @@ PKGBUILD (with the ananicy rule), `.desktop`, default browser via
 crate (it follows Chrome stable, so this is the security update), re-run
 `export-cef-dir`, run `tests/smoke.sh`.
 
-### Phase 10 — Password manager (added 2026-10-11, user)
-Built-in store + autofill, with import of saved logins from Chromium-based
-browsers (`Login Data`, AES key from the keyring entry "<Browser> Safe
-Storage") and Firefox-based browsers (`logins.json` + NSS `key4.db`; may need
-the primary password). Security-critical: design to be decided before any
-code — encryption at rest (keyring vs `age`/`gpg` vs master password), fill
-UX (hint-style picker, never auto-submit), renderer exposure (secrets only
-ever sent to the target frame), and how it coexists with `qute-pass`/`pass`.
-CEF's own Chromium password manager is not exposed in Alloy style [Likely].
-**Exit:** to be set with the design.
+### Phase 10 — Password manager integration (rev 2026-10-11, user)
+No built-in store: novabrowser never keeps secrets at rest. Backend is
+Bitwarden through `rbw` (1.15, agent-based, already logged in here); other
+managers (`pass`, KeePassXC) only via Phase 6 userscripts until a second
+backend is actually wanted. Backend ops: `rbw list` (metadata only), `rbw get`,
+`rbw code` (TOTP), `rbw generate`, `rbw add --uri`, `rbw edit`.
+- **Field detection:** renderer script (S8 bridge) finds username / password /
+  OTP fields on load and focus, including split login pages and iframes.
+- **Suggestions:** focusing a login field opens an overlay with the vault
+  entries whose URI matches the frame's origin; OTP fields offer `rbw code`;
+  sign-up / change-password forms offer `rbw generate`.
+- **Fill:** only after the user picks (or a key binding); the secret is fetched
+  then and set in that frame only (never via the page's JS, never on load).
+- **Save / update:** on submit of a form with a password, a prompt offers
+  "Save to Bitwarden?" (`rbw add`) or "Update password?" (`rbw edit`) when the
+  site has an entry with a different password. The captured password lives in
+  browser-process memory only until answered.
+- **Editor helper:** `rbw add`/`rbw edit` take the password through
+  `$VISUAL`/`$EDITOR` (first line = password, rest = notes). We run them with
+  `VISUAL=<helper>`: a tiny program that replaces only the first line of the
+  temp file, keeping notes; the secret reaches it over a pipe/fd, never argv.
+- **Locked vault:** prompt to run `rbw unlock` (its own pinentry).
+- Rules: exact origin match (registrable domain at most, decide in design),
+  cross-site frames get nothing, no autofill without a user action.
+- To verify first: `rbw list --raw` exposes entry URIs; how `rbw` spawns the
+  editor (stdin inherited?) for the helper's secret channel.
+**Exit:** on a test page set (single-page login, split login, iframe login,
+TOTP, sign-up) suggestions appear, fill works, save and update land in the
+vault (checked with `rbw get`), and a cross-site iframe gets no suggestion.
 
 ---
 

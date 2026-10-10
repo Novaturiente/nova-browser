@@ -7,10 +7,20 @@ use std::path::{Path, PathBuf};
 
 /// Profile parents searched by `--import` with no path.
 const CHROMIUM: &[&str] = &[
-    ".config/google-chrome", ".config/chromium", ".config/net.imput.helium", ".config/BraveSoftware/Brave-Browser",
-    ".config/vivaldi", ".config/microsoft-edge",
+    ".config/google-chrome",
+    ".config/chromium",
+    ".config/net.imput.helium",
+    ".config/BraveSoftware/Brave-Browser",
+    ".config/vivaldi",
+    ".config/microsoft-edge",
 ];
-const FIREFOX: &[&str] = &[".mozilla/firefox", ".config/zen", ".zen", ".librewolf", ".floorp"];
+const FIREFOX: &[&str] = &[
+    ".mozilla/firefox",
+    ".config/zen",
+    ".zen",
+    ".librewolf",
+    ".floorp",
+];
 
 pub fn main(arg: Option<&str>, history_db: &Path) -> Result<(), String> {
     let Some(arg) = arg else {
@@ -20,11 +30,16 @@ pub fn main(arg: Option<&str>, history_db: &Path) -> Result<(), String> {
         }
         return Ok(());
     };
-    let file = history_file(Path::new(arg)).ok_or_else(|| format!("no History, places.sqlite or history.sqlite in {arg}"))?;
+    let file = history_file(Path::new(arg))
+        .ok_or_else(|| format!("no History, places.sqlite or history.sqlite in {arg}"))?;
     let (kind, rows) = read(&file).map_err(|e| format!("{}: {e}", file.display()))?;
     let db = crate::history::open(history_db).map_err(|e| e.to_string())?;
     let total = crate::history::import(&db, &rows).map_err(|e| e.to_string())?;
-    println!("imported {} {kind} entries from {}; history now has {total}", rows.len(), file.display());
+    println!(
+        "imported {} {kind} entries from {}; history now has {total}",
+        rows.len(),
+        file.display()
+    );
     Ok(())
 }
 
@@ -32,8 +47,14 @@ fn found() -> Vec<PathBuf> {
     let home = PathBuf::from(std::env::var_os("HOME").unwrap_or_default());
     let mut out = vec![];
     for base in CHROMIUM.iter().chain(FIREFOX).map(|b| home.join(b)) {
-        let Ok(dirs) = std::fs::read_dir(&base) else { continue };
-        let mut profiles: Vec<PathBuf> = dirs.flatten().map(|d| d.path()).filter(|p| p.is_dir() && history_file(p).is_some()).collect();
+        let Ok(dirs) = std::fs::read_dir(&base) else {
+            continue;
+        };
+        let mut profiles: Vec<PathBuf> = dirs
+            .flatten()
+            .map(|d| d.path())
+            .filter(|p| p.is_dir() && history_file(p).is_some())
+            .collect();
         profiles.sort();
         out.extend(profiles);
     }
@@ -48,7 +69,10 @@ fn history_file(p: &Path) -> Option<PathBuf> {
     if p.is_file() {
         return Some(p.to_path_buf());
     }
-    ["History", "places.sqlite", "history.sqlite"].iter().map(|f| p.join(f)).find(|f| f.is_file())
+    ["History", "places.sqlite", "history.sqlite"]
+        .iter()
+        .map(|f| p.join(f))
+        .find(|f| f.is_file())
 }
 
 /// (url, title, unix seconds, visits)
@@ -64,7 +88,8 @@ fn read(file: &Path) -> rusqlite::Result<(&'static str, Vec<Row>)> {
     let copy = tmp.join("db");
     for (from, to) in [(file.to_path_buf(), copy.clone()), (wal(file), wal(&copy))] {
         if from.exists() {
-            std::fs::copy(&from, &to).map_err(|e| rusqlite::Error::ToSqlConversionFailure(e.into()))?;
+            std::fs::copy(&from, &to)
+                .map_err(|e| rusqlite::Error::ToSqlConversionFailure(e.into()))?;
         }
     }
     let result = read_db(&Connection::open(&copy)?);
@@ -80,8 +105,12 @@ fn wal(p: &Path) -> PathBuf {
 
 fn read_db(db: &Connection) -> rusqlite::Result<(&'static str, Vec<Row>)> {
     let has = |t: &str| {
-        db.query_row("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?1", [t], |r| r.get::<_, i64>(0))
-            .map(|n| n > 0)
+        db.query_row(
+            "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+            [t],
+            |r| r.get::<_, i64>(0),
+        )
+        .map(|n| n > 0)
     };
     let (kind, sql) = if has("urls")? {
         let sql = format!(
@@ -93,14 +122,27 @@ fn read_db(db: &Connection) -> rusqlite::Result<(&'static str, Vec<Row>)> {
                    WHERE visit_count > 0 AND last_visit_date IS NOT NULL AND hidden = 0";
         ("Firefox", sql.to_string())
     } else if has("CompletionHistory")? {
-        ("qutebrowser", "SELECT url, title, last_atime, 1 FROM CompletionHistory".to_string())
+        (
+            "qutebrowser",
+            "SELECT url, title, last_atime, 1 FROM CompletionHistory".to_string(),
+        )
     } else {
         return Err(rusqlite::Error::InvalidQuery);
     };
     let mut st = db.prepare(&sql)?;
     let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
-    let web = |r: &Row| ["http:", "https:", "file:"].iter().any(|s| r.0.starts_with(s));
-    Ok((kind, rows.collect::<rusqlite::Result<Vec<Row>>>()?.into_iter().filter(web).collect()))
+    let web = |r: &Row| {
+        ["http:", "https:", "file:"]
+            .iter()
+            .any(|s| r.0.starts_with(s))
+    };
+    Ok((
+        kind,
+        rows.collect::<rusqlite::Result<Vec<Row>>>()?
+            .into_iter()
+            .filter(web)
+            .collect(),
+    ))
 }
 
 #[cfg(test)]
@@ -119,7 +161,13 @@ mod tests {
         .unwrap();
         let (kind, rows) = read_db(&c).unwrap();
         // 13435995854106267 µs since 1601 = 2026-10-10 (unix 1791522254)
-        assert_eq!((kind, rows), ("Chromium", vec![("https://a.com/".into(), "A".into(), 1791522254, 30)]));
+        assert_eq!(
+            (kind, rows),
+            (
+                "Chromium",
+                vec![("https://a.com/".into(), "A".into(), 1791522254, 30)]
+            )
+        );
 
         let f = Connection::open_in_memory().unwrap();
         f.execute_batch(
@@ -128,7 +176,13 @@ mod tests {
                                            ('https://never.com/', 'N', NULL, 0, 0);",
         )
         .unwrap();
-        assert_eq!(read_db(&f).unwrap(), ("Firefox", vec![("https://f.com/".into(), "".into(), 1791522254, 2)]));
+        assert_eq!(
+            read_db(&f).unwrap(),
+            (
+                "Firefox",
+                vec![("https://f.com/".into(), "".into(), 1791522254, 2)]
+            )
+        );
 
         let q = Connection::open_in_memory().unwrap();
         q.execute_batch(
@@ -136,6 +190,12 @@ mod tests {
              INSERT INTO CompletionHistory VALUES ('https://q.com/', 'Q', 5);",
         )
         .unwrap();
-        assert_eq!(read_db(&q).unwrap(), ("qutebrowser", vec![("https://q.com/".into(), "Q".into(), 5, 1)]));
+        assert_eq!(
+            read_db(&q).unwrap(),
+            (
+                "qutebrowser",
+                vec![("https://q.com/".into(), "Q".into(), 5, 1)]
+            )
+        );
     }
 }
