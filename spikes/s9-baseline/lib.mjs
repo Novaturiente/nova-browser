@@ -63,6 +63,18 @@ export const BROWSERS = {
     env: {},
   },
 };
+// Field-trial isolation (S9 follow-up): no server seed, no testing config, fresh profile each launch.
+const NOFIELD = ["--disable-variations-seed-fetch", "--disable-field-trial-config"];
+const chromeLike = (bin, dir) => ({
+  bin, port: 9319, dir, fresh: true,
+  args: (url) => [`--user-data-dir=${dir}`, "--ozone-platform=wayland", "--window-size=1400,1000", "--remote-debugging-port=9319",
+    "--no-first-run", "--no-default-browser-check", "--password-store=basic", ...NOFIELD, url],
+  env: {},
+});
+BROWSERS.chromenf = chromeLike("/usr/sbin/google-chrome-stable", "/tmp/s9-chrome-nf");
+BROWSERS.cft154 = chromeLike("/tmp/cft154/chrome-linux64/chrome", "/tmp/s9-cft154");
+// cefsimple with Chrome-style window (no --use-alloy-style)
+BROWSERS.cefcs = { ...BROWSERS.cef, args: (url) => BROWSERS.cef.args(url).filter((a) => a !== "--use-alloy-style") };
 
 const live = new Set();
 function killAll() {
@@ -77,6 +89,7 @@ export function resetProfile(kind) {
 
 export function launch(kind, url = "about:blank", extra = []) {
   const b = BROWSERS[kind];
+  if (b.fresh) rmSync(b.dir, { recursive: true, force: true });
   const args = [...b.args(url), ...extra];
   const t0 = Date.now();
   // outer `timeout` = safety net if this node process dies without cleanup
@@ -164,7 +177,7 @@ export function hyprClients(root) {
   return all.filter((c) => pids.has(c.pid));
 }
 // Window sizes chosen so both get a 1400x913 page viewport: Chrome's toolbar is 87 px, cefsimple (Alloy) has none.
-export const WIN = { cef: [1400, 913], s2: [1400, 913], chrome: [1400, 1000] };
+export const WIN = { cef: [1400, 913], s2: [1400, 913], chrome: [1400, 1000], chromenf: [1400, 1000], cft154: [1400, 1000], cefcs: [1400, 1000] };
 export function hyprPlace(root, w = 1400, h = 1000) {
   const cs = hyprClients(root);
   for (const [i, c] of cs.entries()) {

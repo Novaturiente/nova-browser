@@ -1,0 +1,465 @@
+{
+ "conditions": {
+  "at": "2026-10-10T17:59:06.750Z",
+  "loadavg": "1.96 2.47 2.44 4/1844 226991",
+  "acOnline": "1",
+  "battery": "Not charging",
+  "governor": "powersave",
+  "epp": "balance_power",
+  "platformProfile": "low-power",
+  "memAvailableKB": 5480420
+ },
+ "url": "https://browserbench.org/Speedometer3.1/",
+ "runs": {
+  "cefcs": [
+   {
+    "kind": "cefcs",
+    "conditions": {
+     "at": "2026-10-10T17:59:06.754Z",
+     "loadavg": "1.96 2.47 2.44 2/1845 226992",
+     "acOnline": "1",
+     "battery": "Not charging",
+     "governor": "powersave",
+     "epp": "balance_power",
+     "platformProfile": "low-power",
+     "memAvailableKB": 5480168
+    },
+    "extraFlags": [
+     "--disable-renderer-backgrounding",
+     "--disable-background-timer-throttling",
+     "--disable-backgrounding-occluded-windows"
+    ],
+    "windows": [
+     {
+      "class": "chromium-browser",
+      "title": "Speedometer 3.1 - Chromium",
+      "size": [
+       1400,
+       1000
+      ],
+      "at": [
+       260,
+       100
+      ],
+      "floating": true,
+      "workspace": "Work"
+     }
+    ],
+    "before": {
+     "w": 1400,
+     "h": 913,
+     "dpr": 1,
+     "vis": "visible",
+     "focus": true,
+     "sizeWarning": "none"
+    },
+    "during": [
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#summary",
+      "vis": "visible",
+      "focus": false,
+      "res": "14.4"
+     }
+    ],
+    "durationS": 40.19,
+    "score": 14.4,
+    "confidence": "± 0.75",
+    "summaryClass": "valid",
+    "valid": true,
+    "invalidTextShown": false,
+    "after": {
+     "vis": "visible",
+     "focus": false
+    }
+   },
+   {
+    "kind": "cefcs",
+    "conditions": {
+     "at": "2026-10-10T18:00:41.019Z",
+     "loadavg": "2.35 2.48 2.45 2/1867 257377",
+     "acOnline": "1",
+     "battery": "Not charging",
+     "governor": "powersave",
+     "epp": "balance_power",
+     "platformProfile": "low-power",
+     "memAvailableKB": 5784076
+    },
+    "extraFlags": [
+     "--disable-renderer-backgrounding",
+     "--disable-background-timer-throttling",
+     "--disable-backgrounding-occluded-windows"
+    ],
+    "windows": [
+     {
+      "class": "chromium-browser",
+      "title": "Speedometer 3.1 - Chromium",
+      "size": [
+       1400,
+       1000
+      ],
+      "at": [
+       260,
+       100
+      ],
+      "floating": true,
+      "workspace": "Work"
+     }
+    ],
+    "before": {
+     "w": 1400,
+     "h": 913,
+     "dpr": 1,
+     "vis": "visible",
+     "focus": true,
+     "sizeWarning": "none"
+    },
+    "during": [
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#summary",
+      "vis": "visible",
+      "focus": false,
+      "res": "13.5"
+     }
+    ],
+    "durationS": 40.175,
+    "score": 13.5,
+    "confidence": "± 0.68",
+    "summaryClass": "valid",
+    "valid": true,
+    "invalidTextShown": false,
+    "after": {
+     "vis": "visible",
+     "focus": false
+    }
+   }
+  ],
+  "cef": [
+   {
+    "kind": "cef",
+    "conditions": {
+     "at": "2026-10-10T17:59:53.776Z",
+     "loadavg": "2.43 2.52 2.45 12/1867 241934",
+     "acOnline": "1",
+     "battery": "Not charging",
+     "governor": "powersave",
+     "epp": "balance_power",
+     "platformProfile": "low-power",
+     "memAvailableKB": 5659088
+    },
+    "extraFlags": [
+     "--disable-renderer-backgrounding",
+     "--disable-background-timer-throttling",
+     "--disable-backgrounding-occluded-windows"
+    ],
+    "windows": [
+     {
+      "class": "",
+      "title": "",
+      "size": [
+       1400,
+       913
+      ],
+      "at": [
+       260,
+       100
+      ],
+      "floating": true,
+      "workspace": "Work"
+     }
+    ],
+    "before": {
+     "w": 1400,
+     "h": 913,
+     "dpr": 1,
+     "vis": "visible",
+     "focus": true,
+     "sizeWarning": "none"
+    },
+    "during": [
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": false,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#summary",
+      "vis": "visible",
+      "focus": false,
+      "res": "14.1"
+     }
+    ],
+    "durationS": 40.24,
+    "score": 14.1,
+    "confidence": "± 0.58",
+    "summaryClass": "valid",
+    "valid": true,
+    "invalidTextShown": false,
+    "after": {
+     "vis": "visible",
+     "focus": false
+    }
+   },
+   {
+    "kind": "cef",
+    "conditions": {
+     "at": "2026-10-10T18:01:28.223Z",
+     "loadavg": "3.54 2.82 2.57 2/1858 272575",
+     "acOnline": "1",
+     "battery": "Not charging",
+     "governor": "powersave",
+     "epp": "balance_power",
+     "platformProfile": "low-power",
+     "memAvailableKB": 5879456
+    },
+    "extraFlags": [
+     "--disable-renderer-backgrounding",
+     "--disable-background-timer-throttling",
+     "--disable-backgrounding-occluded-windows"
+    ],
+    "windows": [
+     {
+      "class": "",
+      "title": "",
+      "size": [
+       1400,
+       913
+      ],
+      "at": [
+       260,
+       100
+      ],
+      "floating": true,
+      "workspace": "Work"
+     }
+    ],
+    "before": {
+     "w": 1400,
+     "h": 913,
+     "dpr": 1,
+     "vis": "visible",
+     "focus": true,
+     "sizeWarning": "none"
+    },
+    "during": [
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#summary",
+      "vis": "visible",
+      "focus": false,
+      "res": "13.9"
+     }
+    ],
+    "durationS": 40.172,
+    "score": 13.9,
+    "confidence": "± 0.68",
+    "summaryClass": "valid",
+    "valid": true,
+    "invalidTextShown": false,
+    "after": {
+     "vis": "visible",
+     "focus": false
+    }
+   }
+  ]
+ },
+ "medians": {
+  "cefcs": 13.95,
+  "cef": 14
+ },
+ "conditionsEnd": {
+  "at": "2026-10-10T18:02:15.352Z",
+  "loadavg": "4.06 3.09 2.67 1/1861 287760",
+  "acOnline": "1",
+  "battery": "Not charging",
+  "governor": "powersave",
+  "epp": "balance_power",
+  "platformProfile": "low-power",
+  "memAvailableKB": 5869772
+ }
+}
