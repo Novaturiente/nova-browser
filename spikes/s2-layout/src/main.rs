@@ -129,7 +129,7 @@ wrap_client! {
 wrap_display_handler! {
     struct NovaDisplay;
     impl DisplayHandler {
-        fn on_title_change(&self, _browser: Option<&mut Browser>, title: Option<&CefString>) {
+        fn on_title_change(&self, browser: Option<&mut Browser>, title: Option<&CefString>) {
             let title = title.map(|t| t.to_string()).unwrap_or_default();
             if let Some(n) = title.strip_prefix("nova:tab:") {
                 if let Ok(n) = n.parse() { switch_tab(n); }
@@ -137,6 +137,17 @@ wrap_display_handler! {
                 toggle_overlay();
             } else if title == "nova:dump" {
                 dump();
+            } else if title == "nova:dark" {
+                // S5b: does an in-process DevTools override outlive this call?
+                let params = dictionary_value_create().unwrap();
+                params.set_bool(Some(&CefString::from("enabled")), 1);
+                let host = browser.and_then(|b| b.host()).unwrap();
+                let id = host.execute_dev_tools_method(
+                    0,
+                    Some(&CefString::from("Emulation.setAutoDarkModeOverride")),
+                    Some(&mut params.clone()),
+                );
+                eprintln!("s2: dark override sent, message id {id}");
             }
         }
     }
