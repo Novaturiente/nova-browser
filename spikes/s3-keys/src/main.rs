@@ -9,6 +9,11 @@ use cef::*;
 const PAGE: &str = r#"<!doctype html><title>s3</title>
 <body style="font:16px monospace">
 <input id=i autofocus style="font:20px monospace;width:400px">
+<p id=copy>COPY-ME nova-hands-on</p>
+<select id=sel onchange="console.log('select '+this.value)">
+  <option>apple</option><option>banana</option><option>cherry</option><option>date</option>
+</select>
+<textarea id=ta rows=3 cols=40 placeholder="paste here"></textarea>
 <pre id=out></pre>
 <script>
 window.L = [];
