@@ -5,8 +5,8 @@ session; update before ending one (rules in `AGENTS.md`).
 
 ## Now
 
-- **Phase:** 0 (spikes)
-- **Next action:** Phase 2 (Modal core) per PLAN.md §6: start with the pure-logic key notation/trie port (`worker`-able, qutebrowser `keyutils` test table). Deferred, not blocking: HiDPI (S1), IME (S3b), S9b YouTube jank, own CEF build (allocator + codecs).
+- **Phase:** 3 (command line, completion, history)
+- **Next action:** Phase 3 per PLAN.md §6: history store (SQLite?) + `:open` completion, exit check < 16 ms with 100k fake rows; cmdline readline keys + history. Deferred, not blocking: HiDPI (S1), IME (S3b), S9b YouTube jank, own CEF build (allocator + codecs).
 - **Blockers:** none
 
 ## Checklist
@@ -31,7 +31,7 @@ Each done item links its evidence (file, commit, or session-log date).
 
 ### Phases 1–9 (PLAN.md §6; tick when the phase's exit check passes)
 - [x] 1 Skeleton (2026-10-11; `src/{main,window,client,renderer}.rs`, `ui/{tabbar,statusbar}.html`). Exit check: CDP-driven trusted mouse + user by hand — links, `target=_blank` and `window.open` → new tab (opener kept), middle-click link → background tab, click/middle-click tab bar → switch/close, status bar URL + progress, window title; web pages get no `window.nova`. `kill -9` of the tab's renderer (found by CPU-time delta via `SystemInfo.getProcessInfo`) → crash page with URL, status `[crashed] …`; real `r` (compositor `send_shortcut`) reloads; `r` types normally elsewhere (user). Mod+Q closes; exits 0 with a detached tab open, no leftover processes. `cargo test`: js_str escaping. Scripts: `/tmp/nova-p1/{drive,crash,bg}.mjs` (not kept). Not done here: hang watchdog, atomic writes (nothing writes yet), log rotation — later phases.
-- [ ] 2 Modal core
+- [x] 2 Modal core (2026-10-11; `src/{keys,bindings,commands,modes,devtools}.rs`, focus msg in `renderer.rs`, cmdline in `ui/statusbar.html`). `cargo test` 27 green (keys port of qutebrowser `test_keyutils`/`test_basekeyparser` rows by `worker`, command tokenizer/`;;`/aliases, zoom steps, js_str). Real keys via compositor `send_shortcut` + CDP readback: `o`/`O` + URL, `j`×3+`5j` = 320 px, `G`/`gg`, `J`/`K`, `d`/`u`, `H`/`L`, `+`/`-`/`=` zoom 110/125/100%, pending `g` shown + Escape clears, `:foobar` → error msg, `i`/Escape, click into input → auto insert (`jkr` typed), Escape → `j` scrolls, Ctrl-v passthrough / Shift-Escape. User drove HN without mouse (o/O, j k d u J K H L gg G, Ctrl-d/u, T+n, i/Escape, click into text box): all work. Not here: hints `f`, find `/`, `yy`/clipboard, completion/history, user config bindings (later phases); ~58 default commands, unimplemented ones report "not implemented yet".
 - [ ] 3 Command line, completion, history
 - [ ] 4 Hints and search
 - [ ] 5 config.ts
@@ -43,6 +43,9 @@ Each done item links its evidence (file, commit, or session-log date).
 ## Decisions
 
 Newest first. Settled — don't reopen without new evidence.
+
+- 2026-10-11 — CEF Views crash rules (Phase 2): (1) `request_focus` on a BrowserView that gets detached before CEF's async focus task runs → SIGSEGV in `RequestFocusSync`; focus only via a posted task that focuses the then-active, attached view (`window.rs focus_active`). (2) `LifeSpanHandler::do_close` must return 1: the default (0) makes CEF close the host window, and for a detached tab `CloseHostWindow` hits a CHECK (SIGTRAP); we finish the close by dropping the removed view.
+- 2026-10-11 — Modal core shape: `bindings.rs` generated from qutebrowser `configdata.yml` (regenerate, don't hand-edit); keys decided on RAWKEYDOWN in `on_pre_key_event` → `modes::on_key`; unbound plain chars eaten in normal mode, other unbound keys pass (forward_unbound_keys=auto); auto insert mode from renderer `nova.focus` (active tab only); scroll = trusted `Input.dispatchMouseEvent` wheel via `execute_dev_tools_method` (40 px steps); search engine hard-coded DuckDuckGo until Phase 5. Keys port deviations from qutebrowser (worker): `<Ctrl-<` is a literal sequence, Shift dropped from printable keys, Ctrl+Shift+punct uses US base char (shortcut).
 
 - 2026-10-11 — cef-rs gotcha: every default trait method returning `c_int` returns 0, even where CEF's C++ default is true. `WindowDelegate::can_close/can_resize/can_maximize/can_minimize` must be overridden to 1 (else Mod+Q does nothing). Check this for any new handler with a bool return.
 - 2026-10-11 — Phase 1 shape: popups are allowed in `on_before_popup` and adopted as tabs in `on_popup_browser_view_created` (keeps `window.opener`); middle/ctrl-click comes via `on_open_urlfrom_tab` (return 1 + `post_task` open). UI ↔ core: UI pages are `data:` URLs from `ui/*.html` (`include_str!`); `window.nova` is installed only in `data:` frames and only `UiClient` handles `nova.send`; core → UI via `nova.apply(json)` with every string through `js_str` (\uXXXX-escapes all but alphanumerics/space). Profile = `$XDG_DATA_HOME/novabrowser` (root + cache path), log = `$XDG_STATE_HOME/novabrowser/log`. `--ozone-platform=wayland` added automatically when `WAYLAND_DISPLAY` is set.
@@ -75,6 +78,10 @@ Newest first. Settled — don't reopen without new evidence.
 ## Session log
 
 Newest first. One entry per session: date, what changed, evidence, what's next.
+
+### 2026-10-11 (session 2, Phase 2)
+- Phase 2 built and passed (see checklist). Keys/trie port by `worker` (spike crate removed after copy to `src/keys.rs`). Fixed two CEF crashes (async focus on detached view; `do_close` default). Phase 1's PROGRESS.md update missed commit e87778d (raced the commit) — included here.
+- Next: Phase 3.
 
 ### 2026-10-11 (session 2, after midnight)
 - S9 follow-up: Chrome 154 for Testing with field trials off = 16.9 = Chrome 155; CEF 13.9 → gap is libcef build (glibc malloc, not PartitionAlloc), not version/flags (commit 9ec5119).
