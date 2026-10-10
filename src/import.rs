@@ -1,0 +1,141 @@
+//! `novabrowser --import [profile]`: one-shot history import from Chromium-based
+//! browsers (`History`), Firefox-based browsers (`places.sqlite`) and qutebrowser
+//! (`history.sqlite`). Runs before CEF starts; safe while the other browser runs
+//! (works on a copy) and while novabrowser runs (SQLite WAL).
+use rusqlite::Connection;
+use std::path::{Path, PathBuf};
+
+/// Profile parents searched by `--import` with no path.
+const CHROMIUM: &[&str] = &[
+    ".config/google-chrome", ".config/chromium", ".config/net.imput.helium", ".config/BraveSoftware/Brave-Browser",
+    ".config/vivaldi", ".config/microsoft-edge",
+];
+const FIREFOX: &[&str] = &[".mozilla/firefox", ".config/zen", ".zen", ".librewolf", ".floorp"];
+
+pub fn main(arg: Option<&str>, history_db: &Path) -> Result<(), String> {
+    let Some(arg) = arg else {
+        println!("Usage: novabrowser --import <profile dir or history file>\nFound:");
+        for p in found() {
+            println!("  {}", p.display());
+        }
+        return Ok(());
+    };
+    let file = history_file(Path::new(arg)).ok_or_else(|| format!("no History, places.sqlite or history.sqlite in {arg}"))?;
+    let (kind, rows) = read(&file).map_err(|e| format!("{}: {e}", file.display()))?;
+    let db = crate::history::open(history_db).map_err(|e| e.to_string())?;
+    let total = crate::history::import(&db, &rows).map_err(|e| e.to_string())?;
+    println!("imported {} {kind} entries from {}; history now has {total}", rows.len(), file.display());
+    Ok(())
+}
+
+fn found() -> Vec<PathBuf> {
+    let home = PathBuf::from(std::env::var_os("HOME").unwrap_or_default());
+    let mut out = vec![];
+    for base in CHROMIUM.iter().chain(FIREFOX).map(|b| home.join(b)) {
+        let Ok(dirs) = std::fs::read_dir(&base) else { continue };
+        let mut profiles: Vec<PathBuf> = dirs.flatten().map(|d| d.path()).filter(|p| p.is_dir() && history_file(p).is_some()).collect();
+        profiles.sort();
+        out.extend(profiles);
+    }
+    let qb = home.join(".local/share/qutebrowser/history.sqlite");
+    if qb.exists() {
+        out.push(qb);
+    }
+    out
+}
+
+fn history_file(p: &Path) -> Option<PathBuf> {
+    if p.is_file() {
+        return Some(p.to_path_buf());
+    }
+    ["History", "places.sqlite", "history.sqlite"].iter().map(|f| p.join(f)).find(|f| f.is_file())
+}
+
+/// (url, title, unix seconds, visits)
+pub type Row = (String, String, i64, i64);
+
+/// Chromium time: microseconds since 1601-01-01.
+const WEBKIT_EPOCH_OFFSET: i64 = 11_644_473_600;
+
+fn read(file: &Path) -> rusqlite::Result<(&'static str, Vec<Row>)> {
+    // Copy db + WAL: the owning browser may hold a lock, and its newest rows may be in the WAL.
+    let tmp = std::env::temp_dir().join(format!("novabrowser-import-{}", std::process::id()));
+    std::fs::create_dir_all(&tmp).map_err(|e| rusqlite::Error::ToSqlConversionFailure(e.into()))?;
+    let copy = tmp.join("db");
+    for (from, to) in [(file.to_path_buf(), copy.clone()), (wal(file), wal(&copy))] {
+        if from.exists() {
+            std::fs::copy(&from, &to).map_err(|e| rusqlite::Error::ToSqlConversionFailure(e.into()))?;
+        }
+    }
+    let result = read_db(&Connection::open(&copy)?);
+    let _ = std::fs::remove_dir_all(&tmp);
+    result
+}
+
+fn wal(p: &Path) -> PathBuf {
+    let mut s = p.as_os_str().to_owned();
+    s.push("-wal");
+    s.into()
+}
+
+fn read_db(db: &Connection) -> rusqlite::Result<(&'static str, Vec<Row>)> {
+    let has = |t: &str| {
+        db.query_row("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?1", [t], |r| r.get::<_, i64>(0))
+            .map(|n| n > 0)
+    };
+    let (kind, sql) = if has("urls")? {
+        let sql = format!(
+            "SELECT url, title, last_visit_time / 1000000 - {WEBKIT_EPOCH_OFFSET}, visit_count FROM urls WHERE hidden = 0"
+        );
+        ("Chromium", sql)
+    } else if has("moz_places")? {
+        let sql = "SELECT url, coalesce(title, ''), last_visit_date / 1000000, visit_count FROM moz_places
+                   WHERE visit_count > 0 AND last_visit_date IS NOT NULL AND hidden = 0";
+        ("Firefox", sql.to_string())
+    } else if has("CompletionHistory")? {
+        ("qutebrowser", "SELECT url, title, last_atime, 1 FROM CompletionHistory".to_string())
+    } else {
+        return Err(rusqlite::Error::InvalidQuery);
+    };
+    let mut st = db.prepare(&sql)?;
+    let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
+    let web = |r: &Row| ["http:", "https:", "file:"].iter().any(|s| r.0.starts_with(s));
+    Ok((kind, rows.collect::<rusqlite::Result<Vec<Row>>>()?.into_iter().filter(web).collect()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_chromium_firefox_qutebrowser() {
+        let c = Connection::open_in_memory().unwrap();
+        c.execute_batch(
+            "CREATE TABLE urls(url, title, last_visit_time, visit_count, hidden);
+             INSERT INTO urls VALUES ('https://a.com/', 'A', 13435995854106267, 30, 0),
+                                     ('https://h.com/', 'H', 13435995854106267, 1, 1),
+                                     ('chrome://settings/', 'S', 13435995854106267, 1, 0);",
+        )
+        .unwrap();
+        let (kind, rows) = read_db(&c).unwrap();
+        // 13435995854106267 µs since 1601 = 2026-10-10 (unix 1791522254)
+        assert_eq!((kind, rows), ("Chromium", vec![("https://a.com/".into(), "A".into(), 1791522254, 30)]));
+
+        let f = Connection::open_in_memory().unwrap();
+        f.execute_batch(
+            "CREATE TABLE moz_places(url, title, last_visit_date, visit_count, hidden);
+             INSERT INTO moz_places VALUES ('https://f.com/', NULL, 1791522254000000, 2, 0),
+                                           ('https://never.com/', 'N', NULL, 0, 0);",
+        )
+        .unwrap();
+        assert_eq!(read_db(&f).unwrap(), ("Firefox", vec![("https://f.com/".into(), "".into(), 1791522254, 2)]));
+
+        let q = Connection::open_in_memory().unwrap();
+        q.execute_batch(
+            "CREATE TABLE CompletionHistory(url, title, last_atime);
+             INSERT INTO CompletionHistory VALUES ('https://q.com/', 'Q', 5);",
+        )
+        .unwrap();
+        assert_eq!(read_db(&q).unwrap(), ("qutebrowser", vec![("https://q.com/".into(), "Q".into(), 5, 1)]));
+    }
+}

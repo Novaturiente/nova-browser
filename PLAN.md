@@ -399,8 +399,11 @@ answers survive a restart.
 
 ### Phase 8 — Sessions and daily driving
 Lazy restore, undo-close, quickmarks/bookmarks, devtools,
-fullscreen-in-window, spellcheck. Optional one-shot import of qutebrowser
-history, sessions, quickmarks, bookmarks. **Exit:** one week as the only
+fullscreen-in-window, spellcheck. One-shot import with the bookmark store:
+bookmarks from Chromium-based (`Bookmarks` JSON) and Firefox-based
+(`places.sqlite` `moz_bookmarks`) browsers, plus qutebrowser sessions,
+quickmarks, bookmarks. History import is done (`novabrowser --import`,
+Phase 3). **Exit:** one week as the only
 browser; every problem logged.
 
 ### Phase 9 — Packaging and upkeep
@@ -408,6 +411,17 @@ PKGBUILD (with the ananicy rule), `.desktop`, default browser via
 `xdg-settings`, Hyprland bind (`binds.lua` line 22). Monthly: bump the `cef`
 crate (it follows Chrome stable, so this is the security update), re-run
 `export-cef-dir`, run `tests/smoke.sh`.
+
+### Phase 10 — Password manager (added 2026-10-11, user)
+Built-in store + autofill, with import of saved logins from Chromium-based
+browsers (`Login Data`, AES key from the keyring entry "<Browser> Safe
+Storage") and Firefox-based browsers (`logins.json` + NSS `key4.db`; may need
+the primary password). Security-critical: design to be decided before any
+code — encryption at rest (keyring vs `age`/`gpg` vs master password), fill
+UX (hint-style picker, never auto-submit), renderer exposure (secrets only
+ever sent to the target frame), and how it coexists with `qute-pass`/`pass`.
+CEF's own Chromium password manager is not exposed in Alloy style [Likely].
+**Exit:** to be set with the design.
 
 ---
 

@@ -5,6 +5,7 @@ mod commands;
 mod completion;
 mod devtools;
 mod history;
+mod import;
 mod keys;
 mod modes;
 mod renderer;
@@ -64,6 +65,16 @@ fn xdg_dir(var: &str, fallback: &str) -> PathBuf {
 }
 
 fn main() {
+    let argv: Vec<String> = std::env::args().collect();
+    if argv.get(1).map(String::as_str) == Some("--import") {
+        let data = xdg_dir("XDG_DATA_HOME", ".local/share");
+        std::fs::create_dir_all(&data).expect("create data dir");
+        if let Err(e) = import::main(argv.get(2).map(String::as_str), &data.join("history.sqlite")) {
+            eprintln!("novabrowser: import: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
     let _ = api_hash(sys::CEF_API_VERSION_LAST, 0);
     let args = args::Args::new();
     let mut app = NovaApp::new(start_url());

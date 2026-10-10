@@ -163,6 +163,36 @@ fn visit_row(db: &Connection, url: &str, atime: i64) -> rusqlite::Result<()> {
     db.execute_batch("COMMIT")
 }
 
+/// Merge imported rows into history and renumber everything by recency (the id
+/// order search relies on). Per URL: newest time, newest non-empty title, max visits
+/// (max, not sum, so importing the same profile twice changes nothing). Returns the row count.
+pub fn import(db: &Connection, rows: &[crate::import::Row]) -> rusqlite::Result<i64> {
+    db.execute_batch(
+        "BEGIN;
+         CREATE TEMP TABLE imp(url TEXT, title TEXT, atime INTEGER, visits INTEGER);
+         INSERT INTO imp SELECT url, title, last_atime, visits FROM history;",
+    )?;
+    {
+        let mut st = db.prepare("INSERT INTO imp VALUES (?1, ?2, ?3, ?4)")?;
+        for (url, title, atime, visits) in rows {
+            st.execute(params![url, title, atime, visits])?;
+        }
+    }
+    db.execute_batch(
+        "CREATE INDEX temp.imp_url ON imp(url, atime);
+         DELETE FROM history;
+         INSERT INTO history(url, title, last_atime, visits)
+             SELECT url,
+                    coalesce((SELECT i.title FROM imp i WHERE i.url = imp.url AND i.title != ''
+                              ORDER BY i.atime DESC LIMIT 1), ''),
+                    max(atime), max(visits)
+             FROM imp GROUP BY url ORDER BY max(atime), url;
+         DROP TABLE imp;
+         COMMIT;",
+    )?;
+    db.query_row("SELECT count(*) FROM history", [], |r| r.get(0))
+}
+
 fn cmd_history(db: &Connection) -> rusqlite::Result<Vec<String>> {
     let mut st = db.prepare(
         "SELECT cmd FROM (SELECT id, cmd FROM cmd_history ORDER BY id DESC LIMIT 1000) ORDER BY id",
@@ -295,6 +325,37 @@ mod tests {
             )
             .unwrap();
         assert_eq!((t.as_str(), v), ("Rust lang", 2));
+    }
+
+    #[test]
+    fn import_merges_by_recency_and_is_idempotent() {
+        let db = open(std::path::Path::new(":memory:")).unwrap();
+        visit_row(&db, "https://new.com/", 100).unwrap();
+        db.execute("UPDATE history SET title = 'New' WHERE url = 'https://new.com/'", []).unwrap();
+        let rows: Vec<crate::import::Row> = vec![
+            ("https://old.com/".into(), "Old".into(), 10, 3),
+            ("https://new.com/".into(), "".into(), 50, 7),
+            ("https://mid.com/".into(), "Mid".into(), 60, 1),
+        ];
+        assert_eq!(import(&db, &rows).unwrap(), 3);
+        assert_eq!(import(&db, &rows).unwrap(), 3);
+        let all: Vec<(String, String, i64, i64)> = db
+            .prepare("SELECT url, title, last_atime, visits FROM history ORDER BY id DESC")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            all,
+            [
+                ("https://new.com/".into(), "New".into(), 100, 7),
+                ("https://mid.com/".into(), "Mid".into(), 60, 1),
+                ("https://old.com/".into(), "Old".into(), 10, 3),
+            ]
+        );
+        // the trigram index follows the rebuilt table
+        assert_eq!(search(&db, "old", 10).unwrap(), [("https://old.com/".into(), "Old".into())]);
     }
 
     /// Phase 3 exit check (PLAN.md §8): completion under 16 ms over 100k rows.

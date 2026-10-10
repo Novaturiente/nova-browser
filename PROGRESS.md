@@ -39,10 +39,14 @@ Each done item links its evidence (file, commit, or session-log date).
 - [ ] 7 Privacy, blocking, prompts
 - [ ] 8 Sessions and daily driving (revisit codecs option A first)
 - [ ] 9 Packaging and upkeep
+- [ ] 10 Password manager (added 2026-10-11 by user; design first, PLAN.md Phase 10)
+- [x] History import `novabrowser --import [profile]` (2026-10-11; `src/import.rs`, `history::import`). Chromium `History`, Firefox `places.sqlite`, qutebrowser `history.sqlite`; works on a copy (db + WAL). Run into `/tmp/nova-imp`: no-arg lists 7 profiles here; Zen 11711 + Helium 6584 + Chrome 562 + qutebrowser 1778 → 14245 URLs, re-import unchanged, Zen import 2.0 s; tests `reads_chromium_firefox_qutebrowser`, `import_merges_by_recency_and_is_idempotent` (32 green). Not run on the real profile (`~/.local/share/novabrowser`) — user's call.
 
 ## Decisions
 
 Newest first. Settled — don't reopen without new evidence.
+
+- 2026-10-11 — Import (user): history via CLI `--import` with auto-detect, now; bookmarks imported when the bookmark store is built (Phase 8); passwords → a built-in password manager, added to the plan as Phase 10 (assistant recommended CSV → `pass` instead; risk: security-critical scope). Import merge = per URL newest time, newest non-empty title, max visits (idempotent), then renumber ids by recency.
 
 - 2026-10-11 — History store (Phase 3): `history.sqlite` in the data dir, rusqlite (system sqlite 3.53, FTS5) on its own thread; UI thread only sends messages, results return by `post_task` (thread must start after CEF init, in `on_context_initialized`, else the first post is lost). Plain `LIKE` over 100k rows = ~25 ms on no-match → too slow. Instead: `id` order = recency (a visit deletes + re-inserts the row), FTS5 `trigram` external-content index joined and ordered by `rowid DESC` streams newest matches and stops at LIMIT (<2 ms). Words <3 chars can't use trigram: LIKE filter on top, and short-only queries scan the newest 20k rows only. Superseded queries are skipped via a latest-id atomic. Completion overlay = `add_overlay_view` CUSTOM, bounds = bottom half of the content panel, re-placed in the window's `on_layout_changed`.
 
@@ -80,6 +84,10 @@ Newest first. Settled — don't reopen without new evidence.
 ## Session log
 
 Newest first. One entry per session: date, what changed, evidence, what's next.
+
+### 2026-10-11 (session 2, import)
+- Added `novabrowser --import` (history from Chromium/Firefox/qutebrowser profiles); PLAN.md: Phase 8 bookmark import, new Phase 10 password manager.
+- Next: Phase 4.
 
 ### 2026-10-11 (session 2, Phase 3)
 - Phase 3 built and passed (see checklist). Found: LIKE scan too slow at 100k → FTS5 trigram with recency ids; `post_task` before CEF init silently dropped.
