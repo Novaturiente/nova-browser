@@ -1,6 +1,6 @@
 //! CEF clients: `TabClient` for web pages, `UiClient` for our bars.
 //! Only `UiClient` handles `nova.send`, so web pages can't drive the browser.
-use crate::{commands, modes, window};
+use crate::{commands, completion, modes, window};
 use cef::*;
 use std::cell::Cell;
 
@@ -77,11 +77,14 @@ wrap_client! {
             if CefString::from(&message.name()).to_string() != "nova.send" { return 0; }
             let text = message.argument_list().map(|l| CefString::from(&l.string(0)).to_string()).unwrap_or_default();
             let (cmd, arg) = text.split_once(' ').unwrap_or((&text, ""));
-            match (cmd, arg.parse::<usize>()) {
+            match (cmd, arg.parse::<i64>()) {
                 ("ready", _) => window::refresh(),
-                ("tab", Ok(n)) => window::show(n),
-                ("close", Ok(n)) => window::close(n),
-                ("run", _) => { window::close_cmdline(); commands::run(arg, None); }
+                ("tab", Ok(n)) if n >= 0 => window::show(n as usize),
+                ("close", Ok(n)) if n >= 0 => window::close(n as usize),
+                ("run", _) => { completion::record(arg); window::close_cmdline(); commands::run(arg, None); }
+                ("text", _) => completion::on_text(arg),
+                ("complete", Ok(by)) => completion::select(by),
+                ("hist", Ok(by)) => completion::history_step(by),
                 ("cmdleave", _) => window::close_cmdline(),
                 _ => eprintln!("novabrowser: unknown UI message {text:?}"),
             }

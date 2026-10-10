@@ -5,8 +5,8 @@ session; update before ending one (rules in `AGENTS.md`).
 
 ## Now
 
-- **Phase:** 3 (command line, completion, history)
-- **Next action:** Phase 3 per PLAN.md §6: history store (SQLite?) + `:open` completion, exit check < 16 ms with 100k fake rows; cmdline readline keys + history. Deferred, not blocking: HiDPI (S1), IME (S3b), S9b YouTube jank, own CEF build (allocator + codecs).
+- **Phase:** 4 (hints and search)
+- **Next action:** Phase 4 per PLAN.md §5.3/§6: hint element selection from qutebrowser `webelem.js`, labels from `hints.py`, closed shadow root, follow via trusted `Input.dispatchMouseEvent`; `/` find; `yy`/`{clipboard}`. Deferred, not blocking: HiDPI (S1), IME (S3b), S9b YouTube jank, own CEF build (allocator + codecs).
 - **Blockers:** none
 
 ## Checklist
@@ -32,7 +32,7 @@ Each done item links its evidence (file, commit, or session-log date).
 ### Phases 1–9 (PLAN.md §6; tick when the phase's exit check passes)
 - [x] 1 Skeleton (2026-10-11; `src/{main,window,client,renderer}.rs`, `ui/{tabbar,statusbar}.html`). Exit check: CDP-driven trusted mouse + user by hand — links, `target=_blank` and `window.open` → new tab (opener kept), middle-click link → background tab, click/middle-click tab bar → switch/close, status bar URL + progress, window title; web pages get no `window.nova`. `kill -9` of the tab's renderer (found by CPU-time delta via `SystemInfo.getProcessInfo`) → crash page with URL, status `[crashed] …`; real `r` (compositor `send_shortcut`) reloads; `r` types normally elsewhere (user). Mod+Q closes; exits 0 with a detached tab open, no leftover processes. `cargo test`: js_str escaping. Scripts: `/tmp/nova-p1/{drive,crash,bg}.mjs` (not kept). Not done here: hang watchdog, atomic writes (nothing writes yet), log rotation — later phases.
 - [x] 2 Modal core (2026-10-11; `src/{keys,bindings,commands,modes,devtools}.rs`, focus msg in `renderer.rs`, cmdline in `ui/statusbar.html`). `cargo test` 27 green (keys port of qutebrowser `test_keyutils`/`test_basekeyparser` rows by `worker`, command tokenizer/`;;`/aliases, zoom steps, js_str). Real keys via compositor `send_shortcut` + CDP readback: `o`/`O` + URL, `j`×3+`5j` = 320 px, `G`/`gg`, `J`/`K`, `d`/`u`, `H`/`L`, `+`/`-`/`=` zoom 110/125/100%, pending `g` shown + Escape clears, `:foobar` → error msg, `i`/Escape, click into input → auto insert (`jkr` typed), Escape → `j` scrolls, Ctrl-v passthrough / Shift-Escape. User drove HN without mouse (o/O, j k d u J K H L gg G, Ctrl-d/u, T+n, i/Escape, click into text box): all work. Not here: hints `f`, find `/`, `yy`/clipboard, completion/history, user config bindings (later phases); ~58 default commands, unimplemented ones report "not implemented yet".
-- [ ] 3 Command line, completion, history
+- [x] 3 Command line, completion, history (2026-10-11; `src/{history,completion}.rs`, `ui/completion.html`, readline keys in `ui/statusbar.html`). Exit check: `cargo test` `search_100k_rows_under_16ms` — 100k rows, queries `""`/site42/`topic 7`/`slug article`/nomatch/`site4999 99999`/`site 7`/`w`/`zq`/`x y` all 0.01–2.2 ms; live browser on a 100k-row profile logged no query > 16 ms. 30 tests green. Real keys (compositor): `o`+text → history list, Tab/Shift-Tab fill cmdline, Enter opens; `:tab-` → command list; Up/Down prefix history, persists across restart; Ctrl-u/a/k/w/y, Alt-b; Escape hides overlay. User checked both completion and history: working. Not here: settings/bookmark/quickmark models (Phase 5+), match highlighting, Ctrl-d delete-item, redirect filtering, qutebrowser history import.
 - [ ] 4 Hints and search
 - [ ] 5 config.ts
 - [ ] 6 External tools
@@ -43,6 +43,8 @@ Each done item links its evidence (file, commit, or session-log date).
 ## Decisions
 
 Newest first. Settled — don't reopen without new evidence.
+
+- 2026-10-11 — History store (Phase 3): `history.sqlite` in the data dir, rusqlite (system sqlite 3.53, FTS5) on its own thread; UI thread only sends messages, results return by `post_task` (thread must start after CEF init, in `on_context_initialized`, else the first post is lost). Plain `LIKE` over 100k rows = ~25 ms on no-match → too slow. Instead: `id` order = recency (a visit deletes + re-inserts the row), FTS5 `trigram` external-content index joined and ordered by `rowid DESC` streams newest matches and stops at LIMIT (<2 ms). Words <3 chars can't use trigram: LIKE filter on top, and short-only queries scan the newest 20k rows only. Superseded queries are skipped via a latest-id atomic. Completion overlay = `add_overlay_view` CUSTOM, bounds = bottom half of the content panel, re-placed in the window's `on_layout_changed`.
 
 - 2026-10-11 — CEF Views crash rules (Phase 2): (1) `request_focus` on a BrowserView that gets detached before CEF's async focus task runs → SIGSEGV in `RequestFocusSync`; focus only via a posted task that focuses the then-active, attached view (`window.rs focus_active`). (2) `LifeSpanHandler::do_close` must return 1: the default (0) makes CEF close the host window, and for a detached tab `CloseHostWindow` hits a CHECK (SIGTRAP); we finish the close by dropping the removed view.
 - 2026-10-11 — Modal core shape: `bindings.rs` generated from qutebrowser `configdata.yml` (regenerate, don't hand-edit); keys decided on RAWKEYDOWN in `on_pre_key_event` → `modes::on_key`; unbound plain chars eaten in normal mode, other unbound keys pass (forward_unbound_keys=auto); auto insert mode from renderer `nova.focus` (active tab only); scroll = trusted `Input.dispatchMouseEvent` wheel via `execute_dev_tools_method` (40 px steps); search engine hard-coded DuckDuckGo until Phase 5. Keys port deviations from qutebrowser (worker): `<Ctrl-<` is a literal sequence, Shift dropped from printable keys, Ctrl+Shift+punct uses US base char (shortcut).
@@ -78,6 +80,10 @@ Newest first. Settled — don't reopen without new evidence.
 ## Session log
 
 Newest first. One entry per session: date, what changed, evidence, what's next.
+
+### 2026-10-11 (session 2, Phase 3)
+- Phase 3 built and passed (see checklist). Found: LIKE scan too slow at 100k → FTS5 trigram with recency ids; `post_task` before CEF init silently dropped.
+- Next: Phase 4.
 
 ### 2026-10-11 (session 2, Phase 2)
 - Phase 2 built and passed (see checklist). Keys/trie port by `worker` (spike crate removed after copy to `src/keys.rs`). Fixed two CEF crashes (async focus on detached view; `do_close` default). Phase 1's PROGRESS.md update missed commit e87778d (raced the commit) — included here.

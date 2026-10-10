@@ -3,6 +3,7 @@
 //! All state lives on the CEF UI thread. CEF calls that can call back into our
 //! handlers (attach, focus, close) run after the state borrow is dropped.
 use crate::client::{TabClient, UiClient};
+use crate::history;
 use crate::modes::{self, Mode};
 use cef::*;
 use std::cell::RefCell;
@@ -10,6 +11,7 @@ use std::cell::RefCell;
 const BAR_H: i32 = 24;
 const TABBAR_HTML: &str = include_str!("../ui/tabbar.html");
 const STATUS_HTML: &str = include_str!("../ui/statusbar.html");
+const COMPLETION_HTML: &str = include_str!("../ui/completion.html");
 
 struct Tab {
     view: BrowserView,
@@ -27,6 +29,7 @@ struct State {
     content: Option<Panel>,
     tabbar: Option<BrowserView>,
     status: Option<BrowserView>,
+    completion: Option<(BrowserView, OverlayController)>,
     tabs: Vec<Tab>,
     active: usize,
     /// Previously active tab, for `tab-focus last`.
@@ -209,7 +212,8 @@ fn update(browser: &Browser, f: impl FnOnce(&mut Tab)) {
 
 pub fn set_url(browser: &Browser, url: String) {
     update(browser, |t| {
-        if t.crashed.is_none() {
+        if t.crashed.is_none() && t.url != url {
+            history::visit(&url);
             t.url = url
         }
     });
@@ -217,6 +221,7 @@ pub fn set_url(browser: &Browser, url: String) {
 pub fn set_title(browser: &Browser, title: String) {
     update(browser, |t| {
         if t.crashed.is_none() {
+            history::title(&t.url, &title);
             t.title = title
         }
     });
@@ -450,8 +455,57 @@ pub fn open_cmdline(text: &str) {
 /// Leave command mode and give focus back to the page.
 pub fn close_cmdline() {
     modes::enter(Mode::Normal);
+    crate::completion::reset();
     focus_active();
     refresh();
+}
+
+/// Replace the command line text (completion, history) without leaving it.
+pub fn set_cmdline_text(text: &str) {
+    let status = S.with_borrow(|s| s.status.clone());
+    if let Some(f) = status
+        .and_then(|v| v.browser())
+        .and_then(|b| b.main_frame())
+    {
+        let js = format!("nova.setText({})", js_str(text));
+        f.execute_java_script(Some(&CefString::from(js.as_str())), None, 0);
+    }
+}
+
+/// Show the completion overlay with `json` (see ui/completion.html), or hide it.
+pub fn show_completion(json: Option<&str>) {
+    let Some((view, overlay)) = S.with_borrow(|s| s.completion.clone()) else {
+        return;
+    };
+    let Some(json) = json else {
+        overlay.set_visible(0);
+        return;
+    };
+    if let Some(f) = view.browser().and_then(|b| b.main_frame()) {
+        let js = format!("nova.apply({json})");
+        f.execute_java_script(Some(&CefString::from(js.as_str())), None, 0);
+    }
+    place_completion();
+    overlay.set_visible(1);
+}
+
+/// Bottom half of the content area (qutebrowser `completion.height` 50%).
+fn place_completion() {
+    let Some((overlay, r)) = S.with_borrow(|s| {
+        Some((
+            s.completion.as_ref()?.1.clone(),
+            s.content.as_ref()?.bounds(),
+        ))
+    }) else {
+        return;
+    };
+    let h = r.height / 2;
+    overlay.set_bounds(Some(&Rect {
+        x: r.x,
+        y: r.y + r.height - h,
+        width: r.width,
+        height: h,
+    }));
 }
 
 wrap_task! {
@@ -509,6 +563,7 @@ wrap_window_delegate! {
     struct NovaWindowDelegate {}
     impl ViewDelegate {
         fn preferred_size(&self, _view: Option<&mut View>) -> Size { Size { width: 1200, height: 800 } }
+        fn on_layout_changed(&self, _view: Option<&mut View>, _bounds: Option<&Rect>) { place_completion(); }
     }
     impl PanelDelegate {}
     impl WindowDelegate {
@@ -529,7 +584,13 @@ wrap_window_delegate! {
             window.add_child_view(Some(&mut View::from(&content)));
             window.add_child_view(Some(&mut View::from(&status)));
             layout.set_flex_for_view(Some(&mut View::from(&content)), 1);
+            // Added last so it stays on top (cef_window.h); positioned by place_completion.
+            let completion = browser_view(&mut UiClient::new(), &data_url(COMPLETION_HTML).to_string(), BAR_H);
+            let overlay = window
+                .add_overlay_view(Some(&mut View::from(&completion)), DockingMode::CUSTOM, 0)
+                .expect("completion overlay");
             let start = S.with_borrow_mut(|s| {
+                s.completion = Some((completion, overlay));
                 s.window = Some(window.clone());
                 s.content = Some(content);
                 s.tabbar = Some(tabbar);

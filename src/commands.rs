@@ -192,6 +192,42 @@ const SCROLL_TO_PERC_JS: &str = "((p, x) => { let e = document.elementFromPoint(
  if (!e || e === document.body || e === document.documentElement) e = document.scrollingElement || document.documentElement;\
  if (x) e.scrollLeft = (e.scrollWidth - e.clientWidth) * p / 100; else e.scrollTop = (e.scrollHeight - e.clientHeight) * p / 100; })";
 
+/// Implemented commands, for `:` completion. Keep in sync with `run_one`.
+pub const NAMES: &[&str] = &[
+    "back",
+    "clear-keychain",
+    "close",
+    "cmd-set-text",
+    "forward",
+    "fullscreen",
+    "message-error",
+    "message-info",
+    "message-warning",
+    "mode-enter",
+    "mode-leave",
+    "nop",
+    "open",
+    "quit",
+    "reload",
+    "scroll",
+    "scroll-page",
+    "scroll-to-perc",
+    "search",
+    "stop",
+    "tab-clone",
+    "tab-close",
+    "tab-focus",
+    "tab-move",
+    "tab-mute",
+    "tab-next",
+    "tab-only",
+    "tab-prev",
+    "undo",
+    "zoom",
+    "zoom-in",
+    "zoom-out",
+];
+
 fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
     let n = count.unwrap_or(1);
     let browser = window::active_browser();

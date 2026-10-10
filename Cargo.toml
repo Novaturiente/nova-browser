@@ -7,3 +7,4 @@ publish = false
 
 [dependencies]
 cef = { path = "../cef-rs/cef" }
+rusqlite = "0.40.2"

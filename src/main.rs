@@ -2,7 +2,9 @@
 mod bindings;
 mod client;
 mod commands;
+mod completion;
 mod devtools;
+mod history;
 mod keys;
 mod modes;
 mod renderer;
@@ -16,6 +18,8 @@ wrap_browser_process_handler! {
     impl BrowserProcessHandler {
         fn on_context_initialized(&self) {
             modes::init();
+            // here, not in main(): its first post_task needs CEF running
+            history::start(xdg_dir("XDG_DATA_HOME", ".local/share").join("history.sqlite"));
             window::create(self.start_url.clone());
         }
     }

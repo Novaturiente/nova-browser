@@ -1,0 +1,35 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>completion</title>
+<style>
+  body { margin: 0; background: #333; color: #ddd; font: 12px monospace; overflow: hidden; height: 100vh; }
+  #title { background: #000; color: #fc6; padding: 2px 6px; font-weight: bold; }
+  #list { height: calc(100vh - 18px); overflow: hidden; }
+  .row { display: flex; padding: 1px 6px; white-space: nowrap; }
+  .row:nth-child(odd) { background: #444; }
+  .row.sel { background: #fc6; color: #000; }
+  .a { flex: 0 1 60%; overflow: hidden; text-overflow: ellipsis; padding-right: 12px; }
+  .b { flex: 1; overflow: hidden; text-overflow: ellipsis; opacity: .8; }
+</style>
+<body><div id="title"></div><div id="list"></div>
+<script>
+  // Core → UI: nova.apply({title, items: [[text, description]], sel}).
+  const list = document.getElementById("list");
+  nova.apply = (s) => {
+    document.getElementById("title").textContent = s.title;
+    list.replaceChildren(...s.items.map(([a, b], i) => {
+      const row = document.createElement("div");
+      row.className = i === s.sel ? "row sel" : "row";
+      for (const [cls, text] of [["a", a], ["b", b]]) {
+        const d = document.createElement("div");
+        d.className = cls;
+        d.textContent = text;
+        row.append(d);
+      }
+      return row;
+    }));
+    list.children[s.sel]?.scrollIntoView({ block: "nearest" });
+  };
+  nova.send("ready");
+</script>
+</body>

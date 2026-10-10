@@ -39,12 +39,53 @@
     c.value = text;
     c.focus();
     c.setSelectionRange(text.length, text.length);
+    nova.send("text " + text);
   };
-  // shortcut: Enter/Escape only; readline keys, history and completion come in Phase 3
-  $("cmd").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") { e.preventDefault(); nova.send("run " + $("cmd").value); }
-    else if (e.key === "Escape" || (e.key === "[" && e.ctrlKey)) { e.preventDefault(); nova.send("cmdleave"); }
-    else if (e.key === "Backspace" && $("cmd").value === "") { e.preventDefault(); nova.send("cmdleave"); }
+  // Completion / history: replace the text, keep the cursor at the end, don't report it as typed.
+  nova.setText = (text) => { const c = $("cmd"); c.value = text; c.setSelectionRange(text.length, text.length); };
+
+  const c = $("cmd");
+  // Deleting the leading ":" leaves command mode (qutebrowser).
+  c.addEventListener("input", () => nova.send(c.value === "" ? "cmdleave" : "text " + c.value));
+  let killed = "";
+  // Readline edits (qutebrowser command-mode defaults). Word = run of non-space.
+  // Kills stop at the leading ":".
+  const edit = (from, to, newCursor, kill) => {
+    const lo = c.value.startsWith(":") ? 1 : 0;
+    from = Math.max(from, lo);
+    newCursor = Math.max(newCursor, lo);
+    if (from >= to) return;
+    if (kill) killed = c.value.slice(from, to);
+    c.setRangeText("", from, to);
+    c.setSelectionRange(newCursor, newCursor);
+    nova.send("text " + c.value);
+  };
+  const wordBack = (p) => { while (p > 0 && c.value[p - 1] === " ") p--; while (p > 0 && c.value[p - 1] !== " ") p--; return p; };
+  const wordFwd = (p) => { const n = c.value.length; while (p < n && c.value[p] === " ") p++; while (p < n && c.value[p] !== " ") p++; return p; };
+  const move = (p) => c.setSelectionRange(p, p);
+  c.addEventListener("keydown", (e) => {
+    const p = c.selectionStart, k = e.key, ctrl = e.ctrlKey && !e.altKey, alt = e.altKey && !e.ctrlKey;
+    const act = (
+      k === "Enter" ? () => nova.send("run " + c.value) :
+      k === "Escape" || (ctrl && k === "[") ? () => nova.send("cmdleave") :
+      k === "Backspace" && !ctrl && !alt && c.value === "" ? () => nova.send("cmdleave") :
+      k === "Tab" && !ctrl && !alt ? () => nova.send(e.shiftKey ? "complete -1" : "complete 1") :
+      k === "ArrowUp" || (ctrl && k === "p") ? () => nova.send("hist -1") :
+      k === "ArrowDown" || (ctrl && k === "n") ? () => nova.send("hist 1") :
+      ctrl && k === "a" ? () => move(c.value.startsWith(":") ? 1 : 0) :
+      ctrl && k === "e" ? () => move(c.value.length) :
+      ctrl && k === "b" ? () => move(Math.max(0, p - 1)) :
+      ctrl && k === "f" ? () => move(p + 1) :
+      alt && k === "b" ? () => move(wordBack(p)) :
+      alt && k === "f" ? () => move(wordFwd(p)) :
+      ctrl && k === "u" ? () => edit(0, p, 0, true) :
+      ctrl && k === "k" ? () => edit(p, c.value.length, p, true) :
+      ctrl && k === "w" ? () => edit(wordBack(p), p, wordBack(p), true) :
+      alt && k === "d" ? () => edit(p, wordFwd(p), p, true) :
+      ctrl && k === "h" ? () => p > 0 && edit(p - 1, p, p - 1, false) :
+      ctrl && k === "y" ? () => { c.setRangeText(killed, p, p, "end"); nova.send("text " + c.value); } :
+      null);
+    if (act) { e.preventDefault(); act(); }
   });
   nova.send("ready");
 </script>
