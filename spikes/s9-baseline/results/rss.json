@@ -1,0 +1,2387 @@
+{
+ "conditions": {
+  "at": "2026-10-10T16:42:18.251Z",
+  "loadavg": "2.75 2.90 3.43 2/1399 2938926",
+  "acOnline": "1",
+  "battery": "Not charging",
+  "governor": "powersave",
+  "epp": "power",
+  "platformProfile": "low-power",
+  "memAvailableKB": 10003788
+ },
+ "sites": [
+  {
+   "name": "youtube",
+   "url": "https://www.youtube.com/"
+  },
+  {
+   "name": "github",
+   "url": "https://github.com/rust-lang/rust"
+  },
+  {
+   "name": "maps",
+   "url": "https://www.google.com/maps/@28.6139,77.209,13z"
+  },
+  {
+   "name": "reddit",
+   "url": "https://www.reddit.com/r/programming/"
+  },
+  {
+   "name": "wikipedia",
+   "url": "https://en.wikipedia.org/wiki/World_War_II"
+  }
+ ],
+ "idleMs": 60000,
+ "runs": {
+  "cef": [
+   {
+    "mode": "cef",
+    "browser": "cef",
+    "pages": [
+     {
+      "site": "youtube",
+      "loaded": true,
+      "url": "https://www.youtube.com/",
+      "title": "YouTube",
+      "vis": "visible",
+      "text": 3220,
+      "w": 1415,
+      "h": 1146
+     },
+     {
+      "site": "github",
+      "loaded": true,
+      "url": "https://github.com/rust-lang/rust",
+      "title": "GitHub - rust-lang/rust: Empowering everyone to build reliable and efficient software. · GitHub",
+      "vis": "visible",
+      "text": 5601,
+      "w": 1415,
+      "h": 1146
+     },
+     {
+      "site": "maps",
+      "loaded": true,
+      "url": "https://www.google.com/maps/@28.6139,77.209,13z",
+      "title": "Google Maps",
+      "vis": "visible",
+      "text": 26,
+      "w": 1415,
+      "h": 1146
+     },
+     {
+      "site": "reddit",
+      "loaded": true,
+      "url": "https://www.reddit.com/r/programming/",
+      "title": "programming",
+      "vis": "visible",
+      "text": 13112,
+      "w": 1415,
+      "h": 1146
+     },
+     {
+      "site": "wikipedia",
+      "loaded": true,
+      "url": "https://en.wikipedia.org/wiki/World_War_II",
+      "title": "World War II - Wikipedia",
+      "vis": "visible",
+      "text": 173976,
+      "w": 1420,
+      "h": 1146
+     }
+    ],
+    "loadAllMs": 3438,
+    "windows": [
+     {
+      "class": "",
+      "title": "",
+      "size": [
+       1400,
+       913
+      ],
+      "at": [
+       260,
+       100
+      ],
+      "floating": true,
+      "workspace": "Work"
+     },
+     {
+      "class": "",
+      "title": "",
+      "size": [
+       1400,
+       913
+      ],
+      "at": [
+       270,
+       110
+      ],
+      "floating": true,
+      "workspace": "Work"
+     },
+     {
+      "class": "",
+      "title": "",
+      "size": [
+       1400,
+       913
+      ],
+      "at": [
+       280,
+       120
+      ],
+      "floating": true,
+      "workspace": "Work"
+     },
+     {
+      "class": "",
+      "title": "",
+      "size": [
+       1400,
+       913
+      ],
+      "at": [
+       290,
+       130
+      ],
+      "floating": true,
+      "workspace": "Work"
+     },
+     {
+      "class": "",
+      "title": "",
+      "size": [
+       1400,
+       913
+      ],
+      "at": [
+       300,
+       140
+      ],
+      "floating": true,
+      "workspace": "Work"
+     }
+    ],
+    "samples": [
+     {
+      "at": 0,
+      "pssKB": 1773734,
+      "rssKB": 3362268,
+      "ussKB": 1501428,
+      "nprocs": 18,
+      "pssMissing": 0
+     },
+     {
+      "at": 30000,
+      "pssKB": 1576283,
+      "rssKB": 3082420,
+      "ussKB": 1328916,
+      "nprocs": 17,
+      "pssMissing": 0
+     },
+     {
+      "at": 60000,
+      "pssKB": 1492272,
+      "rssKB": 2885388,
+      "ussKB": 1245144,
+      "nprocs": 16,
+      "pssMissing": 0
+     }
+    ],
+    "procs": [
+     {
+      "pid": 2938932,
+      "comm": "cefsimple",
+      "type": "browser",
+      "pss": 215559,
+      "rss": 335924,
+      "uss": 182264
+     },
+     {
+      "pid": 2938964,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 17488,
+      "rss": 74544,
+      "uss": 748
+     },
+     {
+      "pid": 2938966,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 10485,
+      "rss": 74680,
+      "uss": 148
+     },
+     {
+      "pid": 2939039,
+      "comm": "cefsimple",
+      "type": "utility",
+      "pss": 51254,
+      "rss": 128680,
+      "uss": 36764
+     },
+     {
+      "pid": 2941260,
+      "comm": "cefsimple",
+      "type": "utility",
+      "pss": 25874,
+      "rss": 82600,
+      "uss": 16756
+     },
+     {
+      "pid": 2939037,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 137928,
+      "rss": 207912,
+      "uss": 110092
+     },
+     {
+      "pid": 2938990,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 2222,
+      "rss": 21208,
+      "uss": 232
+     },
+     {
+      "pid": 2939070,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 22223,
+      "rss": 64664,
+      "uss": 17800
+     },
+     {
+      "pid": 2939112,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 103284,
+      "rss": 227156,
+      "uss": 84604
+     },
+     {
+      "pid": 2939188,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 260181,
+      "rss": 390132,
+      "uss": 238416
+     },
+     {
+      "pid": 2939352,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 23105,
+      "rss": 115576,
+      "uss": 12028
+     },
+     {
+      "pid": 2939484,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 135683,
+      "rss": 262180,
+      "uss": 115944
+     },
+     {
+      "pid": 2939898,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 346657,
+      "rss": 476408,
+      "uss": 323992
+     },
+     {
+      "pid": 2939922,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 102116,
+      "rss": 217492,
+      "uss": 86340
+     },
+     {
+      "pid": 2940242,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 25051,
+      "rss": 128568,
+      "uss": 12236
+     },
+     {
+      "pid": 2940670,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 13162,
+      "rss": 77664,
+      "uss": 6780
+     }
+    ],
+    "at": 60000,
+    "pssKB": 1492272,
+    "rssKB": 2885388,
+    "ussKB": 1245144,
+    "nprocs": 16,
+    "pssMissing": 0
+   },
+   {
+    "mode": "cef",
+    "browser": "cef",
+    "pages": [
+     {
+      "site": "youtube",
+      "loaded": true,
+      "url": "https://www.youtube.com/",
+      "title": "YouTube",
+      "vis": "visible",
+      "text": 3041,
+      "w": 1415,
+      "h": 1146
+     },
+     {
+      "site": "github",
+      "loaded": true,
+      "url": "https://github.com/rust-lang/rust",
+      "title": "GitHub - rust-lang/rust: Empowering everyone to build reliable and efficient software. · GitHub",
+      "vis": "visible",
+      "text": 5601,
+      "w": 1415,
+      "h": 1146
+     },
+     {
+      "site": "maps",
+      "loaded": true,
+      "url": "https://www.google.com/maps/@28.6139,77.209,13z?entry=ttu&g_ep=EgoyMDI2MTAwNy4wIKXMDSoASAFQAw%3D%3D",
+      "title": "Google Maps",
+      "vis": "visible",
+      "text": 256,
+      "w": 1415,
+      "h": 1146
+     },
+     {
+      "site": "reddit",
+      "loaded": true,
+      "url": "https://www.reddit.com/r/programming/",
+      "title": "programming",
+      "vis": "visible",
+      "text": 13003,
+      "w": 1415,
+      "h": 1146
+     },
+     {
+      "site": "wikipedia",
+      "loaded": true,
+      "url": "https://en.wikipedia.org/wiki/World_War_II",
+      "title": "World War II - Wikipedia",
+      "vis": "visible",
+      "text": 173976,
+      "w": 1420,
+      "h": 1146
+     }
+    ],
+    "loadAllMs": 2776,
+    "windows": [
+     {
+      "class": "",
+      "title": "",
+      "size": [
+       1400,
+       913
+      ],
+      "at": [
+       260,
+       100
+      ],
+      "floating": true,
+      "workspace": "Work"
+     },
+     {
+      "class": "",
+      "title": "",
+      "size": [
+       1400,
+       913
+      ],
+      "at": [
+       270,
+       110
+      ],
+      "floating": true,
+      "workspace": "Work"
+     },
+     {
+      "class": "",
+      "title": "",
+      "size": [
+       1400,
+       913
+      ],
+      "at": [
+       280,
+       120
+      ],
+      "floating": true,
+      "workspace": "Work"
+     },
+     {
+      "class": "",
+      "title": "",
+      "size": [
+       1400,
+       913
+      ],
+      "at": [
+       290,
+       130
+      ],
+      "floating": true,
+      "workspace": "Work"
+     },
+     {
+      "class": "",
+      "title": "",
+      "size": [
+       1400,
+       913
+      ],
+      "at": [
+       300,
+       140
+      ],
+      "floating": true,
+      "workspace": "Work"
+     }
+    ],
+    "samples": [
+     {
+      "at": 0,
+      "pssKB": 1776269,
+      "rssKB": 3369628,
+      "ussKB": 1499032,
+      "nprocs": 18,
+      "pssMissing": 0
+     },
+     {
+      "at": 30000,
+      "pssKB": 1550579,
+      "rssKB": 3063496,
+      "ussKB": 1295064,
+      "nprocs": 17,
+      "pssMissing": 0
+     },
+     {
+      "at": 60000,
+      "pssKB": 1485324,
+      "rssKB": 2886948,
+      "ussKB": 1229752,
+      "nprocs": 16,
+      "pssMissing": 0
+     }
+    ],
+    "procs": [
+     {
+      "pid": 3006229,
+      "comm": "cefsimple",
+      "type": "browser",
+      "pss": 210497,
+      "rss": 330964,
+      "uss": 177212
+     },
+     {
+      "pid": 3006241,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 17614,
+      "rss": 74724,
+      "uss": 952
+     },
+     {
+      "pid": 3006242,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 10357,
+      "rss": 74352,
+      "uss": 252
+     },
+     {
+      "pid": 3006557,
+      "comm": "cefsimple",
+      "type": "utility",
+      "pss": 50130,
+      "rss": 127416,
+      "uss": 35620
+     },
+     {
+      "pid": 3008175,
+      "comm": "cefsimple",
+      "type": "utility",
+      "pss": 25734,
+      "rss": 82432,
+      "uss": 16580
+     },
+     {
+      "pid": 3006555,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 137352,
+      "rss": 211484,
+      "uss": 105416
+     },
+     {
+      "pid": 3006257,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 2221,
+      "rss": 21208,
+      "uss": 232
+     },
+     {
+      "pid": 3006623,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 20317,
+      "rss": 62716,
+      "uss": 15884
+     },
+     {
+      "pid": 3006648,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 97118,
+      "rss": 220536,
+      "uss": 78612
+     },
+     {
+      "pid": 3006684,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 301970,
+      "rss": 432148,
+      "uss": 279996
+     },
+     {
+      "pid": 3006704,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 23134,
+      "rss": 115564,
+      "uss": 12072
+     },
+     {
+      "pid": 3006730,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 315353,
+      "rss": 449320,
+      "uss": 288492
+     },
+     {
+      "pid": 3007074,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 132740,
+      "rss": 259276,
+      "uss": 112988
+     },
+     {
+      "pid": 3007450,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 101619,
+      "rss": 217504,
+      "uss": 85488
+     },
+     {
+      "pid": 3007826,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 25992,
+      "rss": 129604,
+      "uss": 13172
+     },
+     {
+      "pid": 3008169,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 13176,
+      "rss": 77700,
+      "uss": 6784
+     }
+    ],
+    "at": 60000,
+    "pssKB": 1485324,
+    "rssKB": 2886948,
+    "ussKB": 1229752,
+    "nprocs": 16,
+    "pssMissing": 0
+   },
+   {
+    "mode": "cef",
+    "browser": "cef",
+    "pages": [
+     {
+      "site": "youtube",
+      "loaded": true,
+      "url": "https://www.youtube.com/",
+      "title": "YouTube",
+      "vis": "visible",
+      "text": 2360,
+      "w": 1415,
+      "h": 1146
+     },
+     {
+      "site": "github",
+      "loaded": true,
+      "url": "https://github.com/rust-lang/rust",
+      "title": "GitHub - rust-lang/rust: Empowering everyone to build reliable and efficient software. · GitHub",
+      "vis": "visible",
+      "text": 5601,
+      "w": 1415,
+      "h": 1146
+     },
+     {
+      "site": "maps",
+      "loaded": true,
+      "url": "https://www.google.com/maps/@28.6139,77.209,13z?entry=ttu&g_ep=EgoyMDI2MTAwNy4wIKXMDSoASAFQAw%3D%3D",
+      "title": "Google Maps",
+      "vis": "visible",
+      "text": 193,
+      "w": 1415,
+      "h": 1146
+     },
+     {
+      "site": "reddit",
+      "loaded": true,
+      "url": "https://www.reddit.com/r/programming/",
+      "title": "programming",
+      "vis": "visible",
+      "text": 13257,
+      "w": 1415,
+      "h": 1146
+     },
+     {
+      "site": "wikipedia",
+      "loaded": true,
+      "url": "https://en.wikipedia.org/wiki/World_War_II",
+      "title": "World War II - Wikipedia",
+      "vis": "visible",
+      "text": 173976,
+      "w": 1420,
+      "h": 1146
+     }
+    ],
+    "loadAllMs": 3089,
+    "windows": [
+     {
+      "class": "",
+      "title": "",
+      "size": [
+       1400,
+       913
+      ],
+      "at": [
+       260,
+       100
+      ],
+      "floating": true,
+      "workspace": "Work"
+     },
+     {
+      "class": "",
+      "title": "",
+      "size": [
+       1400,
+       913
+      ],
+      "at": [
+       270,
+       110
+      ],
+      "floating": true,
+      "workspace": "Work"
+     },
+     {
+      "class": "",
+      "title": "",
+      "size": [
+       1400,
+       913
+      ],
+      "at": [
+       280,
+       120
+      ],
+      "floating": true,
+      "workspace": "Work"
+     },
+     {
+      "class": "",
+      "title": "",
+      "size": [
+       1400,
+       913
+      ],
+      "at": [
+       290,
+       130
+      ],
+      "floating": true,
+      "workspace": "Work"
+     },
+     {
+      "class": "",
+      "title": "",
+      "size": [
+       1400,
+       913
+      ],
+      "at": [
+       300,
+       140
+      ],
+      "floating": true,
+      "workspace": "Work"
+     }
+    ],
+    "samples": [
+     {
+      "at": 0,
+      "pssKB": 1728289,
+      "rssKB": 3311360,
+      "ussKB": 1458236,
+      "nprocs": 18,
+      "pssMissing": 0
+     },
+     {
+      "at": 30000,
+      "pssKB": 1549970,
+      "rssKB": 3053184,
+      "ussKB": 1303456,
+      "nprocs": 17,
+      "pssMissing": 0
+     },
+     {
+      "at": 60000,
+      "pssKB": 1483827,
+      "rssKB": 2877700,
+      "ussKB": 1236688,
+      "nprocs": 16,
+      "pssMissing": 0
+     }
+    ],
+    "procs": [
+     {
+      "pid": 3072623,
+      "comm": "cefsimple",
+      "type": "browser",
+      "pss": 210776,
+      "rss": 331372,
+      "uss": 177492
+     },
+     {
+      "pid": 3072631,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 17348,
+      "rss": 73360,
+      "uss": 820
+     },
+     {
+      "pid": 3072632,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 10301,
+      "rss": 73404,
+      "uss": 216
+     },
+     {
+      "pid": 3072702,
+      "comm": "cefsimple",
+      "type": "utility",
+      "pss": 50213,
+      "rss": 127420,
+      "uss": 35752
+     },
+     {
+      "pid": 3074747,
+      "comm": "cefsimple",
+      "type": "utility",
+      "pss": 25905,
+      "rss": 82552,
+      "uss": 16728
+     },
+     {
+      "pid": 3072700,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 140522,
+      "rss": 210852,
+      "uss": 112840
+     },
+     {
+      "pid": 3072635,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 2221,
+      "rss": 21208,
+      "uss": 232
+     },
+     {
+      "pid": 3072758,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 20212,
+      "rss": 62680,
+      "uss": 15780
+     },
+     {
+      "pid": 3072818,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 100226,
+      "rss": 224204,
+      "uss": 81628
+     },
+     {
+      "pid": 3072861,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 289637,
+      "rss": 421048,
+      "uss": 267156
+     },
+     {
+      "pid": 3072957,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 22991,
+      "rss": 115576,
+      "uss": 11928
+     },
+     {
+      "pid": 3073113,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 131917,
+      "rss": 258584,
+      "uss": 112208
+     },
+     {
+      "pid": 3073262,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 318128,
+      "rss": 447688,
+      "uss": 295876
+     },
+     {
+      "pid": 3073269,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 104080,
+      "rss": 220364,
+      "uss": 87840
+     },
+     {
+      "pid": 3073734,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 26190,
+      "rss": 129724,
+      "uss": 13412
+     },
+     {
+      "pid": 3074095,
+      "comm": "cefsimple",
+      "type": "zygote",
+      "pss": 13160,
+      "rss": 77664,
+      "uss": 6780
+     }
+    ],
+    "at": 60000,
+    "pssKB": 1483827,
+    "rssKB": 2877700,
+    "ussKB": 1236688,
+    "nprocs": 16,
+    "pssMissing": 0
+   }
+  ],
+  "chrome-win": [
+   {
+    "mode": "chrome-win",
+    "browser": "chrome",
+    "pages": [
+     {
+      "site": "youtube",
+      "loaded": true,
+      "url": "https://www.youtube.com/?themeRefresh=1",
+      "title": "YouTube",
+      "vis": "visible",
+      "text": 0,
+      "w": 1415,
+      "h": 1059
+     },
+     {
+      "site": "github",
+      "loaded": true,
+      "url": "https://github.com/rust-lang/rust",
+      "title": "GitHub - rust-lang/rust: Empowering everyone to build reliable and efficient software. · GitHub",
+      "vis": "visible",
+      "text": 5601,
+      "w": 1415,
+      "h": 1059
+     },
+     {
+      "site": "maps",
+      "loaded": true,
+      "url": "https://www.google.com/maps/@28.6139,77.209,13z",
+      "title": "Google Maps",
+      "vis": "visible",
+      "text": 74,
+      "w": 1415,
+      "h": 1059
+     },
+     {
+      "site": "reddit",
+      "loaded": true,
+      "url": "https://www.reddit.com/r/programming/",
+      "title": "Reddit - Prove your humanity",
+      "vis": "visible",
+      "text": 240,
+      "w": 1415,
+      "h": 1059
+     },
+     {
+      "site": "wikipedia",
+      "loaded": true,
+      "url": "https://en.wikipedia.org/wiki/World_War_II",
+      "title": "World War II - Wikipedia",
+      "vis": "visible",
+      "text": 173976,
+      "w": 1420,
+      "h": 1059
+     }
+    ],
+    "loadAllMs": 3214,
+    "windows": [
+     {
+      "class": "google-chrome",
+      "title": "YouTube - Google Chrome",
+      "size": [
+       1400,
+       1000
+      ],
+      "at": [
+       260,
+       100
+      ],
+      "floating": true,
+      "workspace": "Work"
+     },
+     {
+      "class": "google-chrome",
+      "title": "GitHub - rust-lang/rust: Empowering everyone to build reliable and efficient software. · GitHub - Google Chrome",
+      "size": [
+       1400,
+       1000
+      ],
+      "at": [
+       270,
+       110
+      ],
+      "floating": true,
+      "workspace": "Work"
+     },
+     {
+      "class": "google-chrome",
+      "title": "Google Maps - Google Chrome",
+      "size": [
+       1400,
+       1000
+      ],
+      "at": [
+       280,
+       120
+      ],
+      "floating": true,
+      "workspace": "Work"
+     },
+     {
+      "class": "google-chrome",
+      "title": "Reddit - Prove your humanity - Google Chrome",
+      "size": [
+       1400,
+       1000
+      ],
+      "at": [
+       290,
+       130
+      ],
+      "floating": true,
+      "workspace": "Work"
+     },
+     {
+      "class": "google-chrome",
+      "title": "World War II - Wikipedia - Google Chrome",
+      "size": [
+       1400,
+       1000
+      ],
+      "at": [
+       300,
+       140
+      ],
+      "floating": true,
+      "workspace": "Work"
+     }
+    ],
+    "samples": [
+     {
+      "at": 0,
+      "pssKB": 1436359,
+      "rssKB": 3297112,
+      "ussKB": 1160948,
+      "nprocs": 20,
+      "pssMissing": 0
+     },
+     {
+      "at": 30000,
+      "pssKB": 1368707,
+      "rssKB": 2871116,
+      "ussKB": 1097428,
+      "nprocs": 17,
+      "pssMissing": 0
+     },
+     {
+      "at": 60000,
+      "pssKB": 1335083,
+      "rssKB": 2840512,
+      "ussKB": 1063548,
+      "nprocs": 17,
+      "pssMissing": 0
+     }
+    ],
+    "procs": [
+     {
+      "pid": 2961465,
+      "comm": "chrome",
+      "type": "browser",
+      "pss": 218265,
+      "rss": 357060,
+      "uss": 181200
+     },
+     {
+      "pid": 2961515,
+      "comm": "chrome",
+      "type": "zygote",
+      "pss": 14464,
+      "rss": 75832,
+      "uss": 604
+     },
+     {
+      "pid": 2961516,
+      "comm": "chrome",
+      "type": "zygote",
+      "pss": 11592,
+      "rss": 75260,
+      "uss": 228
+     },
+     {
+      "pid": 2961591,
+      "comm": "chrome",
+      "type": "utility",
+      "pss": 47925,
+      "rss": 137796,
+      "uss": 31840
+     },
+     {
+      "pid": 2963726,
+      "comm": "chrome",
+      "type": "utility",
+      "pss": 29388,
+      "rss": 92912,
+      "uss": 19576
+     },
+     {
+      "pid": 2961589,
+      "comm": "chrome",
+      "type": "gpu-process",
+      "pss": 140343,
+      "rss": 236720,
+      "uss": 110660
+     },
+     {
+      "pid": 2967219,
+      "comm": "chrome",
+      "type": "utility",
+      "pss": 70406,
+      "rss": 123532,
+      "uss": 60824
+     },
+     {
+      "pid": 2961522,
+      "comm": "chrome",
+      "type": "zygote",
+      "pss": 2540,
+      "rss": 23164,
+      "uss": 260
+     },
+     {
+      "pid": 2967221,
+      "comm": "chrome",
+      "type": "broker",
+      "pss": 5465,
+      "rss": 24124,
+      "uss": 540
+     },
+     {
+      "pid": 2961611,
+      "comm": "chrome",
+      "type": "utility",
+      "pss": 9447,
+      "rss": 63104,
+      "uss": 3684
+     },
+     {
+      "pid": 2961792,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 75829,
+      "rss": 188408,
+      "uss": 60996
+     },
+     {
+      "pid": 2961870,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 87858,
+      "rss": 219452,
+      "uss": 67388
+     },
+     {
+      "pid": 2961988,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 188741,
+      "rss": 328624,
+      "uss": 163952
+     },
+     {
+      "pid": 2962158,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 272485,
+      "rss": 415356,
+      "uss": 244008
+     },
+     {
+      "pid": 2962328,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 43936,
+      "rss": 167680,
+      "uss": 26564
+     },
+     {
+      "pid": 2962404,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 102953,
+      "rss": 227916,
+      "uss": 84932
+     },
+     {
+      "pid": 2963656,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 13446,
+      "rss": 83572,
+      "uss": 6292
+     }
+    ],
+    "at": 60000,
+    "pssKB": 1335083,
+    "rssKB": 2840512,
+    "ussKB": 1063548,
+    "nprocs": 17,
+    "pssMissing": 0
+   },
+   {
+    "mode": "chrome-win",
+    "browser": "chrome",
+    "pages": [
+     {
+      "site": "youtube",
+      "loaded": true,
+      "url": "https://www.youtube.com/",
+      "title": "YouTube",
+      "vis": "visible",
+      "text": 0,
+      "w": 1415,
+      "h": 1059
+     },
+     {
+      "site": "github",
+      "loaded": true,
+      "url": "https://github.com/rust-lang/rust",
+      "title": "GitHub - rust-lang/rust: Empowering everyone to build reliable and efficient software. · GitHub",
+      "vis": "visible",
+      "text": 5357,
+      "w": 1415,
+      "h": 1059
+     },
+     {
+      "site": "maps",
+      "loaded": true,
+      "url": "https://www.google.com/maps/@28.6139,77.209,13z",
+      "title": "Google Maps",
+      "vis": "visible",
+      "text": 54,
+      "w": 1415,
+      "h": 1059
+     },
+     {
+      "site": "reddit",
+      "loaded": true,
+      "url": "https://www.reddit.com/r/programming/",
+      "title": "programming",
+      "vis": "visible",
+      "text": 2472,
+      "w": 1415,
+      "h": 1059
+     },
+     {
+      "site": "wikipedia",
+      "loaded": true,
+      "url": "https://en.wikipedia.org/wiki/World_War_II",
+      "title": "World War II - Wikipedia",
+      "vis": "visible",
+      "text": 173976,
+      "w": 1415,
+      "h": 1059
+     }
+    ],
+    "loadAllMs": 2155,
+    "windows": [
+     {
+      "class": "google-chrome",
+      "title": "YouTube - Google Chrome",
+      "size": [
+       1400,
+       1000
+      ],
+      "at": [
+       260,
+       100
+      ],
+      "floating": true,
+      "workspace": "Work"
+     },
+     {
+      "class": "google-chrome",
+      "title": "GitHub - rust-lang/rust: Empowering everyone to build reliable and efficient software. · GitHub - Google Chrome",
+      "size": [
+       1400,
+       1000
+      ],
+      "at": [
+       270,
+       110
+      ],
+      "floating": true,
+      "workspace": "Work"
+     },
+     {
+      "class": "google-chrome",
+      "title": "Google Maps - Google Chrome",
+      "size": [
+       1400,
+       1000
+      ],
+      "at": [
+       280,
+       120
+      ],
+      "floating": true,
+      "workspace": "Work"
+     },
+     {
+      "class": "google-chrome",
+      "title": "programming - Google Chrome",
+      "size": [
+       1400,
+       1000
+      ],
+      "at": [
+       290,
+       130
+      ],
+      "floating": true,
+      "workspace": "Work"
+     },
+     {
+      "class": "google-chrome",
+      "title": "World War II - Wikipedia - Google Chrome",
+      "size": [
+       1400,
+       1000
+      ],
+      "at": [
+       300,
+       140
+      ],
+      "floating": true,
+      "workspace": "Work"
+     }
+    ],
+    "samples": [
+     {
+      "at": 0,
+      "pssKB": 1603942,
+      "rssKB": 3475580,
+      "ussKB": 1309492,
+      "nprocs": 19,
+      "pssMissing": 0
+     },
+     {
+      "at": 30000,
+      "pssKB": 1345515,
+      "rssKB": 3145392,
+      "ussKB": 1069524,
+      "nprocs": 18,
+      "pssMissing": 0
+     },
+     {
+      "at": 60000,
+      "pssKB": 1315062,
+      "rssKB": 2996916,
+      "ussKB": 1039404,
+      "nprocs": 17,
+      "pssMissing": 0
+     }
+    ],
+    "procs": [
+     {
+      "pid": 3028939,
+      "comm": "chrome",
+      "type": "browser",
+      "pss": 213258,
+      "rss": 355452,
+      "uss": 177396
+     },
+     {
+      "pid": 3029017,
+      "comm": "chrome",
+      "type": "zygote",
+      "pss": 20216,
+      "rss": 80668,
+      "uss": 796
+     },
+     {
+      "pid": 3029018,
+      "comm": "chrome",
+      "type": "zygote",
+      "pss": 11700,
+      "rss": 79152,
+      "uss": 156
+     },
+     {
+      "pid": 3029127,
+      "comm": "chrome",
+      "type": "utility",
+      "pss": 46483,
+      "rss": 138876,
+      "uss": 30148
+     },
+     {
+      "pid": 3030139,
+      "comm": "chrome",
+      "type": "utility",
+      "pss": 27786,
+      "rss": 93444,
+      "uss": 17576
+     },
+     {
+      "pid": 3029125,
+      "comm": "chrome",
+      "type": "gpu-process",
+      "pss": 130707,
+      "rss": 223376,
+      "uss": 96724
+     },
+     {
+      "pid": 3029040,
+      "comm": "chrome",
+      "type": "zygote",
+      "pss": 2336,
+      "rss": 23620,
+      "uss": 316
+     },
+     {
+      "pid": 3029146,
+      "comm": "chrome",
+      "type": "utility",
+      "pss": 8720,
+      "rss": 62180,
+      "uss": 3660
+     },
+     {
+      "pid": 3029242,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 72018,
+      "rss": 187876,
+      "uss": 59184
+     },
+     {
+      "pid": 3029262,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 90183,
+      "rss": 224284,
+      "uss": 72296
+     },
+     {
+      "pid": 3029341,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 139067,
+      "rss": 280740,
+      "uss": 117992
+     },
+     {
+      "pid": 3029352,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 21699,
+      "rss": 119064,
+      "uss": 11816
+     },
+     {
+      "pid": 3029590,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 286720,
+      "rss": 433684,
+      "uss": 260560
+     },
+     {
+      "pid": 3029675,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 113823,
+      "rss": 254560,
+      "uss": 93736
+     },
+     {
+      "pid": 3029751,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 94181,
+      "rss": 218928,
+      "uss": 79264
+     },
+     {
+      "pid": 3030039,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 23734,
+      "rss": 137564,
+      "uss": 11464
+     },
+     {
+      "pid": 3030504,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 12431,
+      "rss": 83448,
+      "uss": 6320
+     }
+    ],
+    "at": 60000,
+    "pssKB": 1315062,
+    "rssKB": 2996916,
+    "ussKB": 1039404,
+    "nprocs": 17,
+    "pssMissing": 0
+   },
+   {
+    "mode": "chrome-win",
+    "browser": "chrome",
+    "pages": [
+     {
+      "site": "youtube",
+      "loaded": true,
+      "url": "https://www.youtube.com/",
+      "title": "YouTube",
+      "vis": "visible",
+      "text": 0,
+      "w": 1415,
+      "h": 1059
+     },
+     {
+      "site": "github",
+      "loaded": true,
+      "url": "https://github.com/rust-lang/rust",
+      "title": "GitHub - rust-lang/rust: Empowering everyone to build reliable and efficient software. · GitHub",
+      "vis": "visible",
+      "text": 5363,
+      "w": 1415,
+      "h": 1059
+     },
+     {
+      "site": "maps",
+      "loaded": true,
+      "url": "https://www.google.com/maps/@28.6139,77.209,13z",
+      "title": "Google Maps",
+      "vis": "visible",
+      "text": 54,
+      "w": 1415,
+      "h": 1059
+     },
+     {
+      "site": "reddit",
+      "loaded": true,
+      "url": "https://www.reddit.com/r/programming/",
+      "title": "programming",
+      "vis": "visible",
+      "text": 2384,
+      "w": 1415,
+      "h": 1059
+     },
+     {
+      "site": "wikipedia",
+      "loaded": true,
+      "url": "https://en.wikipedia.org/wiki/World_War_II",
+      "title": "World War II - Wikipedia",
+      "vis": "visible",
+      "text": 173976,
+      "w": 1415,
+      "h": 1059
+     }
+    ],
+    "loadAllMs": 1882,
+    "windows": [
+     {
+      "class": "google-chrome",
+      "title": "YouTube - Google Chrome",
+      "size": [
+       1400,
+       1000
+      ],
+      "at": [
+       260,
+       100
+      ],
+      "floating": true,
+      "workspace": "Work"
+     },
+     {
+      "class": "google-chrome",
+      "title": "GitHub - rust-lang/rust: Empowering everyone to build reliable and efficient software. · GitHub - Google Chrome",
+      "size": [
+       1400,
+       1000
+      ],
+      "at": [
+       270,
+       110
+      ],
+      "floating": true,
+      "workspace": "Work"
+     },
+     {
+      "class": "google-chrome",
+      "title": "Google Maps - Google Chrome",
+      "size": [
+       1400,
+       1000
+      ],
+      "at": [
+       280,
+       120
+      ],
+      "floating": true,
+      "workspace": "Work"
+     },
+     {
+      "class": "google-chrome",
+      "title": "programming - Google Chrome",
+      "size": [
+       1400,
+       1000
+      ],
+      "at": [
+       290,
+       130
+      ],
+      "floating": true,
+      "workspace": "Work"
+     },
+     {
+      "class": "google-chrome",
+      "title": "World War II - Wikipedia - Google Chrome",
+      "size": [
+       1400,
+       1000
+      ],
+      "at": [
+       300,
+       140
+      ],
+      "floating": true,
+      "workspace": "Work"
+     }
+    ],
+    "samples": [
+     {
+      "at": 0,
+      "pssKB": 1518007,
+      "rssKB": 3341260,
+      "ussKB": 1242460,
+      "nprocs": 19,
+      "pssMissing": 0
+     },
+     {
+      "at": 30000,
+      "pssKB": 1379872,
+      "rssKB": 3181392,
+      "ussKB": 1104828,
+      "nprocs": 18,
+      "pssMissing": 0
+     },
+     {
+      "at": 60000,
+      "pssKB": 0,
+      "rssKB": 0,
+      "ussKB": 0,
+      "nprocs": 0,
+      "pssMissing": 0
+     }
+    ],
+    "procs": [],
+    "at": 60000,
+    "pssKB": 0,
+    "rssKB": 0,
+    "ussKB": 0,
+    "nprocs": 0,
+    "pssMissing": 0
+   }
+  ],
+  "chrome-tabs": [
+   {
+    "mode": "chrome-tabs",
+    "browser": "chrome",
+    "pages": [
+     {
+      "site": "youtube",
+      "loaded": true,
+      "url": "https://www.youtube.com/",
+      "title": "YouTube",
+      "vis": "hidden",
+      "text": 0,
+      "w": 1420,
+      "h": 1059
+     },
+     {
+      "site": "github",
+      "loaded": true,
+      "url": "https://github.com/rust-lang/rust",
+      "title": "GitHub - rust-lang/rust: Empowering everyone to build reliable and efficient software. · GitHub",
+      "vis": "hidden",
+      "text": 5363,
+      "w": 1420,
+      "h": 1059
+     },
+     {
+      "site": "maps",
+      "loaded": true,
+      "url": "https://www.google.com/maps/@28.6139,77.209,13z",
+      "title": "Google Maps",
+      "vis": "hidden",
+      "text": 54,
+      "w": 1420,
+      "h": 1059
+     },
+     {
+      "site": "reddit",
+      "loaded": true,
+      "url": "https://www.reddit.com/r/programming/?solution=9c2901f34316c60d9c2901f34316c60d&js_challenge=1&jsc_token=2824be10929bdc604753c70a67a1c331c305d500e6ddcceae8e98c23705f28aa&jsc_orig_r=",
+      "title": "programming",
+      "vis": "hidden",
+      "text": 2472,
+      "w": 1420,
+      "h": 1059
+     },
+     {
+      "site": "wikipedia",
+      "loaded": true,
+      "url": "https://en.wikipedia.org/wiki/World_War_II",
+      "title": "World War II - Wikipedia",
+      "vis": "visible",
+      "text": 173976,
+      "w": 1420,
+      "h": 1059
+     }
+    ],
+    "loadAllMs": 2828,
+    "windows": [
+     {
+      "class": "google-chrome",
+      "title": "World War II - Wikipedia - Google Chrome",
+      "size": [
+       1400,
+       1000
+      ],
+      "at": [
+       260,
+       100
+      ],
+      "floating": true,
+      "workspace": "Work"
+     }
+    ],
+    "samples": [
+     {
+      "at": 0,
+      "pssKB": 1301301,
+      "rssKB": 3079008,
+      "ussKB": 1035204,
+      "nprocs": 19,
+      "pssMissing": 0
+     },
+     {
+      "at": 30000,
+      "pssKB": 1154906,
+      "rssKB": 2792548,
+      "ussKB": 887268,
+      "nprocs": 17,
+      "pssMissing": 0
+     },
+     {
+      "at": 60000,
+      "pssKB": 1122529,
+      "rssKB": 2536140,
+      "ussKB": 855496,
+      "nprocs": 15,
+      "pssMissing": 0
+     }
+    ],
+    "procs": [
+     {
+      "pid": 2984256,
+      "comm": "chrome",
+      "type": "browser",
+      "pss": 191910,
+      "rss": 331160,
+      "uss": 154664
+     },
+     {
+      "pid": 2984274,
+      "comm": "chrome",
+      "type": "zygote",
+      "pss": 19512,
+      "rss": 78848,
+      "uss": 1020
+     },
+     {
+      "pid": 2984275,
+      "comm": "chrome",
+      "type": "zygote",
+      "pss": 12097,
+      "rss": 78812,
+      "uss": 392
+     },
+     {
+      "pid": 2984316,
+      "comm": "chrome",
+      "type": "utility",
+      "pss": 42496,
+      "rss": 134420,
+      "uss": 25716
+     },
+     {
+      "pid": 2985490,
+      "comm": "chrome",
+      "type": "utility",
+      "pss": 27826,
+      "rss": 89724,
+      "uss": 17584
+     },
+     {
+      "pid": 2984314,
+      "comm": "chrome",
+      "type": "gpu-process",
+      "pss": 108362,
+      "rss": 198200,
+      "uss": 74596
+     },
+     {
+      "pid": 2984283,
+      "comm": "chrome",
+      "type": "zygote",
+      "pss": 2644,
+      "rss": 23328,
+      "uss": 328
+     },
+     {
+      "pid": 2984353,
+      "comm": "chrome",
+      "type": "utility",
+      "pss": 9491,
+      "rss": 62332,
+      "uss": 3696
+     },
+     {
+      "pid": 2984398,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 39473,
+      "rss": 150848,
+      "uss": 24584
+     },
+     {
+      "pid": 2984431,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 77718,
+      "rss": 201832,
+      "uss": 59200
+     },
+     {
+      "pid": 2984543,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 122113,
+      "rss": 253104,
+      "uss": 100832
+     },
+     {
+      "pid": 2984792,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 278373,
+      "rss": 417520,
+      "uss": 250136
+     },
+     {
+      "pid": 2984892,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 77094,
+      "rss": 209864,
+      "uss": 55380
+     },
+     {
+      "pid": 2984943,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 99788,
+      "rss": 222672,
+      "uss": 81060
+     },
+     {
+      "pid": 2985168,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 13632,
+      "rss": 83476,
+      "uss": 6308
+     }
+    ],
+    "at": 60000,
+    "pssKB": 1122529,
+    "rssKB": 2536140,
+    "ussKB": 855496,
+    "nprocs": 15,
+    "pssMissing": 0
+   },
+   {
+    "mode": "chrome-tabs",
+    "browser": "chrome",
+    "pages": [
+     {
+      "site": "youtube",
+      "loaded": true,
+      "url": "https://www.youtube.com/",
+      "title": "YouTube",
+      "vis": "hidden",
+      "text": 0,
+      "w": 1420,
+      "h": 1059
+     },
+     {
+      "site": "github",
+      "loaded": true,
+      "url": "https://github.com/rust-lang/rust",
+      "title": "GitHub - rust-lang/rust: Empowering everyone to build reliable and efficient software. · GitHub",
+      "vis": "hidden",
+      "text": 5607,
+      "w": 1420,
+      "h": 1059
+     },
+     {
+      "site": "maps",
+      "loaded": true,
+      "url": "https://www.google.com/maps/@28.6139,77.209,13z",
+      "title": "Google Maps",
+      "vis": "hidden",
+      "text": 129,
+      "w": 1420,
+      "h": 1059
+     },
+     {
+      "site": "reddit",
+      "loaded": true,
+      "url": "https://www.reddit.com/r/programming/",
+      "title": "programming",
+      "vis": "hidden",
+      "text": 2384,
+      "w": 1420,
+      "h": 1059
+     },
+     {
+      "site": "wikipedia",
+      "loaded": true,
+      "url": "https://en.wikipedia.org/wiki/World_War_II",
+      "title": "World War II - Wikipedia",
+      "vis": "visible",
+      "text": 173976,
+      "w": 1420,
+      "h": 1059
+     }
+    ],
+    "loadAllMs": 2113,
+    "windows": [
+     {
+      "class": "google-chrome",
+      "title": "World War II - Wikipedia - Google Chrome",
+      "size": [
+       1400,
+       1000
+      ],
+      "at": [
+       260,
+       100
+      ],
+      "floating": true,
+      "workspace": "Work"
+     }
+    ],
+    "samples": [
+     {
+      "at": 0,
+      "pssKB": 1281089,
+      "rssKB": 2979904,
+      "ussKB": 1013612,
+      "nprocs": 18,
+      "pssMissing": 0
+     },
+     {
+      "at": 30000,
+      "pssKB": 1158135,
+      "rssKB": 2819452,
+      "ussKB": 888172,
+      "nprocs": 17,
+      "pssMissing": 0
+     },
+     {
+      "at": 60000,
+      "pssKB": 1128990,
+      "rssKB": 2561560,
+      "ussKB": 860096,
+      "nprocs": 15,
+      "pssMissing": 0
+     }
+    ],
+    "procs": [
+     {
+      "pid": 3050866,
+      "comm": "chrome",
+      "type": "browser",
+      "pss": 192669,
+      "rss": 332784,
+      "uss": 155064
+     },
+     {
+      "pid": 3050897,
+      "comm": "chrome",
+      "type": "zygote",
+      "pss": 19370,
+      "rss": 78728,
+      "uss": 720
+     },
+     {
+      "pid": 3050899,
+      "comm": "chrome",
+      "type": "zygote",
+      "pss": 12445,
+      "rss": 81208,
+      "uss": 172
+     },
+     {
+      "pid": 3051017,
+      "comm": "chrome",
+      "type": "utility",
+      "pss": 46273,
+      "rss": 137580,
+      "uss": 29188
+     },
+     {
+      "pid": 3052210,
+      "comm": "chrome",
+      "type": "utility",
+      "pss": 27630,
+      "rss": 89736,
+      "uss": 17448
+     },
+     {
+      "pid": 3051015,
+      "comm": "chrome",
+      "type": "gpu-process",
+      "pss": 106199,
+      "rss": 196436,
+      "uss": 72416
+     },
+     {
+      "pid": 3050928,
+      "comm": "chrome",
+      "type": "zygote",
+      "pss": 2858,
+      "rss": 25116,
+      "uss": 320
+     },
+     {
+      "pid": 3051060,
+      "comm": "chrome",
+      "type": "utility",
+      "pss": 11909,
+      "rss": 66028,
+      "uss": 5908
+     },
+     {
+      "pid": 3051109,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 40197,
+      "rss": 154076,
+      "uss": 25076
+     },
+     {
+      "pid": 3051128,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 76452,
+      "rss": 203056,
+      "uss": 57700
+     },
+     {
+      "pid": 3051306,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 122903,
+      "rss": 256196,
+      "uss": 101252
+     },
+     {
+      "pid": 3051463,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 280586,
+      "rss": 422044,
+      "uss": 252480
+     },
+     {
+      "pid": 3051511,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 78504,
+      "rss": 211616,
+      "uss": 57280
+     },
+     {
+      "pid": 3051670,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 97204,
+      "rss": 221524,
+      "uss": 78844
+     },
+     {
+      "pid": 3051855,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 13791,
+      "rss": 85432,
+      "uss": 6228
+     }
+    ],
+    "at": 60000,
+    "pssKB": 1128990,
+    "rssKB": 2561560,
+    "ussKB": 860096,
+    "nprocs": 15,
+    "pssMissing": 0
+   },
+   {
+    "mode": "chrome-tabs",
+    "browser": "chrome",
+    "pages": [
+     {
+      "site": "youtube",
+      "loaded": true,
+      "url": "https://www.youtube.com/",
+      "title": "YouTube",
+      "vis": "hidden",
+      "text": 0,
+      "w": 1415,
+      "h": 1059
+     },
+     {
+      "site": "github",
+      "loaded": true,
+      "url": "https://github.com/rust-lang/rust",
+      "title": "GitHub - rust-lang/rust: Empowering everyone to build reliable and efficient software. · GitHub",
+      "vis": "hidden",
+      "text": 5363,
+      "w": 1415,
+      "h": 1059
+     },
+     {
+      "site": "maps",
+      "loaded": true,
+      "url": "https://www.google.com/maps/@28.6139,77.209,13z",
+      "title": "Google Maps",
+      "vis": "hidden",
+      "text": 54,
+      "w": 1415,
+      "h": 1059
+     },
+     {
+      "site": "reddit",
+      "loaded": true,
+      "url": "https://www.reddit.com/r/programming/",
+      "title": "programming",
+      "vis": "hidden",
+      "text": 2406,
+      "w": 1415,
+      "h": 1059
+     },
+     {
+      "site": "wikipedia",
+      "loaded": true,
+      "url": "https://en.wikipedia.org/wiki/World_War_II",
+      "title": "World War II - Wikipedia",
+      "vis": "visible",
+      "text": 173976,
+      "w": 1415,
+      "h": 1059
+     }
+    ],
+    "loadAllMs": 1958,
+    "windows": [
+     {
+      "class": "google-chrome",
+      "title": "World War II - Wikipedia - Google Chrome",
+      "size": [
+       1400,
+       1000
+      ],
+      "at": [
+       260,
+       100
+      ],
+      "floating": true,
+      "workspace": "Work"
+     }
+    ],
+    "samples": [
+     {
+      "at": 0,
+      "pssKB": 1291236,
+      "rssKB": 3162768,
+      "ussKB": 1027176,
+      "nprocs": 20,
+      "pssMissing": 0
+     },
+     {
+      "at": 30000,
+      "pssKB": 1161694,
+      "rssKB": 2817124,
+      "ussKB": 891332,
+      "nprocs": 17,
+      "pssMissing": 0
+     },
+     {
+      "at": 60000,
+      "pssKB": 1133163,
+      "rssKB": 2559716,
+      "ussKB": 863788,
+      "nprocs": 15,
+      "pssMissing": 0
+     }
+    ],
+    "procs": [
+     {
+      "pid": 3116621,
+      "comm": "chrome",
+      "type": "browser",
+      "pss": 194693,
+      "rss": 333560,
+      "uss": 157272
+     },
+     {
+      "pid": 3116707,
+      "comm": "chrome",
+      "type": "zygote",
+      "pss": 20254,
+      "rss": 78676,
+      "uss": 1116
+     },
+     {
+      "pid": 3116711,
+      "comm": "chrome",
+      "type": "zygote",
+      "pss": 12231,
+      "rss": 78800,
+      "uss": 452
+     },
+     {
+      "pid": 3116754,
+      "comm": "chrome",
+      "type": "utility",
+      "pss": 44749,
+      "rss": 136232,
+      "uss": 27544
+     },
+     {
+      "pid": 3117935,
+      "comm": "chrome",
+      "type": "utility",
+      "pss": 27913,
+      "rss": 89812,
+      "uss": 17692
+     },
+     {
+      "pid": 3116752,
+      "comm": "chrome",
+      "type": "gpu-process",
+      "pss": 107334,
+      "rss": 199108,
+      "uss": 72356
+     },
+     {
+      "pid": 3116719,
+      "comm": "chrome",
+      "type": "zygote",
+      "pss": 2887,
+      "rss": 25512,
+      "uss": 316
+     },
+     {
+      "pid": 3116832,
+      "comm": "chrome",
+      "type": "utility",
+      "pss": 9842,
+      "rss": 63984,
+      "uss": 3940
+     },
+     {
+      "pid": 3116977,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 42567,
+      "rss": 156044,
+      "uss": 27496
+     },
+     {
+      "pid": 3116988,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 75109,
+      "rss": 201500,
+      "uss": 56344
+     },
+     {
+      "pid": 3117145,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 124419,
+      "rss": 257096,
+      "uss": 102840
+     },
+     {
+      "pid": 3117260,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 278031,
+      "rss": 419444,
+      "uss": 249752
+     },
+     {
+      "pid": 3117485,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 76934,
+      "rss": 208672,
+      "uss": 56264
+     },
+     {
+      "pid": 3117537,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 102039,
+      "rss": 225992,
+      "uss": 83720
+     },
+     {
+      "pid": 3117651,
+      "comm": "chrome",
+      "type": "renderer",
+      "pss": 14161,
+      "rss": 85284,
+      "uss": 6684
+     }
+    ],
+    "at": 60000,
+    "pssKB": 1133163,
+    "rssKB": 2559716,
+    "ussKB": 863788,
+    "nprocs": 15,
+    "pssMissing": 0
+   }
+  ]
+ },
+ "medians": {
+  "cef": {
+   "pssKB": 1485324,
+   "rssKB": 2885388,
+   "ussKB": 1236688,
+   "nprocs": 16
+  },
+  "chrome-win": {
+   "pssKB": 1315062,
+   "rssKB": 2840512,
+   "ussKB": 1039404,
+   "nprocs": 17
+  },
+  "chrome-tabs": {
+   "pssKB": 1128990,
+   "rssKB": 2559716,
+   "ussKB": 860096,
+   "nprocs": 15
+  }
+ },
+ "conditionsEnd": {
+  "at": "2026-10-10T16:52:40.818Z",
+  "loadavg": "2.80 3.15 3.30 5/1394 3138482",
+  "acOnline": "1",
+  "battery": "Not charging",
+  "governor": "powersave",
+  "epp": "power",
+  "platformProfile": "low-power",
+  "memAvailableKB": 9954888
+ }
+}

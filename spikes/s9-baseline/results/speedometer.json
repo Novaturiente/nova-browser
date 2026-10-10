@@ -1,0 +1,110 @@
+{
+ "conditions": {
+  "at": "2026-10-10T16:54:50.328Z",
+  "loadavg": "1.55 2.65 3.10 2/1368 3180214",
+  "acOnline": "0",
+  "battery": "Discharging",
+  "governor": "powersave",
+  "epp": "power",
+  "platformProfile": "low-power",
+  "memAvailableKB": 9896072
+ },
+ "url": "https://browserbench.org/Speedometer3.1/",
+ "runs": {
+  "cef": [
+   {
+    "kind": "cef",
+    "conditions": {
+     "at": "2026-10-10T16:54:50.334Z",
+     "loadavg": "1.55 2.65 3.10 3/1369 3180215",
+     "acOnline": "0",
+     "battery": "Discharging",
+     "governor": "powersave",
+     "epp": "power",
+     "platformProfile": "low-power",
+     "memAvailableKB": 9896072
+    },
+    "windows": [
+     {
+      "class": "",
+      "title": "",
+      "size": [
+       1400,
+       913
+      ],
+      "at": [
+       260,
+       100
+      ],
+      "floating": true,
+      "workspace": "Work"
+     }
+    ],
+    "before": {
+     "w": 1400,
+     "h": 913,
+     "dpr": 1,
+     "vis": "visible",
+     "focus": true,
+     "sizeWarning": "none"
+    },
+    "durationS": 140.307,
+    "score": 10.3,
+    "confidence": "± 0.63",
+    "invalid": "One or more subtests produced no duration.\n                    Please check your browser settings and re-run the benchmark.",
+    "after": {
+     "vis": "visible",
+     "focus": false
+    }
+   }
+  ],
+  "chrome": [
+   {
+    "kind": "chrome",
+    "conditions": {
+     "at": "2026-10-10T16:57:19.396Z",
+     "loadavg": "2.12 2.36 2.91 3/1336 3227250",
+     "acOnline": "0",
+     "battery": "Discharging",
+     "governor": "powersave",
+     "epp": "power",
+     "platformProfile": "low-power",
+     "memAvailableKB": 10092144
+    },
+    "windows": [
+     {
+      "class": "google-chrome",
+      "title": "Speedometer 3.1 - Google Chrome",
+      "size": [
+       1400,
+       1000
+      ],
+      "at": [
+       260,
+       100
+      ],
+      "floating": true,
+      "workspace": "Work"
+     }
+    ],
+    "before": {
+     "w": 1400,
+     "h": 913,
+     "dpr": 1,
+     "vis": "visible",
+     "focus": true,
+     "sizeWarning": "none"
+    },
+    "durationS": 200.285,
+    "score": 12.9,
+    "confidence": "± 0.82",
+    "invalid": "One or more subtests produced no duration.\n                    Please check your browser settings and re-run the benchmark.",
+    "after": {
+     "vis": "visible",
+     "focus": false
+    }
+   }
+  ]
+ },
+ "medians": {}
+}

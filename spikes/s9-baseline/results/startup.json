@@ -1,0 +1,206 @@
+{
+ "conditions": {
+  "at": "2026-10-10T16:39:41.063Z",
+  "loadavg": "2.65 2.72 3.48 4/1383 2885813",
+  "acOnline": "1",
+  "battery": "Not charging",
+  "governor": "powersave",
+  "epp": "power",
+  "platformProfile": "low-power",
+  "memAvailableKB": 10057900
+ },
+ "runs": {
+  "cef": [
+   {
+    "kind": "cef",
+    "cdpUpMs": 515,
+    "navStartMs": 488.39990234375,
+    "loadMs": 611,
+    "fcpMs": 672.39990234375,
+    "navLoadMs": 122.59999999403954,
+    "url": "https://example.com/",
+    "windowMs": 626
+   },
+   {
+    "kind": "cef",
+    "cdpUpMs": 509,
+    "navStartMs": 492.800048828125,
+    "loadMs": 615.199951171875,
+    "fcpMs": 724.800048828125,
+    "navLoadMs": 122.40000000596046,
+    "url": "https://example.com/",
+    "windowMs": 616
+   },
+   {
+    "kind": "cef",
+    "cdpUpMs": 513,
+    "navStartMs": 498.300048828125,
+    "loadMs": 611.199951171875,
+    "fcpMs": 738.300048828125,
+    "navLoadMs": 112.90000000596046,
+    "url": "https://example.com/",
+    "windowMs": 625
+   },
+   {
+    "kind": "cef",
+    "cdpUpMs": 593,
+    "navStartMs": 566.60009765625,
+    "loadMs": 723.2001953125,
+    "fcpMs": 802.60009765625,
+    "navLoadMs": 156.60000002384186,
+    "url": "https://example.com/",
+    "windowMs": 656
+   },
+   {
+    "kind": "cef",
+    "cdpUpMs": 510,
+    "navStartMs": 488.89990234375,
+    "loadMs": 607.099853515625,
+    "fcpMs": 720.89990234375,
+    "navLoadMs": 118.19999998807907,
+    "url": "https://example.com/",
+    "windowMs": 625
+   }
+  ],
+  "chrome": [
+   {
+    "kind": "chrome",
+    "cdpUpMs": 578,
+    "navStartMs": 516.39990234375,
+    "loadMs": 646.39990234375,
+    "fcpMs": 968.39990234375,
+    "navLoadMs": 130,
+    "url": "https://example.com/",
+    "windowMs": 920
+   },
+   {
+    "kind": "chrome",
+    "cdpUpMs": 551,
+    "navStartMs": 495,
+    "loadMs": 597.60009765625,
+    "fcpMs": 867,
+    "navLoadMs": 102.59999999403954,
+    "url": "https://example.com/",
+    "windowMs": 864
+   },
+   {
+    "kind": "chrome",
+    "cdpUpMs": 574,
+    "navStartMs": 514.10009765625,
+    "loadMs": 632,
+    "fcpMs": 1018.10009765625,
+    "navLoadMs": 117.90000000596046,
+    "url": "https://example.com/",
+    "windowMs": 952
+   },
+   {
+    "kind": "chrome",
+    "cdpUpMs": 610,
+    "navStartMs": 551.699951171875,
+    "loadMs": 678.5,
+    "fcpMs": 939.699951171875,
+    "navLoadMs": 126.7999999821186,
+    "url": "https://example.com/",
+    "windowMs": 976
+   },
+   {
+    "kind": "chrome",
+    "cdpUpMs": 567,
+    "navStartMs": 514.10009765625,
+    "loadMs": 624.10009765625,
+    "fcpMs": 934.10009765625,
+    "navLoadMs": 110,
+    "url": "https://example.com/",
+    "windowMs": 905
+   }
+  ],
+  "s2": [
+   {
+    "kind": "s2",
+    "cdpUpMs": 531,
+    "navStartMs": 480.89990234375,
+    "loadMs": 1390.699951171875,
+    "fcpMs": 952.89990234375,
+    "navLoadMs": 909.7999999821186,
+    "url": "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+    "windowMs": 639
+   },
+   {
+    "kind": "s2",
+    "cdpUpMs": 494,
+    "navStartMs": 447.199951171875,
+    "loadMs": 1399.699951171875,
+    "fcpMs": 1059.199951171875,
+    "navLoadMs": 952.5,
+    "url": "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+    "windowMs": 634
+   },
+   {
+    "kind": "s2",
+    "cdpUpMs": 529,
+    "navStartMs": 484.699951171875,
+    "loadMs": 1409.5,
+    "fcpMs": 948.699951171875,
+    "navLoadMs": 924.7999999821186,
+    "url": "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+    "windowMs": 673
+   },
+   {
+    "kind": "s2",
+    "cdpUpMs": 487,
+    "navStartMs": 451.699951171875,
+    "loadMs": 1355.599853515625,
+    "fcpMs": 911.699951171875,
+    "navLoadMs": 903.9000000059605,
+    "url": "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+    "windowMs": 637
+   },
+   {
+    "kind": "s2",
+    "cdpUpMs": 552,
+    "navStartMs": 508.300048828125,
+    "loadMs": 1427.5,
+    "fcpMs": 976.300048828125,
+    "navLoadMs": 919.1999999880791,
+    "url": "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+    "windowMs": 670
+   }
+  ]
+ },
+ "medians": {
+  "cef": {
+   "windowMs": 625,
+   "cdpUpMs": 513,
+   "navStartMs": 492.800048828125,
+   "fcpMs": 724.800048828125,
+   "loadMs": 611.199951171875,
+   "navLoadMs": 122.40000000596046
+  },
+  "chrome": {
+   "windowMs": 920,
+   "cdpUpMs": 574,
+   "navStartMs": 514.10009765625,
+   "fcpMs": 939.699951171875,
+   "loadMs": 632,
+   "navLoadMs": 117.90000000596046
+  },
+  "s2": {
+   "windowMs": 639,
+   "cdpUpMs": 529,
+   "navStartMs": 480.89990234375,
+   "fcpMs": 952.89990234375,
+   "loadMs": 1399.699951171875,
+   "navLoadMs": 919.1999999880791
+  }
+ },
+ "conditionsEnd": {
+  "at": "2026-10-10T16:40:29.335Z",
+  "loadavg": "3.06 2.81 3.47 1/1387 2904035",
+  "acOnline": "1",
+  "battery": "Not charging",
+  "governor": "powersave",
+  "epp": "power",
+  "platformProfile": "low-power",
+  "memAvailableKB": 9914084
+ }
+}
