@@ -6,7 +6,7 @@ session; update before ending one (rules in `AGENTS.md`).
 ## Now
 
 - **Phase:** 0 (spikes)
-- **Next action:** launch spike batches in parallel — S2 + S3 + S8 (Rust) and S5 + S6 (DevTools); see AGENTS.md › Subagents.
+- **Next action:** S7 leftovers (permission + certificate handlers fire, in a `spikes/s7-handlers` copy) and S1 leftovers (`<select>`, clipboard); then S9 alone. S3b + HiDPI need the user.
 - **Blockers:** none
 
 ## Checklist
@@ -24,7 +24,7 @@ Each done item links its evidence (file, commit, or session-log date).
 - [x] S5b override lifetime via `execute_dev_tools_method` (2026-10-10, `spikes/s2-layout` title `nova:dark`: one call, no observer → content luma 249 → 37, still dark after 10 s, after navigation, after tab swap away/back; CEF's in-process session persists per browser).
 - [x] S6 synthetic input — `Input.dispatchMouseEvent` / `insertText` (2026-10-10, `spikes/s5-s6/s6-input.mjs` over remote port: the-internet.herokuapp.com/login → "You logged into a secure area!", all events `isTrusted=true`). `insertText` sends no key events. Via `execute_dev_tools_method` not yet run (same CDP method; covered by S5b).
 - [~] S7 Alloy style enough — Google sign-in passes (2026-10-10). Left: permission + certificate handlers fire.
-- [ ] S8 renderer hooks — `on_context_created` + V8 fn + `on_focused_node_changed` round-trip.
+- [x] S8 renderer hooks — `on_context_created` + V8 fn + `on_focused_node_changed` round-trip (2026-10-10, `bash spikes/s8-renderer/drive.sh`, re-run by main session: `nova.send` → browser → `nova.reply` → page JS (`novaReplies=["ack:hello","ack:from-devtools"]`); focus msgs for input/password/textarea/contenteditable=editable, button/A not, blur → empty; works after navigation, in about:blank iframe and cross-site OOPIF).
 - [ ] S9 baseline vs Chrome 155 — startup, idle RSS, Speedometer 3.1, scrolling.
 
 ### Phases 1–9 (PLAN.md §6; tick when the phase's exit check passes)
@@ -41,6 +41,8 @@ Each done item links its evidence (file, commit, or session-log date).
 ## Decisions
 
 Newest first. Settled — don't reopen without new evidence.
+
+- 2026-10-10 — Renderer bridge (S8): one binary; pass the App to `execute_process` too (else renderer has no handler). `window.nova.send` via V8 handler → `frame.send_process_message`; insert mode from `on_focused_node_changed` + `node.is_editable()`. Treat new context/navigation as focus reset (unloading frame's messages are lost). Identify renderers by frame, not pid (sandbox pid ns). Bindings: V8 exception out-param needs `e.try_set(..)` (assigning is silently lost); enter `frame.v8_context()` by hand outside `on_context_created`; Views delegate macros need `struct X {}` not `struct X;`.
 
 - 2026-10-10 — Key handling (S3): consume by returning 1 on RAWKEYDOWN in `on_pre_key_event` (CHAR/KEYUP then dropped). Don't expect a KEYUP per keydown. Mask `mods` bits 0x2000 (repeat), caps/num-lock. Ctrl+letter has `character`=control code → match on `windows_key_code`. `os_event` is null on Wayland. Don't trust `focus_on_editable_field` for insert mode (wrong on autofocus) → track focus from renderer (S8). `is_keyboard_shortcut=1` gives "page first, browser if unhandled" via `on_key_event`.
 
@@ -60,6 +62,12 @@ Newest first. Settled — don't reopen without new evidence.
 ## Session log
 
 Newest first. One entry per session: date, what changed, evidence, what's next.
+
+### 2026-10-10 (session 2)
+- Phase 0 batch: S2, S3, S5, S5b, S6, S8 pass (S3, S5+S6, S8 by `worker` subagents, evidence re-checked here; S8 `drive.sh` re-run). S2 fixes: non-empty `preferred_size`, overlay sizing. S5b showed `execute_dev_tools_method` override persists.
+- Added S3b (real keyboard, needs user). Found: `<iframe srcdoc>` in a `data:` page hangs that page (not our hooks) — note only.
+- Subagents had no `process` tool; they used `timeout`/`systemd-run --user` wrappers instead.
+- Next: S7 + S1 leftovers, then S9 alone.
 
 ### 2026-10-10
 - Wrote PLAN.md (rev 1–3). Diagnosed qutebrowser slowness (ananicy nice 16 / idle I/O inherited from `ly-dm`).
