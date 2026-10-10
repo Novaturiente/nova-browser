@@ -1,0 +1,657 @@
+{
+ "conditions": {
+  "at": "2026-10-10T17:19:52.861Z",
+  "loadavg": "2.63 2.47 2.32 1/1469 3661290",
+  "acOnline": "1",
+  "battery": "Not charging",
+  "governor": "powersave",
+  "epp": "balance_power",
+  "platformProfile": "low-power",
+  "memAvailableKB": 8153900
+ },
+ "monitors": [
+  {
+   "name": "eDP-1",
+   "mode": "1920x1200@59.999",
+   "scale": 1,
+   "focused": true
+  }
+ ],
+ "durationMs": 5000,
+ "runs": {
+  "cef": [
+   {
+    "kind": "cef",
+    "conditions": {
+     "at": "2026-10-10T17:19:52.865Z",
+     "loadavg": "2.63 2.47 2.32 2/1470 3661291",
+     "acOnline": "1",
+     "battery": "Not charging",
+     "governor": "powersave",
+     "epp": "balance_power",
+     "platformProfile": "low-power",
+     "memAvailableKB": 8153900
+    },
+    "extraFlags": [
+     "--disable-renderer-backgrounding",
+     "--disable-background-timer-throttling",
+     "--disable-backgrounding-occluded-windows"
+    ],
+    "sites": [
+     {
+      "site": "youtube",
+      "url": "https://www.youtube.com/",
+      "viewport": {
+       "w": 1400,
+       "h": 913,
+       "vis": "visible",
+       "focus": true,
+       "title": "YouTube"
+      },
+      "frames": 244,
+      "avgFps": 45.9,
+      "pctOver20ms": 20.1,
+      "p95ms": 33.4,
+      "maxMs": 199.9,
+      "wallMs": 5218,
+      "scrolledPx": 6326,
+      "maxScrollY": 6841,
+      "visEnd": "visible",
+      "focusEnd": true
+     },
+     {
+      "site": "github",
+      "url": "https://github.com/rust-lang/rust",
+      "viewport": {
+       "w": 1400,
+       "h": 913,
+       "vis": "visible",
+       "focus": true,
+       "title": "GitHub - rust-lang/rust: Empowering everyone to build reliab"
+      },
+      "frames": 318,
+      "avgFps": 59.9,
+      "pctOver20ms": 0.3,
+      "p95ms": 16.8,
+      "maxMs": 22.7,
+      "wallMs": 5209,
+      "scrolledPx": 510,
+      "maxScrollY": 2689,
+      "visEnd": "visible",
+      "focusEnd": true
+     },
+     {
+      "site": "maps",
+      "url": "https://www.google.com/maps/@28.6139,77.209,13z",
+      "viewport": {
+       "w": 1400,
+       "h": 913,
+       "vis": "visible",
+       "focus": true,
+       "title": "Google Maps"
+      },
+      "frames": 304,
+      "avgFps": 59.6,
+      "pctOver20ms": 0.7,
+      "p95ms": 16.7,
+      "maxMs": 33.4,
+      "wallMs": 5016,
+      "scrolledPx": 0,
+      "maxScrollY": 0,
+      "visEnd": "visible",
+      "focusEnd": true
+     },
+     {
+      "site": "reddit",
+      "url": "https://www.reddit.com/r/programming/",
+      "viewport": {
+       "w": 1400,
+       "h": 913,
+       "vis": "visible",
+       "focus": true,
+       "title": "programming"
+      },
+      "frames": 289,
+      "avgFps": 54.7,
+      "pctOver20ms": 6.2,
+      "p95ms": 33.3,
+      "maxMs": 133.3,
+      "wallMs": 5196,
+      "scrolledPx": 6799,
+      "maxScrollY": 8018,
+      "visEnd": "visible",
+      "focusEnd": true
+     },
+     {
+      "site": "wikipedia",
+      "url": "https://en.wikipedia.org/wiki/World_War_II",
+      "viewport": {
+       "w": 1400,
+       "h": 913,
+       "vis": "visible",
+       "focus": true,
+       "title": "World War II - Wikipedia"
+      },
+      "frames": 312,
+      "avgFps": 59.8,
+      "pctOver20ms": 0.6,
+      "p95ms": 16.7,
+      "maxMs": 33.3,
+      "wallMs": 5115,
+      "scrolledPx": 6903,
+      "maxScrollY": 52470,
+      "visEnd": "visible",
+      "focusEnd": true
+     }
+    ],
+    "windows": [
+     {
+      "class": "",
+      "title": "",
+      "size": [
+       1400,
+       913
+      ],
+      "at": [
+       260,
+       100
+      ],
+      "floating": true,
+      "workspace": "Work"
+     }
+    ]
+   },
+   {
+    "kind": "cef",
+    "conditions": {
+     "at": "2026-10-10T17:21:53.528Z",
+     "loadavg": "3.05 2.57 2.37 2/1466 3700397",
+     "acOnline": "1",
+     "battery": "Not charging",
+     "governor": "powersave",
+     "epp": "balance_power",
+     "platformProfile": "low-power",
+     "memAvailableKB": 8186884
+    },
+    "extraFlags": [
+     "--disable-renderer-backgrounding",
+     "--disable-background-timer-throttling",
+     "--disable-backgrounding-occluded-windows"
+    ],
+    "sites": [
+     {
+      "site": "youtube",
+      "url": "https://www.youtube.com/",
+      "viewport": {
+       "w": 1400,
+       "h": 913,
+       "vis": "visible",
+       "focus": true,
+       "title": "YouTube"
+      },
+      "frames": 228,
+      "avgFps": 43.2,
+      "pctOver20ms": 24.1,
+      "p95ms": 50,
+      "maxMs": 220,
+      "wallMs": 5196,
+      "scrolledPx": 6531,
+      "maxScrollY": 9027,
+      "visEnd": "visible",
+      "focusEnd": true
+     },
+     {
+      "site": "github",
+      "url": "https://github.com/rust-lang/rust",
+      "viewport": {
+       "w": 1400,
+       "h": 913,
+       "vis": "visible",
+       "focus": true,
+       "title": "GitHub - rust-lang/rust: Empowering everyone to build reliab"
+      },
+      "frames": 318,
+      "avgFps": 60.1,
+      "pctOver20ms": 0,
+      "p95ms": 16.7,
+      "maxMs": 16.8,
+      "wallMs": 5194,
+      "scrolledPx": 533,
+      "maxScrollY": 2689,
+      "visEnd": "visible",
+      "focusEnd": true
+     },
+     {
+      "site": "maps",
+      "url": "https://www.google.com/maps/@28.6139,77.209,13z",
+      "viewport": {
+       "w": 1400,
+       "h": 913,
+       "vis": "visible",
+       "focus": true,
+       "title": "Google Maps"
+      },
+      "frames": 304,
+      "avgFps": 59.6,
+      "pctOver20ms": 0.7,
+      "p95ms": 16.8,
+      "maxMs": 33.4,
+      "wallMs": 5020,
+      "scrolledPx": 0,
+      "maxScrollY": 0,
+      "visEnd": "visible",
+      "focusEnd": true
+     },
+     {
+      "site": "reddit",
+      "url": "https://www.reddit.com/r/programming/",
+      "viewport": {
+       "w": 1400,
+       "h": 913,
+       "vis": "visible",
+       "focus": true,
+       "title": "programming"
+      },
+      "frames": 306,
+      "avgFps": 57.9,
+      "pctOver20ms": 2.6,
+      "p95ms": 16.8,
+      "maxMs": 100,
+      "wallMs": 5202,
+      "scrolledPx": 6496,
+      "maxScrollY": 7591,
+      "visEnd": "visible",
+      "focusEnd": true
+     },
+     {
+      "site": "wikipedia",
+      "url": "https://en.wikipedia.org/wiki/World_War_II",
+      "viewport": {
+       "w": 1400,
+       "h": 913,
+       "vis": "visible",
+       "focus": true,
+       "title": "World War II - Wikipedia"
+      },
+      "frames": 317,
+      "avgFps": 60,
+      "pctOver20ms": 0.3,
+      "p95ms": 16.8,
+      "maxMs": 22.4,
+      "wallMs": 5184,
+      "scrolledPx": 6584,
+      "maxScrollY": 52470,
+      "visEnd": "visible",
+      "focusEnd": true
+     }
+    ],
+    "windows": [
+     {
+      "class": "",
+      "title": "",
+      "size": [
+       1400,
+       913
+      ],
+      "at": [
+       260,
+       100
+      ],
+      "floating": true,
+      "workspace": "Work"
+     }
+    ]
+   }
+  ],
+  "chrome": [
+   {
+    "kind": "chrome",
+    "conditions": {
+     "at": "2026-10-10T17:20:53.388Z",
+     "loadavg": "2.39 2.45 2.32 3/1457 3680889",
+     "acOnline": "1",
+     "battery": "Not charging",
+     "governor": "powersave",
+     "epp": "balance_power",
+     "platformProfile": "low-power",
+     "memAvailableKB": 8143208
+    },
+    "extraFlags": [
+     "--disable-renderer-backgrounding",
+     "--disable-background-timer-throttling",
+     "--disable-backgrounding-occluded-windows"
+    ],
+    "sites": [
+     {
+      "site": "youtube",
+      "url": "https://www.youtube.com/",
+      "viewport": {
+       "w": 1400,
+       "h": 913,
+       "vis": "visible",
+       "focus": false,
+       "title": "YouTube"
+      },
+      "frames": 320,
+      "avgFps": 60.1,
+      "pctOver20ms": 0,
+      "p95ms": 16.8,
+      "maxMs": 19.2,
+      "wallMs": 5227,
+      "scrolledPx": 0,
+      "maxScrollY": 0,
+      "visEnd": "visible",
+      "focusEnd": false
+     },
+     {
+      "site": "github",
+      "url": "https://github.com/rust-lang/rust",
+      "viewport": {
+       "w": 1400,
+       "h": 913,
+       "vis": "visible",
+       "focus": false,
+       "title": "GitHub - rust-lang/rust: Empowering everyone to build reliab"
+      },
+      "frames": 319,
+      "avgFps": 60.2,
+      "pctOver20ms": 0,
+      "p95ms": 16.8,
+      "maxMs": 16.8,
+      "wallMs": 5202,
+      "scrolledPx": 548,
+      "maxScrollY": 2689,
+      "visEnd": "visible",
+      "focusEnd": false
+     },
+     {
+      "site": "maps",
+      "url": "https://www.google.com/maps/@28.6139,77.209,13z",
+      "viewport": {
+       "w": 1400,
+       "h": 913,
+       "vis": "visible",
+       "focus": false,
+       "title": "Google Maps"
+      },
+      "frames": 308,
+      "avgFps": 60,
+      "pctOver20ms": 0,
+      "p95ms": 16.8,
+      "maxMs": 16.8,
+      "wallMs": 5026,
+      "scrolledPx": 0,
+      "maxScrollY": 0,
+      "visEnd": "visible",
+      "focusEnd": true
+     },
+     {
+      "site": "reddit",
+      "url": "https://www.reddit.com/r/programming/",
+      "viewport": {
+       "w": 1400,
+       "h": 913,
+       "vis": "visible",
+       "focus": true,
+       "title": "programming"
+      },
+      "frames": 280,
+      "avgFps": 49.4,
+      "pctOver20ms": 6.1,
+      "p95ms": 33.3,
+      "maxMs": 683.3,
+      "wallMs": 5585,
+      "scrolledPx": 6649,
+      "maxScrollY": 14016,
+      "visEnd": "visible",
+      "focusEnd": true
+     },
+     {
+      "site": "wikipedia",
+      "url": "https://en.wikipedia.org/wiki/World_War_II",
+      "viewport": {
+       "w": 1400,
+       "h": 913,
+       "vis": "visible",
+       "focus": true,
+       "title": "World War II - Wikipedia"
+      },
+      "frames": 315,
+      "avgFps": 59.9,
+      "pctOver20ms": 0.3,
+      "p95ms": 16.7,
+      "maxMs": 33.3,
+      "wallMs": 5160,
+      "scrolledPx": 6836,
+      "maxScrollY": 52470,
+      "visEnd": "visible",
+      "focusEnd": true
+     }
+    ],
+    "windows": [
+     {
+      "class": "google-chrome",
+      "title": "about:blank - Google Chrome",
+      "size": [
+       1400,
+       1000
+      ],
+      "at": [
+       260,
+       100
+      ],
+      "floating": true,
+      "workspace": "Work"
+     }
+    ]
+   },
+   {
+    "kind": "chrome",
+    "conditions": {
+     "at": "2026-10-10T17:22:56.138Z",
+     "loadavg": "2.71 2.62 2.40 2/1458 3720680",
+     "acOnline": "1",
+     "battery": "Not charging",
+     "governor": "powersave",
+     "epp": "balance_power",
+     "platformProfile": "low-power",
+     "memAvailableKB": 8170080
+    },
+    "extraFlags": [
+     "--disable-renderer-backgrounding",
+     "--disable-background-timer-throttling",
+     "--disable-backgrounding-occluded-windows"
+    ],
+    "sites": [
+     {
+      "site": "youtube",
+      "url": "https://www.youtube.com/",
+      "viewport": {
+       "w": 1400,
+       "h": 913,
+       "vis": "visible",
+       "focus": false,
+       "title": "YouTube"
+      },
+      "frames": 260,
+      "avgFps": 49.7,
+      "pctOver20ms": 6.5,
+      "p95ms": 33.4,
+      "maxMs": 116.7,
+      "wallMs": 5130,
+      "scrolledPx": 0,
+      "maxScrollY": 8,
+      "visEnd": "visible",
+      "focusEnd": true
+     },
+     {
+      "site": "github",
+      "url": "https://github.com/rust-lang/rust",
+      "viewport": {
+       "w": 1400,
+       "h": 913,
+       "vis": "visible",
+       "focus": true,
+       "title": "GitHub - rust-lang/rust: Empowering everyone to build reliab"
+      },
+      "frames": 312,
+      "avgFps": 60,
+      "pctOver20ms": 0.6,
+      "p95ms": 16.8,
+      "maxMs": 22.2,
+      "wallMs": 5106,
+      "scrolledPx": 441,
+      "maxScrollY": 2689,
+      "visEnd": "visible",
+      "focusEnd": true
+     },
+     {
+      "site": "maps",
+      "url": "https://www.google.com/maps/@28.6139,77.209,13z",
+      "viewport": {
+       "w": 1400,
+       "h": 913,
+       "vis": "visible",
+       "focus": true,
+       "title": "Google Maps"
+      },
+      "frames": 306,
+      "avgFps": 59.9,
+      "pctOver20ms": 0.3,
+      "p95ms": 16.8,
+      "maxMs": 22.2,
+      "wallMs": 5008,
+      "scrolledPx": 0,
+      "maxScrollY": 0,
+      "visEnd": "visible",
+      "focusEnd": true
+     },
+     {
+      "site": "reddit",
+      "url": "https://www.reddit.com/r/programming/",
+      "viewport": {
+       "w": 1400,
+       "h": 913,
+       "vis": "visible",
+       "focus": true,
+       "title": "programming"
+      },
+      "frames": 276,
+      "avgFps": 51.9,
+      "pctOver20ms": 2.5,
+      "p95ms": 16.8,
+      "maxMs": 616.6,
+      "wallMs": 5240,
+      "scrolledPx": 5992,
+      "maxScrollY": 14171,
+      "visEnd": "visible",
+      "focusEnd": true
+     },
+     {
+      "site": "wikipedia",
+      "url": "https://en.wikipedia.org/wiki/World_War_II",
+      "viewport": {
+       "w": 1400,
+       "h": 913,
+       "vis": "visible",
+       "focus": true,
+       "title": "World War II - Wikipedia"
+      },
+      "frames": 319,
+      "avgFps": 60.1,
+      "pctOver20ms": 0.3,
+      "p95ms": 16.8,
+      "maxMs": 22.7,
+      "wallMs": 5214,
+      "scrolledPx": 6530,
+      "maxScrollY": 52470,
+      "visEnd": "visible",
+      "focusEnd": true
+     }
+    ],
+    "windows": [
+     {
+      "class": "google-chrome",
+      "title": "about:blank - Google Chrome",
+      "size": [
+       1400,
+       1000
+      ],
+      "at": [
+       260,
+       100
+      ],
+      "floating": true,
+      "workspace": "Work"
+     }
+    ]
+   }
+  ]
+ },
+ "medians": {
+  "cef": {
+   "youtube": {
+    "avgFps": 44.55,
+    "pctOver20ms": 22.1,
+    "p95ms": 41.7
+   },
+   "github": {
+    "avgFps": 60,
+    "pctOver20ms": 0.15,
+    "p95ms": 16.75
+   },
+   "maps": {
+    "avgFps": 59.6,
+    "pctOver20ms": 0.7,
+    "p95ms": 16.75
+   },
+   "reddit": {
+    "avgFps": 56.3,
+    "pctOver20ms": 4.4,
+    "p95ms": 25.049999999999997
+   },
+   "wikipedia": {
+    "avgFps": 59.9,
+    "pctOver20ms": 0.44999999999999996,
+    "p95ms": 16.75
+   }
+  },
+  "chrome": {
+   "youtube": {
+    "avgFps": 54.900000000000006,
+    "pctOver20ms": 3.25,
+    "p95ms": 25.1
+   },
+   "github": {
+    "avgFps": 60.1,
+    "pctOver20ms": 0.3,
+    "p95ms": 16.8
+   },
+   "maps": {
+    "avgFps": 59.95,
+    "pctOver20ms": 0.15,
+    "p95ms": 16.8
+   },
+   "reddit": {
+    "avgFps": 50.65,
+    "pctOver20ms": 4.3,
+    "p95ms": 25.049999999999997
+   },
+   "wikipedia": {
+    "avgFps": 60,
+    "pctOver20ms": 0.3,
+    "p95ms": 16.75
+   }
+  }
+ },
+ "conditionsEnd": {
+  "at": "2026-10-10T17:23:55.337Z",
+  "loadavg": "2.03 2.47 2.36 15/1479 3740077",
+  "acOnline": "1",
+  "battery": "Not charging",
+  "governor": "powersave",
+  "epp": "balance_power",
+  "platformProfile": "low-power",
+  "memAvailableKB": 8130720
+ }
+}

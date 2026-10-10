@@ -6,7 +6,7 @@ session; update before ending one (rules in `AGENTS.md`).
 ## Now
 
 - **Phase:** 0 (spikes)
-- **Next action:** finish S9 (needs laptop on AC + `performance` profile): Speedometer ×3 each, scrolling, RSS tabs-vs-tabs. Then user session for S1/S3b leftovers + S7b decision → Phase 0 exit.
+- **Next action:** user session for S1/S3b leftovers + S7b decision → Phase 0 exit, then Phase 1 (Skeleton). Optional: S9b — find YouTube scroll jank cause.
 - **Blockers:** none
 
 ## Checklist
@@ -25,8 +25,9 @@ Each done item links its evidence (file, commit, or session-log date).
 - [x] S6 synthetic input — `Input.dispatchMouseEvent` / `insertText` (2026-10-10, `spikes/s5-s6/s6-input.mjs` over remote port: the-internet.herokuapp.com/login → "You logged into a secure area!", all events `isTrusted=true`). `insertText` sends no key events. Via `execute_dev_tools_method` not yet run (same CDP method; covered by S5b).
 - [x] S7 Alloy style enough — Google sign-in passes; permission + certificate handlers fire, no Chrome UI (2026-10-10, `spikes/s7-handlers/drive.sh`, logs `/tmp/s7-*.log`: notifications/geolocation/clipboard → `on_show_permission_prompt`, mic/cam → `on_request_media_access_permission`, page sees allow/deny; expired/self-signed badssl → `on_certificate_error` -201/-202; held prompt answered later works).
 - [ ] S7b decide cert-deny UX — on deny CEF shows Chrome's interstitial (`chrome-error://chromewebdata/`) whose "Proceed" link bypasses our handler. Options: own error page on load error, or accept it. Needs user decision before Phase 7.
+- [ ] S9b YouTube scroll jank in CEF (22% frames >20 ms vs Chrome 3%) — check codec (VP9/AV1 vs H.264), GPU raster, compare on cef 155.
 - [x] S8 renderer hooks — `on_context_created` + V8 fn + `on_focused_node_changed` round-trip (2026-10-10, `bash spikes/s8-renderer/drive.sh`, re-run by main session: `nova.send` → browser → `nova.reply` → page JS (`novaReplies=["ack:hello","ack:from-devtools"]`); focus msgs for input/password/textarea/contenteditable=editable, button/A not, blur → empty; works after navigation, in about:blank iframe and cross-site OOPIF).
-- [~] S9 baseline vs Chrome 155 — startup, idle RSS, Speedometer 3.1, scrolling. 2026-10-10, `spikes/s9-baseline/results/*.json`, same GPU path both (ANGLE GL, Intel Arc MTL, gpu_compositing enabled): startup to window median cefsimple 625 ms / s2 639 ms / Chrome 920 ms (n=5); idle PSS 5 heavy sites 60 s: cefsimple 1450 MB (separate windows) vs Chrome 1300 MB windows / 1100 MB tabs (+12–32%, n=3). Speedometer 3.1: CEF 10.3 vs Chrome 12.9 but both runs flagged invalid, on battery, `low-power` profile → not usable. Left: Speedometer ×3 on AC + performance profile, scrolling on 5 sites, RSS with s2 tabs (one window) for a fair tabs-vs-tabs number. Worker hit 30 min timeout.
+- [x] S9 baseline vs Chrome 155 — measured; CEF behind on Speedometer (−16%), memory (+12%), YouTube scroll; fallback written in Decisions. Run 2 (AC, EPP balance_power, identical anti-throttling flags, `results/speedometer2.json`, `results/scroll.json`): Speedometer 3.1 all 6 valid, CEF 14.3/14.1/14.3 vs Chrome 16.9/17.1/16.9 (median 14.3 vs 16.9); scroll avg FPS / % frames >20 ms, CEF vs Chrome: YouTube 44.6/22% vs 54.9/3%, GitHub 60/0.2% vs 60/0.3%, Maps 59.6/0.7% vs 60/0.2%, Reddit 56.3/4.4% vs 50.7/4.3%, Wikipedia 59.9/0.5% vs 60/0.3%. Run 1, 2026-10-10, `spikes/s9-baseline/results/*.json`, same GPU path both (ANGLE GL, Intel Arc MTL, gpu_compositing enabled): startup to window median cefsimple 625 ms / s2 639 ms / Chrome 920 ms (n=5); idle PSS 5 heavy sites 60 s: cefsimple 1450 MB (separate windows) vs Chrome 1300 MB windows / 1100 MB tabs (+12–32%, n=3). Speedometer 3.1: CEF 10.3 vs Chrome 12.9 but both runs flagged invalid, on battery, `low-power` profile → not usable. (run 1 Speedometer superseded by run 2).
 
 ### Phases 1–9 (PLAN.md §6; tick when the phase's exit check passes)
 - [ ] 1 Skeleton
@@ -42,6 +43,8 @@ Each done item links its evidence (file, commit, or session-log date).
 ## Decisions
 
 Newest first. Settled — don't reopen without new evidence.
+
+- 2026-10-10 — S9 verdict: CEF (Chromium 154) starts faster than Chrome 155 (625 vs 920 ms) but scores 16% lower on Speedometer 3.1, uses ~12% more memory (windows vs windows) and janks on YouTube scroll. Not a stop: the Electron fallback runs the same engine, so it would not fix an engine-version/config gap. Likely causes [guess]: V8 15.4 vs 15.5, Chrome's field-trial features absent in CEF, YouTube codec path (no H.264 → VP9/AV1). Re-measure Speedometer on the next `cef` bump to 155 before deciding more; S9b looks at YouTube.
 
 - 2026-10-10 — Tests that copy to the system clipboard need one real input event first (Wayland `set_selection` needs an input serial); CDP-only input can't. Use compositor `send_shortcut` in automated tests. `<select>` popup options can't be clicked via CDP mouse (events go to the page) — use keys.
 
@@ -74,7 +77,8 @@ Newest first. One entry per session: date, what changed, evidence, what's next.
 - Subagents had no `process` tool; they used `timeout`/`systemd-run --user` wrappers instead.
 - S7 pass (handlers fire, no Chrome UI); S7b cert-deny UX needs user decision. S1: `<select>` + clipboard pass automated; real-input checks left for user.
 - S9 partial: startup CEF faster than Chrome; idle memory 12–32% above Chrome; Speedometer runs invalid (battery, low-power profile). Worker timed out at 30 min; orphan cefsimple killed.
-- Next: finish S9 on AC, then user session (S1/S3b, S7b).
+- S9 run 2 (AC): Speedometer CEF 14.3 vs Chrome 16.9 (all valid; run-1 invalidity fixed by anti-throttling flags + focus), scrolling equal except YouTube. S9 closed with written verdict.
+- Next: user session (S1/S3b, S7b) → Phase 0 exit → Phase 1.
 
 ### 2026-10-10
 - Wrote PLAN.md (rev 1–3). Diagnosed qutebrowser slowness (ananicy nice 16 / idle I/O inherited from `ly-dm`).
