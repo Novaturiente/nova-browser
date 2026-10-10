@@ -1,7 +1,7 @@
-// usage: node cdp.mjs <expr-or-@screenshot> ; talks to first page target on :9333
+// usage: [CDP_PORT=9333] [T=<url substring>] node cdp.mjs <expr-or-@screenshot> ; first matching page target
 const [,, what, out] = process.argv;
-const list = await (await fetch("http://localhost:9333/json/list")).json();
-const page = list.find(t => t.type === "page");
+const list = await (await fetch(`http://localhost:${process.env.CDP_PORT ?? 9333}/json/list`)).json();
+const page = list.find(t => t.type === "page" && t.url.includes(process.env.T ?? ""));
 const ws = new WebSocket(page.webSocketDebuggerUrl);
 let id = 0; const pending = new Map();
 ws.onmessage = e => { const m = JSON.parse(e.data); pending.get(m.id)?.(m); };

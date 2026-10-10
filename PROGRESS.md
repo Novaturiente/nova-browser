@@ -6,7 +6,7 @@ session; update before ending one (rules in `AGENTS.md`).
 ## Now
 
 - **Phase:** 0 (spikes)
-- **Next action:** S2 — Views layout spike in `spikes/s2-layout/`.
+- **Next action:** launch spike batches in parallel — S2 + S3 + S8 (Rust) and S5 + S6 (DevTools); see AGENTS.md › Subagents.
 - **Blockers:** none
 
 ## Checklist
@@ -41,6 +41,7 @@ Each done item links its evidence (file, commit, or session-log date).
 Newest first. Settled — don't reopen without new evidence.
 
 - 2026-10-10 — Codecs: option C (prebuilt CEF, no H.264/AAC); revisit A (own build on novahome) before Phase 8. PLAN.md §0.2.
+- 2026-10-10 — Parallel work via subagents per AGENTS.md › Subagents; only the main session writes PROGRESS.md/PLAN.md and commits.
 - 2026-10-10 — Progress tracked in this file + git; project `AGENTS.md` holds the session rules.
 - 2026-10-10 — qutebrowser is a UX/code reference only; not fixing or keeping it.
 - 2026-10-10 — VPN-instance (`vpn-run`) setup is outdated; ignore it.
@@ -56,4 +57,5 @@ Newest first. One entry per session: date, what changed, evidence, what's next.
 - Cloned `cef-rs` to `../cef-rs` (commit 2861f69), `export-cef-dir` → `~/.local/share/cef` (CEF 154.0.34), built `cefsimple` (41 s).
 - Spikes: S4 pass, S7 Google sign-in pass, S1 basic pass. Found no H.264/AAC in prebuilt CEF → decision C.
 - Added PROGRESS.md, AGENTS.md, `spikes/cdp.mjs`; `git init`.
-- Next: S2.
+- Added Subagents section to AGENTS.md; `cdp.mjs` takes `CDP_PORT`.
+- Next: parallel batches S2+S3+S8 and S5+S6 (AGENTS.md › Subagents).

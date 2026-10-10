@@ -49,3 +49,40 @@ must match exactly).
 
 - Run GUI tests with the `process` tool (never `&`); stop them when done.
 - Codecs: prebuilt CEF has no H.264/AAC — expected, not a bug (PLAN.md §0.2).
+
+## Subagents (parallel work)
+
+The main session coordinates; subagents do bounded, independent pieces.
+Launch independent ones together with `async: true`.
+
+- **Only the main session writes `PROGRESS.md`, `PLAN.md` and commits.**
+  Subagents report back: result, pass/fail against the PLAN.md pass
+  condition, evidence (commands + output summary), files touched. The main
+  session verifies the evidence before ticking anything.
+- **What goes parallel:**
+  - Phase 0 spikes, in batches: S5 + S6 (DevTools only), S2 + S3 + S8 (Rust
+    changes to a `cefsimple` copy). S9 runs last and alone: concurrent builds
+    skew benchmarks.
+  - Pure-logic modules once their interface is fixed: key notation/trie,
+    URL patterns, command parser, config eval, history queries, adblock
+    wrapper. Each is a qutebrowser port with its test table; done = `cargo
+    test` green. `worker` agent.
+  - Phase-end review (`reviewer`) and clean-room testing (fresh subagent given
+    only the spec and run instructions).
+- **What stays in the main session:** CEF glue (window, tabs, input,
+  renderer bridge) — each phase builds on the previous one; splitting it means
+  merge conflicts.
+- **Isolation per spike/worker** — no shared mutable state:
+  - own dir `spikes/sN-<name>/` with its own Cargo project and `target/`
+    (depend on `cef = { path = "../../../cef-rs/cef" }`); never build inside
+    `../cef-rs` in parallel (one cargo lock serialises everyone);
+  - own DevTools port `93NN` (S2 → 9302, S5 → 9305, …) and own
+    `--root-cache-path=/tmp/novabrowser-sN`; probe with
+    `CDP_PORT=93NN node spikes/cdp.mjs …`;
+  - code changes outside `spikes/` → a git worktree per worker.
+- **Limits:** at most 3 concurrent Rust builds (15 GB RAM). Checks that need a
+  human (sign-in, HiDPI, feel) are listed in the report as "needs user", not
+  guessed.
+- Each launch prompt includes: the spike/module, its pass condition copied
+  from PLAN.md, the isolation values above, and "don't edit PROGRESS.md,
+  PLAN.md or commit".
