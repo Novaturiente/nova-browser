@@ -1,0 +1,166 @@
+//! CEF clients: `TabClient` for web pages, `UiClient` for our bars.
+//! Only `UiClient` handles `nova.send`, so web pages can't drive the browser.
+use crate::window;
+use cef::*;
+use std::cell::Cell;
+
+thread_local! {
+    static OPEN: Cell<i32> = const { Cell::new(0) };
+    /// Disposition of the popup being created (on_before_popup → on_popup_browser_view_created).
+    static BACKGROUND_POPUP: Cell<bool> = const { Cell::new(false) };
+}
+
+pub fn take_background_popup() -> bool {
+    BACKGROUND_POPUP.replace(false)
+}
+
+fn new_tab_disposition(d: WindowOpenDisposition) -> Option<bool> {
+    // Some(foreground)
+    if d == WindowOpenDisposition::NEW_BACKGROUND_TAB {
+        Some(false)
+    } else if d == WindowOpenDisposition::NEW_FOREGROUND_TAB
+        || d == WindowOpenDisposition::NEW_WINDOW
+        || d == WindowOpenDisposition::NEW_POPUP
+    {
+        Some(true)
+    } else {
+        None
+    }
+}
+
+wrap_task! {
+    struct OpenTab { url: String, foreground: bool }
+    impl Task {
+        fn execute(&self) { window::open(&self.url, self.foreground); }
+    }
+}
+
+wrap_client! {
+    pub struct TabClient {}
+    impl Client {
+        fn display_handler(&self) -> Option<DisplayHandler> { Some(TabDisplay::new()) }
+        fn load_handler(&self) -> Option<LoadHandler> { Some(TabLoad::new()) }
+        fn life_span_handler(&self) -> Option<LifeSpanHandler> { Some(NovaLifeSpan::new()) }
+        fn request_handler(&self) -> Option<RequestHandler> { Some(TabRequest::new()) }
+        fn keyboard_handler(&self) -> Option<KeyboardHandler> { Some(TabKeys::new()) }
+    }
+}
+
+wrap_client! {
+    pub struct UiClient {}
+    impl Client {
+        fn life_span_handler(&self) -> Option<LifeSpanHandler> { Some(NovaLifeSpan::new()) }
+        fn on_process_message_received(
+            &self,
+            _browser: Option<&mut Browser>,
+            _frame: Option<&mut Frame>,
+            _source: ProcessId,
+            message: Option<&mut ProcessMessage>,
+        ) -> ::std::os::raw::c_int {
+            let Some(message) = message else { return 0 };
+            if CefString::from(&message.name()).to_string() != "nova.send" { return 0; }
+            let text = message.argument_list().map(|l| CefString::from(&l.string(0)).to_string()).unwrap_or_default();
+            let (cmd, arg) = text.split_once(' ').unwrap_or((&text, ""));
+            match (cmd, arg.parse::<usize>()) {
+                ("ready", _) => window::refresh(),
+                ("tab", Ok(n)) => window::show(n),
+                ("close", Ok(n)) => window::close(n),
+                _ => eprintln!("novabrowser: unknown UI message {text:?}"),
+            }
+            1
+        }
+    }
+}
+
+wrap_display_handler! {
+    struct TabDisplay {}
+    impl DisplayHandler {
+        fn on_address_change(&self, browser: Option<&mut Browser>, frame: Option<&mut Frame>, url: Option<&CefString>) {
+            let (Some(b), Some(f), Some(url)) = (browser, frame, url) else { return };
+            if f.is_main() != 0 { window::set_url(b, url.to_string()); }
+        }
+        fn on_title_change(&self, browser: Option<&mut Browser>, title: Option<&CefString>) {
+            if let (Some(b), Some(t)) = (browser, title) { window::set_title(b, t.to_string()); }
+        }
+        fn on_loading_progress_change(&self, browser: Option<&mut Browser>, progress: f64) {
+            if let Some(b) = browser { window::set_progress(b, progress); }
+        }
+    }
+}
+
+wrap_load_handler! {
+    struct TabLoad {}
+    impl LoadHandler {
+        fn on_loading_state_change(&self, browser: Option<&mut Browser>, is_loading: ::std::os::raw::c_int, _back: ::std::os::raw::c_int, _fwd: ::std::os::raw::c_int) {
+            if let Some(b) = browser { window::set_loading(b, is_loading != 0); }
+        }
+    }
+}
+
+wrap_request_handler! {
+    struct TabRequest {}
+    impl RequestHandler {
+        fn on_open_urlfrom_tab(&self, _browser: Option<&mut Browser>, _frame: Option<&mut Frame>, target_url: Option<&CefString>, target_disposition: WindowOpenDisposition, _user_gesture: ::std::os::raw::c_int) -> ::std::os::raw::c_int {
+            // Middle-click / ctrl+click: CEF would otherwise navigate the source tab.
+            let (Some(url), Some(foreground)) = (target_url, new_tab_disposition(target_disposition)) else { return 0 };
+            // Don't create browsers from inside a navigation callback; do it next on the UI loop.
+            post_task(ThreadId::UI, Some(&mut OpenTab::new(url.to_string(), foreground)));
+            1
+        }
+        fn on_render_process_terminated(&self, browser: Option<&mut Browser>, status: TerminationStatus, error_code: ::std::os::raw::c_int, _error_string: Option<&CefString>) {
+            let Some(b) = browser else { return };
+            let why = if status == TerminationStatus::PROCESS_WAS_KILLED { "killed".to_string() }
+                else if status == TerminationStatus::PROCESS_OOM { "out of memory".to_string() }
+                else { format!("exit code {error_code}") };
+            window::crashed(b, &why);
+        }
+    }
+}
+
+wrap_keyboard_handler! {
+    struct TabKeys {}
+    impl KeyboardHandler {
+        fn on_pre_key_event(&self, browser: Option<&mut Browser>, event: Option<&KeyEvent>, _os_event: Option<&mut sys::_XEvent>, _is_shortcut: Option<&mut ::std::os::raw::c_int>) -> ::std::os::raw::c_int {
+            // shortcut: only `r` on a crashed tab until Phase 2 brings modes and the keymap
+            const VK_R: i32 = 0x52;
+            const MODS: u32 = 0x2 | 0x4 | 0x8 | 0x80; // shift ctrl alt command
+            let (Some(b), Some(e)) = (browser, event) else { return 0 };
+            let plain_r = e.type_ == KeyEventType::RAWKEYDOWN && e.windows_key_code == VK_R && e.modifiers & MODS == 0;
+            (plain_r && window::reload_crashed(b)) as i32
+        }
+    }
+}
+
+wrap_life_span_handler! {
+    struct NovaLifeSpan {}
+    impl LifeSpanHandler {
+        fn on_before_popup(
+            &self,
+            _browser: Option<&mut Browser>,
+            _frame: Option<&mut Frame>,
+            _popup_id: ::std::os::raw::c_int,
+            _target_url: Option<&CefString>,
+            _target_frame_name: Option<&CefString>,
+            target_disposition: WindowOpenDisposition,
+            _user_gesture: ::std::os::raw::c_int,
+            _popup_features: Option<&PopupFeatures>,
+            _window_info: Option<&mut WindowInfo>,
+            _client: Option<&mut Option<Client>>,
+            _settings: Option<&mut BrowserSettings>,
+            _extra_info: Option<&mut Option<DictionaryValue>>,
+            _no_javascript_access: Option<&mut ::std::os::raw::c_int>,
+        ) -> ::std::os::raw::c_int {
+            // Allow it: CEF then hands us the popup's BrowserView, which becomes a tab
+            // (window.rs adopt_popup) and keeps window.opener working.
+            BACKGROUND_POPUP.set(target_disposition == WindowOpenDisposition::NEW_BACKGROUND_TAB);
+            0
+        }
+        fn on_after_created(&self, _browser: Option<&mut Browser>) {
+            OPEN.set(OPEN.get() + 1);
+        }
+        fn on_before_close(&self, _browser: Option<&mut Browser>) {
+            OPEN.set(OPEN.get() - 1);
+            if OPEN.get() == 0 { quit_message_loop(); }
+        }
+    }
+}

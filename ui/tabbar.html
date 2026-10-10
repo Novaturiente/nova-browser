@@ -1,0 +1,30 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>tabbar</title>
+<style>
+  body { margin: 0; height: 24px; display: flex; overflow: hidden; background: #222; color: #bbb;
+         font: 12px sans-serif; user-select: none; cursor: default; }
+  .t { flex: 0 1 220px; min-width: 0; padding: 5px 8px; white-space: nowrap; overflow: hidden;
+       text-overflow: ellipsis; border-right: 1px solid #333; }
+  .t.a { background: #444; color: #fff; }
+  .t.l::before { content: "\27F3  "; }
+</style>
+<body>
+<script>
+  // Core → UI: nova.apply({tabs: [{t: title, a: active, l: loading}]}).
+  nova.apply = (s) => {
+    document.body.replaceChildren(...s.tabs.map((tab, i) => {
+      const d = document.createElement("div");
+      d.className = "t" + (tab.a ? " a" : "") + (tab.l ? " l" : "");
+      d.textContent = `${i + 1}: ${tab.t}`;
+      d.title = tab.t;
+      d.onmousedown = (e) => {
+        if (e.button === 0) nova.send("tab " + i);
+        if (e.button === 1) { e.preventDefault(); nova.send("close " + i); }
+      };
+      return d;
+    }));
+  };
+  nova.send("ready");
+</script>
+</body>

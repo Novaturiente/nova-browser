@@ -1,0 +1,23 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>statusbar</title>
+<style>
+  body { margin: 0; height: 24px; display: flex; align-items: center; overflow: hidden; background: #000;
+         color: #ddd; font: 12px monospace; }
+  #url { flex: 1; min-width: 0; padding: 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #url.crashed { color: #f66; }
+  #prog { padding: 0 6px; color: #8c8; }
+</style>
+<body>
+<span id="url"></span><span id="prog"></span>
+<script>
+  // Core → UI: nova.apply({url, p: 0..1, loading, crashed}).
+  const url = document.getElementById("url"), prog = document.getElementById("prog");
+  nova.apply = (s) => {
+    url.textContent = (s.crashed ? "[crashed] " : "") + s.url;
+    url.className = s.crashed ? "crashed" : "";
+    prog.textContent = s.loading ? `[${Math.round(s.p * 100)}%]` : "";
+  };
+  nova.send("ready");
+</script>
+</body>
