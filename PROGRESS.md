@@ -17,7 +17,8 @@ Each done item links its evidence (file, commit, or session-log date).
 ### Phase 0 — spikes (PLAN.md §6)
 - [~] S1 native Wayland — renders natively (2026-10-10). Left: HiDPI, clipboard, `<select>`.
 - [x] S2 Views layout — tabbar + content panel + statusbar + overlay; tab swap keeps state (2026-10-10, `spikes/s2-layout`: bars 24 px, content flex 752 px, overlay 600×120 docked above statusbar and toggles; after swap 1→0 Wikipedia `scrollY` 1500 and JS var kept, hidden tab reports `visibilityState=hidden`).
-- [ ] S3 key interception — `on_pre_key_event` consumes keys in an Alloy BrowserView on Wayland.
+- [x] S3 key interception — `on_pre_key_event` consumes keys in an Alloy BrowserView on Wayland (2026-10-10, `spikes/s3-keys/run.sh`, real Wayland keys via `wtype`: `j`/`k`/Esc consumed → page gets no keydown/keypress/keyup, input value `"abx"` from `ajkb<Esc>xq`; works with input or body focused; repeats consumed too).
+- [ ] S3b needs user: real keyboard — Shift+letter chars, `e.code`/`native_key_code`, Escape-KEYUP asymmetry, key-repeat feel, IME/compose (no fcitx/ibus here).
 - [x] S4 VA-API — hw decode H.264/VP8/VP9/AV1 listed, AV1 YouTube smooth (2026-10-10).
 - [x] S5 per-site dark mode — `Emulation.setAutoDarkModeOverride` per tab (2026-10-10, `spikes/s5-s6/s5-darkmode.mjs`, two targets in one cefsimple: override on A → A luma 241→43, B stays 241; survives reload + navigation; with `--enable-features=WebContentsForceDark`, `{enabled:false}` lights only A).
 - [ ] S5b override lifetime via `execute_dev_tools_method` — CDP override dies with its DevTools session; check whether CEF's in-process `execute_dev_tools_method` keeps it alive (else need `add_dev_tools_message_observer`/persistent session per tab).
@@ -40,6 +41,8 @@ Each done item links its evidence (file, commit, or session-log date).
 ## Decisions
 
 Newest first. Settled — don't reopen without new evidence.
+
+- 2026-10-10 — Key handling (S3): consume by returning 1 on RAWKEYDOWN in `on_pre_key_event` (CHAR/KEYUP then dropped). Don't expect a KEYUP per keydown. Mask `mods` bits 0x2000 (repeat), caps/num-lock. Ctrl+letter has `character`=control code → match on `windows_key_code`. `os_event` is null on Wayland. Don't trust `focus_on_editable_field` for insert mode (wrong on autofocus) → track focus from renderer (S8). `is_keyboard_shortcut=1` gives "page first, browser if unhandled" via `on_key_event`.
 
 - 2026-10-10 — Dark mode design: start with `--enable-features=WebContentsForceDark`, per-site exclusion = `Emulation.setAutoDarkModeOverride {enabled:false}` on that tab. Override is per tab (survives reload/navigation, so re-apply per site on each navigation) and lasts only as long as the DevTools session that set it. Pages can't detect it; verify with screenshots.
 
