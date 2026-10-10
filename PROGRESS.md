@@ -16,7 +16,7 @@ Each done item links its evidence (file, commit, or session-log date).
 
 ### Phase 0 — spikes (PLAN.md §6)
 - [~] S1 native Wayland — renders natively (2026-10-10). Left: HiDPI, clipboard, `<select>`.
-- [ ] S2 Views layout — tabbar + content panel + statusbar + overlay; tab swap keeps state.
+- [x] S2 Views layout — tabbar + content panel + statusbar + overlay; tab swap keeps state (2026-10-10, `spikes/s2-layout`: bars 24 px, content flex 752 px, overlay 600×120 docked above statusbar and toggles; after swap 1→0 Wikipedia `scrollY` 1500 and JS var kept, hidden tab reports `visibilityState=hidden`).
 - [ ] S3 key interception — `on_pre_key_event` consumes keys in an Alloy BrowserView on Wayland.
 - [x] S4 VA-API — hw decode H.264/VP8/VP9/AV1 listed, AV1 YouTube smooth (2026-10-10).
 - [ ] S5 per-site dark mode — `Emulation.setAutoDarkModeOverride` per tab.
@@ -39,6 +39,9 @@ Each done item links its evidence (file, commit, or session-log date).
 ## Decisions
 
 Newest first. Settled — don't reopen without new evidence.
+
+- 2026-10-10 — Views sizing: `ViewDelegate::preferred_size` must return non-zero width AND height (0 → `gfx::Size` empty → CEF uses the default, i.e. the whole window). Docked overlays (`add_overlay_view`) size from the contents view's preferred size; `set_size` is ignored. Window `child_view_count` includes the overlay host, which `child_view_at` returns as None.
+- 2026-10-10 — Tabs: one BrowserView per tab, swapped in/out of a fill-layout content Panel + `was_hidden`; a detached tab's browser is created only when first attached and must be closed by hand on window destroy.
 
 - 2026-10-10 — Codecs: option C (prebuilt CEF, no H.264/AAC); revisit A (own build on novahome) before Phase 8. PLAN.md §0.2.
 - 2026-10-10 — Parallel work via subagents per AGENTS.md › Subagents; only the main session writes PROGRESS.md/PLAN.md and commits.

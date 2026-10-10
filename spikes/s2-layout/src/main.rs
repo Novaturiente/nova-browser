@@ -31,9 +31,9 @@ fn bar_html(text: &str, bg: &str) -> String {
     )
 }
 
-fn browser_view(url: &CefString, height: i32) -> BrowserView {
+fn browser_view(url: &CefString, width: i32, height: i32) -> BrowserView {
     let mut client = NovaClient::new();
-    let mut delegate = NovaBrowserViewDelegate::new(height);
+    let mut delegate = NovaBrowserViewDelegate::new(width, height);
     browser_view_create(
         Some(&mut client),
         Some(url),
@@ -77,9 +77,24 @@ fn dump() {
             w.bounds(),
             w.child_view_count()
         );
-        for i in 0..3 {
-            let v = w.child_view_at(i).unwrap();
-            eprintln!("s2:  child {i} {:?} visible {}", v.bounds(), v.is_visible());
+        for i in 0..w.child_view_count() as i32 {
+            // count includes the overlay host, which child_view_at doesn't return.
+            let Some(v) = w.child_view_at(i) else { continue };
+            eprintln!(
+                "s2:  child {i} {:?} pref {:?} visible {} {}",
+                v.bounds(),
+                v.preferred_size(),
+                v.is_visible(),
+                CefString::from(&v.to_string(0))
+            );
+        }
+        if let Some(o) = &ui.overlay {
+            eprintln!(
+                "s2: overlay {:?} visible {} view {:?}",
+                o.bounds(),
+                o.is_visible(),
+                o.contents_view().map(|v| (v.bounds(), v.is_visible(), v.is_drawn()))
+            );
         }
         eprintln!(
             "s2: content child {:?}",
@@ -138,11 +153,12 @@ wrap_life_span_handler! {
 }
 
 wrap_browser_view_delegate! {
-    struct NovaBrowserViewDelegate { height: i32 }
+    struct NovaBrowserViewDelegate { width: i32, height: i32 }
     impl ViewDelegate {
         fn preferred_size(&self, _view: Option<&mut View>) -> Size {
-            eprintln!("s2: preferred_size h={}", self.height);
-            Size { width: 0, height: self.height }
+            // A 0 width/height makes the size "empty" and CEF falls back to the default (whole window).
+            // Docked overlays also take their size from here, not from set_size().
+            Size { width: self.width, height: self.height }
         }
     }
     impl BrowserViewDelegate {
@@ -167,14 +183,14 @@ wrap_window_delegate! {
                 }))
                 .unwrap();
 
-            let tabbar = browser_view(&data_url(&bar_html("[0] wikipedia &nbsp; [1] example", "#333")), BAR_H);
+            let tabbar = browser_view(&data_url(&bar_html("[0] wikipedia &nbsp; [1] example", "#333")), 1, BAR_H);
             let content = panel_create(None).unwrap();
             content.set_to_fill_layout();
-            let status = browser_view(&data_url(&bar_html("-- NORMAL -- s2 spike", "#000")), BAR_H);
+            let status = browser_view(&data_url(&bar_html("-- NORMAL -- s2 spike", "#000")), 1, BAR_H);
 
             let tabs = vec![
-                browser_view(&CefString::from("https://en.wikipedia.org/wiki/Rust_(programming_language)"), 0),
-                browser_view(&CefString::from("https://example.com/"), 0),
+                browser_view(&CefString::from("https://en.wikipedia.org/wiki/Rust_(programming_language)"), 1, 1),
+                browser_view(&CefString::from("https://example.com/"), 1, 1),
             ];
             content.add_child_view(Some(&mut View::from(&tabs[0])));
 
@@ -185,13 +201,13 @@ wrap_window_delegate! {
 
             let completion = browser_view(
                 &data_url(&bar_html("completion overlay<br>:open<br>:tab-close<br>:quit", "#1d3557")),
-                0,
+                600,
+                120,
             );
             let overlay = window
                 .add_overlay_view(Some(&mut View::from(&completion)), DockingMode::BOTTOM_LEFT, 0)
                 .unwrap();
             overlay.set_insets(Some(&Insets { bottom: BAR_H, ..Default::default() }));
-            overlay.set_size(Some(&Size { width: 600, height: 120 }));
             overlay.set_visible(1);
 
             UI.with_borrow_mut(|ui| {
