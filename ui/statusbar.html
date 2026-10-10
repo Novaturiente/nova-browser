@@ -4,20 +4,48 @@
 <style>
   body { margin: 0; height: 24px; display: flex; align-items: center; overflow: hidden; background: #000;
          color: #ddd; font: 12px monospace; }
-  #url { flex: 1; min-width: 0; padding: 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  span { padding: 0 6px; white-space: nowrap; }
+  #mode { color: #8c8; }
+  #msg { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  #msg.error { color: #f66; } #msg.warning { color: #fc6; }
+  #cmd { flex: 1; min-width: 0; display: none; background: transparent; color: #fff; border: 0; outline: 0;
+         font: inherit; padding: 0 6px; }
+  body.command #cmd { display: block; } body.command #msg { display: none; }
+  #url { max-width: 60%; overflow: hidden; text-overflow: ellipsis; }
   #url.crashed { color: #f66; }
-  #prog { padding: 0 6px; color: #8c8; }
+  #keys { color: #fc6; } #prog { color: #8c8; }
 </style>
 <body>
-<span id="url"></span><span id="prog"></span>
+<span id="mode"></span><input id="cmd" spellcheck="false"><span id="msg"></span>
+<span id="keys"></span><span id="url"></span><span id="tab"></span><span id="prog"></span>
 <script>
-  // Core → UI: nova.apply({url, p: 0..1, loading, crashed}).
-  const url = document.getElementById("url"), prog = document.getElementById("prog");
+  // Core → UI: nova.apply({url, p, loading, crashed, mode, cmd, keys, level, msg, tab}).
+  const $ = (id) => document.getElementById(id);
   nova.apply = (s) => {
-    url.textContent = (s.crashed ? "[crashed] " : "") + s.url;
-    url.className = s.crashed ? "crashed" : "";
-    prog.textContent = s.loading ? `[${Math.round(s.p * 100)}%]` : "";
+    document.body.className = s.cmd ? "command" : "";
+    $("mode").textContent = s.mode;
+    $("msg").textContent = s.msg;
+    $("msg").className = s.level;
+    $("keys").textContent = s.keys;
+    $("url").textContent = (s.crashed ? "[crashed] " : "") + s.url;
+    $("url").className = s.crashed ? "crashed" : "";
+    $("tab").textContent = s.tab;
+    $("prog").textContent = s.loading ? `[${Math.round(s.p * 100)}%]` : "";
   };
+  // cmd-set-text: show the input with text, cursor at the end.
+  nova.cmdline = (text) => {
+    document.body.className = "command";
+    const c = $("cmd");
+    c.value = text;
+    c.focus();
+    c.setSelectionRange(text.length, text.length);
+  };
+  // shortcut: Enter/Escape only; readline keys, history and completion come in Phase 3
+  $("cmd").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); nova.send("run " + $("cmd").value); }
+    else if (e.key === "Escape" || (e.key === "[" && e.ctrlKey)) { e.preventDefault(); nova.send("cmdleave"); }
+    else if (e.key === "Backspace" && $("cmd").value === "") { e.preventDefault(); nova.send("cmdleave"); }
+  });
   nova.send("ready");
 </script>
 </body>

@@ -51,5 +51,15 @@ wrap_render_process_handler! {
             nova.set_value_bykey(Some(&s("send")), Some(&mut send), V8Propertyattribute::default());
             global.set_value_bykey(Some(&s("nova")), Some(&mut nova), V8Propertyattribute::default());
         }
+
+        /// Auto insert mode (S8): report whether the newly focused node is editable.
+        fn on_focused_node_changed(&self, browser: Option<&mut Browser>, frame: Option<&mut Frame>, node: Option<&mut Domnode>) {
+            let editable = node.is_some_and(|n| n.is_editable() != 0);
+            // frame is None when focus leaves every focusable node
+            let Some(frame) = frame.map(|f| f.clone()).or_else(|| browser.and_then(|b| b.main_frame())) else { return };
+            let msg = process_message_create(Some(&s("nova.focus"))).expect("process_message_create");
+            msg.argument_list().expect("argument_list").set_bool(0, editable as i32);
+            frame.send_process_message(ProcessId::BROWSER, Some(&mut msg.clone()));
+        }
     }
 }

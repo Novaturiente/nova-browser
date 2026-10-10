@@ -1,6 +1,6 @@
 //! CEF clients: `TabClient` for web pages, `UiClient` for our bars.
 //! Only `UiClient` handles `nova.send`, so web pages can't drive the browser.
-use crate::window;
+use crate::{commands, modes, window};
 use cef::*;
 use std::cell::Cell;
 
@@ -43,6 +43,22 @@ wrap_client! {
         fn life_span_handler(&self) -> Option<LifeSpanHandler> { Some(NovaLifeSpan::new()) }
         fn request_handler(&self) -> Option<RequestHandler> { Some(TabRequest::new()) }
         fn keyboard_handler(&self) -> Option<KeyboardHandler> { Some(TabKeys::new()) }
+        fn on_process_message_received(
+            &self,
+            browser: Option<&mut Browser>,
+            _frame: Option<&mut Frame>,
+            _source: ProcessId,
+            message: Option<&mut ProcessMessage>,
+        ) -> ::std::os::raw::c_int {
+            // Only focus reports from renderer.rs; worst a page can do is toggle insert mode.
+            let (Some(b), Some(m)) = (browser, message) else { return 0 };
+            if CefString::from(&m.name()).to_string() != "nova.focus" { return 0; }
+            let active = window::active_browser().is_some_and(|a| a.identifier() == b.identifier());
+            if active {
+                modes::on_focus(m.argument_list().is_some_and(|l| l.bool(0) != 0));
+            }
+            1
+        }
     }
 }
 
@@ -65,6 +81,8 @@ wrap_client! {
                 ("ready", _) => window::refresh(),
                 ("tab", Ok(n)) => window::show(n),
                 ("close", Ok(n)) => window::close(n),
+                ("run", _) => { window::close_cmdline(); commands::run(arg, None); }
+                ("cmdleave", _) => window::close_cmdline(),
                 _ => eprintln!("novabrowser: unknown UI message {text:?}"),
             }
             1
@@ -121,12 +139,10 @@ wrap_keyboard_handler! {
     struct TabKeys {}
     impl KeyboardHandler {
         fn on_pre_key_event(&self, browser: Option<&mut Browser>, event: Option<&KeyEvent>, _os_event: Option<&mut sys::_XEvent>, _is_shortcut: Option<&mut ::std::os::raw::c_int>) -> ::std::os::raw::c_int {
-            // shortcut: only `r` on a crashed tab until Phase 2 brings modes and the keymap
-            const VK_R: i32 = 0x52;
-            const MODS: u32 = 0x2 | 0x4 | 0x8 | 0x80; // shift ctrl alt command
-            let (Some(b), Some(e)) = (browser, event) else { return 0 };
-            let plain_r = e.type_ == KeyEventType::RAWKEYDOWN && e.windows_key_code == VK_R && e.modifiers & MODS == 0;
-            (plain_r && window::reload_crashed(b)) as i32
+            // Decide on RAWKEYDOWN only; consuming it makes Chromium drop the CHAR/KEYUP (S3).
+            let (Some(_), Some(e)) = (browser, event) else { return 0 };
+            if e.type_ != KeyEventType::RAWKEYDOWN { return 0; }
+            modes::on_key(e.windows_key_code, e.character, e.modifiers) as i32
         }
     }
 }
@@ -155,6 +171,10 @@ wrap_life_span_handler! {
             BACKGROUND_POPUP.set(target_disposition == WindowOpenDisposition::NEW_BACKGROUND_TAB);
             0
         }
+        // A closing tab must never close the window (CEF's default for Views), and a
+        // detached tab has no window: CloseHostWindow then hits a CHECK. We finish the
+        // close ourselves by dropping the removed BrowserView (window.rs close()).
+        fn do_close(&self, _browser: Option<&mut Browser>) -> ::std::os::raw::c_int { 1 }
         fn on_after_created(&self, _browser: Option<&mut Browser>) {
             OPEN.set(OPEN.get() + 1);
         }

@@ -6,7 +6,7 @@ session; update before ending one (rules in `AGENTS.md`).
 ## Now
 
 - **Phase:** 0 (spikes)
-- **Next action:** Phase 1 (Skeleton) per PLAN.md §6. Deferred, not blocking: HiDPI (S1), IME (S3b), S9b YouTube jank.
+- **Next action:** Phase 2 (Modal core) per PLAN.md §6: start with the pure-logic key notation/trie port (`worker`-able, qutebrowser `keyutils` test table). Deferred, not blocking: HiDPI (S1), IME (S3b), S9b YouTube jank, own CEF build (allocator + codecs).
 - **Blockers:** none
 
 ## Checklist
@@ -30,7 +30,7 @@ Each done item links its evidence (file, commit, or session-log date).
 - [x] S9 baseline vs Chrome 155 — measured; CEF behind on Speedometer (−16%), memory (+12%), YouTube scroll; fallback written in Decisions. Run 2 (AC, EPP balance_power, identical anti-throttling flags, `results/speedometer2.json`, `results/scroll.json`): Speedometer 3.1 all 6 valid, CEF 14.3/14.1/14.3 vs Chrome 16.9/17.1/16.9 (median 14.3 vs 16.9); scroll avg FPS / % frames >20 ms, CEF vs Chrome: YouTube 44.6/22% vs 54.9/3%, GitHub 60/0.2% vs 60/0.3%, Maps 59.6/0.7% vs 60/0.2%, Reddit 56.3/4.4% vs 50.7/4.3%, Wikipedia 59.9/0.5% vs 60/0.3%. Run 1, 2026-10-10, `spikes/s9-baseline/results/*.json`, same GPU path both (ANGLE GL, Intel Arc MTL, gpu_compositing enabled): startup to window median cefsimple 625 ms / s2 639 ms / Chrome 920 ms (n=5); idle PSS 5 heavy sites 60 s: cefsimple 1450 MB (separate windows) vs Chrome 1300 MB windows / 1100 MB tabs (+12–32%, n=3). Speedometer 3.1: CEF 10.3 vs Chrome 12.9 but both runs flagged invalid, on battery, `low-power` profile → not usable. (run 1 Speedometer superseded by run 2).
 
 ### Phases 1–9 (PLAN.md §6; tick when the phase's exit check passes)
-- [ ] 1 Skeleton
+- [x] 1 Skeleton (2026-10-11; `src/{main,window,client,renderer}.rs`, `ui/{tabbar,statusbar}.html`). Exit check: CDP-driven trusted mouse + user by hand — links, `target=_blank` and `window.open` → new tab (opener kept), middle-click link → background tab, click/middle-click tab bar → switch/close, status bar URL + progress, window title; web pages get no `window.nova`. `kill -9` of the tab's renderer (found by CPU-time delta via `SystemInfo.getProcessInfo`) → crash page with URL, status `[crashed] …`; real `r` (compositor `send_shortcut`) reloads; `r` types normally elsewhere (user). Mod+Q closes; exits 0 with a detached tab open, no leftover processes. `cargo test`: js_str escaping. Scripts: `/tmp/nova-p1/{drive,crash,bg}.mjs` (not kept). Not done here: hang watchdog, atomic writes (nothing writes yet), log rotation — later phases.
 - [ ] 2 Modal core
 - [ ] 3 Command line, completion, history
 - [ ] 4 Hints and search
@@ -43,6 +43,9 @@ Each done item links its evidence (file, commit, or session-log date).
 ## Decisions
 
 Newest first. Settled — don't reopen without new evidence.
+
+- 2026-10-11 — cef-rs gotcha: every default trait method returning `c_int` returns 0, even where CEF's C++ default is true. `WindowDelegate::can_close/can_resize/can_maximize/can_minimize` must be overridden to 1 (else Mod+Q does nothing). Check this for any new handler with a bool return.
+- 2026-10-11 — Phase 1 shape: popups are allowed in `on_before_popup` and adopted as tabs in `on_popup_browser_view_created` (keeps `window.opener`); middle/ctrl-click comes via `on_open_urlfrom_tab` (return 1 + `post_task` open). UI ↔ core: UI pages are `data:` URLs from `ui/*.html` (`include_str!`); `window.nova` is installed only in `data:` frames and only `UiClient` handles `nova.send`; core → UI via `nova.apply(json)` with every string through `js_str` (\uXXXX-escapes all but alphanumerics/space). Profile = `$XDG_DATA_HOME/novabrowser` (root + cache path), log = `$XDG_STATE_HOME/novabrowser/log`. `--ozone-platform=wayland` added automatically when `WAYLAND_DISPLAY` is set.
 
 - 2026-10-10 — Cert deny (S7b, user): keep CEF/Chrome's interstitial. Known risk: its Proceed link bypasses `on_certificate_error`, and it is Chrome UI.
 
@@ -72,6 +75,11 @@ Newest first. Settled — don't reopen without new evidence.
 ## Session log
 
 Newest first. One entry per session: date, what changed, evidence, what's next.
+
+### 2026-10-11 (session 2, after midnight)
+- S9 follow-up: Chrome 154 for Testing with field trials off = 16.9 = Chrome 155; CEF 13.9 → gap is libcef build (glibc malloc, not PartitionAlloc), not version/flags (commit 9ec5119).
+- Phase 1 built and passed (see checklist). Found and fixed the cef-rs `can_close` default (Mod+Q did nothing).
+- Next: Phase 2.
 
 ### 2026-10-10 (session 2)
 - Phase 0 batch: S2, S3, S5, S5b, S6, S8 pass (S3, S5+S6, S8 by `worker` subagents, evidence re-checked here; S8 `drive.sh` re-run). S2 fixes: non-empty `preferred_size`, overlay sizing. S5b showed `execute_dev_tools_method` override persists.

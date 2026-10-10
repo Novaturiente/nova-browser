@@ -1,5 +1,10 @@
 //! novabrowser: one binary; re-executes itself as the CEF subprocesses.
+mod bindings;
 mod client;
+mod commands;
+mod devtools;
+mod keys;
+mod modes;
 mod renderer;
 mod window;
 
@@ -10,6 +15,7 @@ wrap_browser_process_handler! {
     struct NovaBrowserProcess { start_url: String }
     impl BrowserProcessHandler {
         fn on_context_initialized(&self) {
+            modes::init();
             window::create(self.start_url.clone());
         }
     }
@@ -58,7 +64,11 @@ fn main() {
     let args = args::Args::new();
     let mut app = NovaApp::new(start_url());
     // Subprocesses exit here; they need the App too, or the renderer gets no handler.
-    let code = execute_process(Some(args.as_main_args()), Some(&mut app), std::ptr::null_mut());
+    let code = execute_process(
+        Some(args.as_main_args()),
+        Some(&mut app),
+        std::ptr::null_mut(),
+    );
     if code >= 0 {
         std::process::exit(code);
     }
@@ -75,7 +85,12 @@ fn main() {
         ..Default::default()
     };
     assert_eq!(
-        initialize(Some(args.as_main_args()), Some(&settings), Some(&mut app), std::ptr::null_mut()),
+        initialize(
+            Some(args.as_main_args()),
+            Some(&settings),
+            Some(&mut app),
+            std::ptr::null_mut()
+        ),
         1,
         "cef::initialize failed"
     );

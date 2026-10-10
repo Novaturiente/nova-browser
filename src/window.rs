@@ -3,6 +3,7 @@
 //! All state lives on the CEF UI thread. CEF calls that can call back into our
 //! handlers (attach, focus, close) run after the state borrow is dropped.
 use crate::client::{TabClient, UiClient};
+use crate::modes::{self, Mode};
 use cef::*;
 use std::cell::RefCell;
 
@@ -28,6 +29,13 @@ struct State {
     status: Option<BrowserView>,
     tabs: Vec<Tab>,
     active: usize,
+    /// Previously active tab, for `tab-focus last`.
+    last: usize,
+    /// URLs of closed tabs, newest last, for `undo`.
+    closed: Vec<String>,
+    /// Status bar message (level, text) and a serial so old timers don't clear newer ones.
+    message: Option<(String, String)>,
+    message_id: u64,
     start_url: String,
 }
 
@@ -110,6 +118,9 @@ pub fn show(n: usize) {
         let old = (s.active != n)
             .then(|| s.tabs.get(s.active).map(|t| t.view.clone()))
             .flatten();
+        if old.is_some() {
+            s.last = s.active;
+        }
         s.active = n;
         Some((s.content.clone()?, old, new))
     }) else {
@@ -129,7 +140,11 @@ pub fn show(n: usize) {
     if let Some(h) = new.browser().and_then(|b| b.host()) {
         h.was_hidden(0);
     }
-    new.request_focus();
+    // qutebrowser leaves insert/passthrough when the tab changes
+    if modes::mode() != Mode::Command {
+        modes::enter(Mode::Normal);
+        focus_active();
+    }
     refresh();
 }
 
@@ -139,6 +154,9 @@ pub fn close(n: usize) {
             return None;
         }
         let tab = s.tabs.remove(n);
+        s.closed
+            .push(tab.crashed.clone().unwrap_or_else(|| tab.url.clone()));
+        s.last = s.last.min(s.tabs.len().saturating_sub(1));
         let was_active = n == s.active;
         if n < s.active || (was_active && s.active == s.tabs.len() && s.active > 0) {
             s.active -= 1;
@@ -260,12 +278,19 @@ pub fn refresh() {
             })
             .collect();
         let t = s.tabs.get(s.active)?;
+        let (level, msg) = s.message.clone().unwrap_or_default();
         let status = format!(
-            "{{\"url\":{},\"p\":{},\"loading\":{},\"crashed\":{}}}",
+            "{{\"url\":{},\"p\":{},\"loading\":{},\"crashed\":{},\"mode\":{},\"cmd\":{},\"keys\":{},\"level\":{},\"msg\":{},\"tab\":{}}}",
             js_str(&t.url),
             t.progress,
             t.loading,
-            t.crashed.is_some()
+            t.crashed.is_some(),
+            js_str(modes::mode_label()),
+            modes::mode() == Mode::Command,
+            js_str(&modes::pending()),
+            js_str(&level),
+            js_str(&msg),
+            js_str(&format!("[{}/{}]", s.active + 1, s.tabs.len())),
         );
         let title = if t.title.is_empty() {
             t.url.clone()
@@ -292,6 +317,160 @@ pub fn refresh() {
     window.set_title(Some(&CefString::from(
         format!("{title} - novabrowser").as_str(),
     )));
+}
+
+// ---- queries and actions for commands.rs
+
+pub fn active_browser() -> Option<Browser> {
+    S.with_borrow(|s| s.tabs.get(s.active)?.view.browser())
+}
+
+pub fn active_url_title() -> (String, String) {
+    S.with_borrow(|s| {
+        s.tabs
+            .get(s.active)
+            .map(|t| (t.url.clone(), t.title.clone()))
+            .unwrap_or_default()
+    })
+}
+
+pub fn content_size() -> (f64, f64) {
+    S.with_borrow(|s| {
+        s.content
+            .as_ref()
+            .map(|c| c.bounds())
+            .map(|r| (r.width as f64, r.height as f64))
+            .unwrap_or((0.0, 0.0))
+    })
+}
+
+pub fn close_active() {
+    let n = S.with_borrow(|s| s.active);
+    close(n);
+}
+
+pub fn close_others() {
+    loop {
+        let n = S.with_borrow(|s| (s.tabs.len() > 1).then_some(if s.active == 0 { 1 } else { 0 }));
+        let Some(n) = n else { break };
+        close(n);
+    }
+}
+
+pub fn close_window() {
+    if let Some(w) = S.with_borrow(|s| s.window.clone()) {
+        w.close();
+    }
+}
+
+/// `tab-next`/`tab-prev`, wrapping (qutebrowser `tabs.wrap`).
+pub fn cycle(by: i64) {
+    let n =
+        S.with_borrow(|s| (s.active as i64 + by).rem_euclid(s.tabs.len().max(1) as i64) as usize);
+    show(n);
+}
+
+pub fn focus_last() {
+    let n = S.with_borrow(|s| s.last);
+    show(n);
+}
+
+/// 1-based; negative counts from the end (qutebrowser `tab-focus`).
+pub fn focus_index(i: i64) {
+    let len = S.with_borrow(|s| s.tabs.len()) as i64;
+    let n = if i < 0 { len + i } else { i - 1 };
+    if (0..len).contains(&n) {
+        show(n as usize)
+    } else {
+        message("error", &format!("There's no tab with index {i}!"))
+    }
+}
+
+/// `tab-move`: relative (`+`/`-` with count) or to a 1-based index (negative from the end).
+pub fn move_active(i: i64, relative: bool) {
+    S.with_borrow_mut(|s| {
+        let len = s.tabs.len() as i64;
+        let to = if relative {
+            s.active as i64 + i
+        } else if i < 0 {
+            len + i
+        } else {
+            i - 1
+        };
+        let to = to.clamp(0, len - 1) as usize;
+        let tab = s.tabs.remove(s.active);
+        s.tabs.insert(to, tab);
+        s.active = to;
+    });
+    refresh();
+}
+
+pub fn undo_close() {
+    match S.with_borrow_mut(|s| s.closed.pop()) {
+        Some(url) => open(&url, true),
+        None => message("error", "Nothing to undo!"),
+    }
+}
+
+wrap_task! {
+    struct ClearMessage { id: u64 }
+    impl Task {
+        fn execute(&self) {
+            let cleared = S.with_borrow_mut(|s| s.message_id == self.id && s.message.take().is_some());
+            if cleared { refresh(); }
+        }
+    }
+}
+
+/// Show a status bar message for a few seconds (`info`, `warning`, `error`).
+pub fn message(level: &str, text: &str) {
+    eprintln!("novabrowser: {level}: {text}");
+    let id = S.with_borrow_mut(|s| {
+        s.message = Some((level.to_string(), text.to_string()));
+        s.message_id += 1;
+        s.message_id
+    });
+    refresh();
+    post_delayed_task(ThreadId::UI, Some(&mut ClearMessage::new(id)), 4000);
+}
+
+/// `cmd-set-text`: focus the status bar input with `text`.
+pub fn open_cmdline(text: &str) {
+    modes::enter(Mode::Command);
+    let Some(status) = S.with_borrow(|s| s.status.clone()) else {
+        return;
+    };
+    status.request_focus();
+    if let Some(f) = status.browser().and_then(|b| b.main_frame()) {
+        let js = format!("nova.cmdline({})", js_str(text));
+        f.execute_java_script(Some(&CefString::from(js.as_str())), None, 0);
+    }
+}
+
+/// Leave command mode and give focus back to the page.
+pub fn close_cmdline() {
+    modes::enter(Mode::Normal);
+    focus_active();
+    refresh();
+}
+
+wrap_task! {
+    struct FocusActive {}
+    impl Task {
+        fn execute(&self) {
+            let v = S.with_borrow(|s| s.tabs.get(s.active).map(|t| t.view.clone()));
+            // CEF's focus task derefs the view's widget unchecked: only focus attached views.
+            if let Some(v) = v.filter(|v| v.window().is_some()) {
+                if modes::mode() != Mode::Command { v.request_focus(); }
+            }
+        }
+    }
+}
+
+/// Focus whichever tab is active once the current command finishes; focusing a
+/// view that gets detached before CEF's async focus runs is a SIGSEGV in CEF.
+fn focus_active() {
+    post_task(ThreadId::UI, Some(&mut FocusActive::new()));
 }
 
 /// A popup (target=_blank, window.open) arrives as a ready BrowserView: make it a tab.
