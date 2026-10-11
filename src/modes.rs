@@ -10,6 +10,7 @@ pub enum Mode {
     Passthrough,
     Command,
     Hint,
+    Prompt,
 }
 
 struct State {
@@ -118,6 +119,7 @@ enum Act {
     Eat,
     Run(String, Option<u32>),
     Hint(String),
+    Prompt(String),
 }
 
 /// A RAWKEYDOWN for a web tab. Returns true to consume it (the page sees nothing).
@@ -137,6 +139,7 @@ pub fn on_key(vk: i32, character: u16, cef_mods: u32) -> bool {
         Mode::Insert => single(&s.insert, &key),
         Mode::Passthrough => single(&s.passthrough, &key),
         Mode::Command => Act::Pass,
+        Mode::Prompt => Act::Prompt(key.name.clone()),
         // shortcut: hint-mode keys are fixed (Escape leaves, label chars, Backspace); bindings come with config
         Mode::Hint => Act::Hint(key.name.clone()),
     });
@@ -155,6 +158,10 @@ pub fn on_key(vk: i32, character: u16, cef_mods: u32) -> bool {
         }
         Act::Hint(name) => {
             hints::on_key(&name);
+            true
+        }
+        Act::Prompt(name) => {
+            crate::permissions::on_key(&name);
             true
         }
         Act::Run(cmd, count) => {
@@ -182,7 +189,7 @@ fn is_plain_char(key: &Key) -> bool {
 /// For the status bar colour (`colors.statusbar.<mode>`).
 pub fn mode_name() -> &'static str {
     match mode() {
-        Mode::Normal | Mode::Hint => "normal",
+        Mode::Normal | Mode::Hint | Mode::Prompt => "normal",
         Mode::Insert => "insert",
         Mode::Passthrough => "passthrough",
         Mode::Command => "command",
@@ -196,5 +203,6 @@ pub fn mode_label() -> &'static str {
         Mode::Passthrough => "-- PASSTHROUGH MODE --",
         Mode::Command => "",
         Mode::Hint => "-- HINT MODE --",
+        Mode::Prompt => "-- PROMPT --",
     }
 }

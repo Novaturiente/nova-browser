@@ -48,6 +48,7 @@ wrap_client! {
         fn display_handler(&self) -> Option<DisplayHandler> { Some(TabDisplay::new()) }
         fn load_handler(&self) -> Option<LoadHandler> { Some(TabLoad::new()) }
         fn life_span_handler(&self) -> Option<LifeSpanHandler> { Some(NovaLifeSpan::new()) }
+        fn permission_handler(&self) -> Option<PermissionHandler> { Some(TabPermission::new()) }
         fn request_handler(&self) -> Option<RequestHandler> { Some(TabRequest::new()) }
         fn keyboard_handler(&self) -> Option<KeyboardHandler> { Some(TabKeys::new()) }
         fn on_process_message_received(
@@ -198,6 +199,25 @@ wrap_cookie_access_filter! {
     }
 }
 
+wrap_permission_handler! {
+    struct TabPermission {}
+    impl PermissionHandler {
+        fn on_show_permission_prompt(&self, browser: Option<&mut Browser>, prompt_id: u64, requesting_origin: Option<&CefString>, requested_permissions: u32, callback: Option<&mut PermissionPromptCallback>) -> ::std::os::raw::c_int {
+            let (Some(b), Some(cb)) = (browser, callback) else { return 0 };
+            crate::permissions::request(b, prompt_id, &requesting_origin.map(|o| o.to_string()).unwrap_or_default(), requested_permissions, cb);
+            1
+        }
+        fn on_request_media_access_permission(&self, browser: Option<&mut Browser>, _frame: Option<&mut Frame>, requesting_origin: Option<&CefString>, requested_permissions: u32, callback: Option<&mut MediaAccessCallback>) -> ::std::os::raw::c_int {
+            let (Some(b), Some(cb)) = (browser, callback) else { return 0 };
+            crate::permissions::request_media(b, &requesting_origin.map(|o| o.to_string()).unwrap_or_default(), requested_permissions, cb);
+            1
+        }
+        fn on_dismiss_permission_prompt(&self, _browser: Option<&mut Browser>, prompt_id: u64, _result: PermissionRequestResult) {
+            crate::permissions::dismissed(prompt_id);
+        }
+    }
+}
+
 wrap_keyboard_handler! {
     struct TabKeys {}
     impl KeyboardHandler {
@@ -251,6 +271,7 @@ wrap_life_span_handler! {
             if let Some(b) = browser {
                 crate::devtools::forget(b);
                 adblock::forget(b);
+                crate::permissions::forget(b);
             }
             OPEN.set(OPEN.get() - 1);
             if OPEN.get() == 0 { quit_message_loop(); }

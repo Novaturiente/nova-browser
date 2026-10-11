@@ -14,6 +14,7 @@ mod ipc;
 mod keys;
 mod modes;
 mod net;
+mod permissions;
 mod renderer;
 mod settings;
 mod spawn;

@@ -1,0 +1,214 @@
+//! Site permissions (S7): qutebrowser's `content.*` true/false/ask settings, a
+//! y/n/A/N prompt in the tab bar for "ask", and A/N answers saved per origin in
+//! <data>/permissions.json (they win over config.ts, like qutebrowser's autoconfig).
+use crate::{config, modes, window};
+use cef::*;
+use serde_json::{Map, Value};
+use std::{cell::RefCell, collections::VecDeque, path::PathBuf};
+
+/// CEF_PERMISSION_TYPE_* bit -> (setting, words for the prompt). Bits not listed are denied
+/// silently (qutebrowser has no setting for them either), except MULTIPLE_DOWNLOADS.
+const PROMPT_BITS: &[(u32, &str, &str)] = &[
+    (16, "content.javascript.clipboard", "read your clipboard"),
+    (64, "content.persistent_storage", "store data persistently"),
+    (256, "content.geolocation", "see your location"),
+    (32768, "content.notifications.enabled", "show notifications"),
+    (131072, "content.mouse_lock", "lock your mouse pointer"),
+    (524288, "content.register_protocol_handler", "open links of a protocol"),
+];
+const MULTIPLE_DOWNLOADS: u32 = 16384;
+/// CEF_MEDIA_PERMISSION_* bit -> setting.
+const MEDIA_BITS: &[(u32, &str, &str)] = &[
+    (1, "content.media.audio_capture", "use your microphone"),
+    (2, "content.media.video_capture", "use your camera"),
+    (4, "content.desktop_capture", "capture your screen audio"),
+    (8, "content.desktop_capture", "capture your screen"),
+];
+
+enum Callback {
+    Prompt(u64, PermissionPromptCallback),
+    Media(u32, MediaAccessCallback),
+}
+
+struct Pending {
+    browser: i32,
+    origin: String,
+    settings: Vec<&'static str>,
+    text: String,
+    cb: Callback,
+}
+
+thread_local! {
+    static QUEUE: RefCell<VecDeque<Pending>> = const { RefCell::new(VecDeque::new()) };
+    static SAVED: RefCell<Option<Map<String, Value>>> = const { RefCell::new(None) };
+}
+
+fn file() -> PathBuf {
+    crate::xdg_dir("XDG_DATA_HOME", ".local/share").join("permissions.json")
+}
+
+fn saved(origin: &str, setting: &str) -> Option<bool> {
+    SAVED.with_borrow_mut(|s| {
+        let s = s.get_or_insert_with(|| {
+            std::fs::read_to_string(file()).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+        });
+        s.get(origin)?.get(setting)?.as_bool()
+    })
+}
+
+fn save(origin: &str, settings: &[&str], allow: bool) {
+    let text = SAVED.with_borrow_mut(|s| {
+        let s = s.get_or_insert_with(Map::new);
+        let site = s.entry(origin).or_insert_with(|| Value::Object(Map::new()));
+        for n in settings {
+            site[*n] = Value::Bool(allow);
+        }
+        serde_json::to_string_pretty(s).unwrap()
+    });
+    let f = file();
+    let tmp = f.with_extension("tmp");
+    if let Err(e) = std::fs::write(&tmp, text).and_then(|_| std::fs::rename(&tmp, &f)) {
+        window::message("error", &format!("{}: {e}", f.display()));
+    }
+}
+
+#[derive(Debug, PartialEq)]
+enum Decision {
+    Allow,
+    Deny,
+    Ask,
+}
+
+/// Saved answer, else the setting for this origin: true / false / "ask".
+fn decide(origin: &str, setting: &str) -> Decision {
+    if let Some(b) = saved(origin, setting) {
+        return if b { Decision::Allow } else { Decision::Deny };
+    }
+    let v = config::get().get_for(setting, origin);
+    match (setting, v.as_str(), v.as_bool()) {
+        (_, _, Some(true)) | ("content.javascript.clipboard", Some("access-paste"), _) => Decision::Allow,
+        (_, Some("ask"), _) => Decision::Ask,
+        _ => Decision::Deny, // false, and clipboard none/access (write-only)
+    }
+}
+
+/// Combine the per-setting decisions of one request (CEF answers all bits at once).
+fn combine(ds: &[Decision]) -> Decision {
+    if ds.contains(&Decision::Deny) {
+        Decision::Deny
+    } else if ds.contains(&Decision::Ask) {
+        Decision::Ask
+    } else {
+        Decision::Allow
+    }
+}
+
+fn answer(cb: &Callback, allow: bool) {
+    match cb {
+        Callback::Prompt(_, c) => {
+            c.cont(if allow { PermissionRequestResult::ACCEPT } else { PermissionRequestResult::DENY })
+        }
+        Callback::Media(bits, c) if allow => c.cont(*bits),
+        Callback::Media(_, c) => c.cancel(),
+    }
+}
+
+/// `on_show_permission_prompt`. Always answers (now or after the prompt): a
+/// returned 0 would leave the page's request hanging (S7).
+pub fn request(browser: &Browser, prompt_id: u64, origin: &str, bits: u32, cb: &PermissionPromptCallback) {
+    let wanted: Vec<_> = PROMPT_BITS.iter().filter(|(b, ..)| bits & b != 0).collect();
+    let known = wanted.iter().fold(MULTIPLE_DOWNLOADS, |acc, (b, ..)| acc | b);
+    let ds: Vec<_> = if bits & !known != 0 {
+        vec![Decision::Deny]
+    } else {
+        wanted.iter().map(|(_, s, _)| decide(origin, s)).collect()
+    };
+    let what: Vec<_> = wanted.iter().map(|(.., w)| *w).collect();
+    let settings = wanted.iter().map(|(_, s, _)| *s).collect();
+    handle(browser, origin, settings, &what, combine(&ds), Callback::Prompt(prompt_id, cb.clone()));
+}
+
+/// `on_request_media_access_permission`.
+pub fn request_media(browser: &Browser, origin: &str, bits: u32, cb: &MediaAccessCallback) {
+    let wanted: Vec<_> = MEDIA_BITS.iter().filter(|(b, ..)| bits & b != 0).collect();
+    let ds: Vec<_> = wanted.iter().map(|(_, s, _)| decide(origin, s)).collect();
+    let what: Vec<_> = wanted.iter().map(|(.., w)| *w).collect();
+    let mut settings: Vec<&'static str> = wanted.iter().map(|(_, s, _)| *s).collect();
+    settings.dedup();
+    handle(browser, origin, settings, &what, combine(&ds), Callback::Media(bits, cb.clone()));
+}
+
+fn handle(browser: &Browser, origin: &str, settings: Vec<&'static str>, what: &[&str], d: Decision, cb: Callback) {
+    match d {
+        Decision::Allow => answer(&cb, true),
+        Decision::Deny => answer(&cb, false),
+        Decision::Ask => {
+            let text = format!("Allow {origin} to {}? [y]es [n]o [A]lways [N]ever", what.join(" and "));
+            QUEUE.with_borrow_mut(|q| {
+                q.push_back(Pending { browser: browser.identifier(), origin: origin.to_string(), settings, text, cb })
+            });
+            show();
+        }
+    }
+}
+
+/// Show the oldest open prompt, or leave prompt mode when there is none.
+fn show() {
+    let text = QUEUE.with_borrow(|q| q.front().map(|p| p.text.clone()));
+    let on = text.is_some();
+    window::set_prompt(text);
+    match (on, modes::mode() == modes::Mode::Prompt) {
+        (true, false) => {
+            if modes::mode() == modes::Mode::Command {
+                window::close_cmdline();
+            }
+            modes::enter(modes::Mode::Prompt);
+        }
+        (false, true) => modes::enter(modes::Mode::Normal),
+        _ => {}
+    }
+}
+
+/// Prompt-mode key: y / n / A / N, Escape = no. Other keys are eaten.
+pub fn on_key(name: &str) {
+    let (allow, keep) = match name {
+        "y" => (true, false),
+        "n" | "Escape" => (false, false),
+        "A" => (true, true),
+        "N" => (false, true),
+        _ => return,
+    };
+    let Some(p) = QUEUE.with_borrow_mut(|q| q.pop_front()) else { return show() };
+    if keep {
+        save(&p.origin, &p.settings, allow);
+    }
+    answer(&p.cb, allow);
+    show();
+}
+
+/// CEF dropped a prompt (navigation, tab closed): forget it without answering.
+pub fn dismissed(prompt_id: u64) {
+    QUEUE.with_borrow_mut(|q| q.retain(|p| !matches!(p.cb, Callback::Prompt(id, _) if id == prompt_id)));
+    show();
+}
+
+/// Tab closed: drop its open prompts (media requests have no dismiss callback).
+pub fn forget(browser: &Browser) {
+    let id = browser.identifier();
+    QUEUE.with_borrow_mut(|q| q.retain(|p| p.browser != id));
+    show();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn combine_any_deny_wins_then_ask() {
+        use Decision::*;
+        assert_eq!(combine(&[Allow, Ask]), Ask);
+        assert_eq!(combine(&[Ask, Deny]), Deny);
+        assert_eq!(combine(&[Allow, Allow]), Allow);
+        assert_eq!(combine(&[]), Allow);
+    }
+}

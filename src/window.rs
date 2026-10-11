@@ -46,6 +46,8 @@ struct State {
     closed: Vec<String>,
     /// Status bar message (level, text) and a serial so old timers don't clear newer ones.
     message: Option<(String, String)>,
+    /// Open permission prompt (permissions.rs); shown instead of the message until answered.
+    prompt: Option<String>,
     message_id: u64,
     start_url: String,
     /// Closed tabs kept alive until CEF's DoClose: dropping the view earlier leaves
@@ -467,7 +469,10 @@ pub fn refresh() {
             })
             .collect();
         let t = s.tabs.get(s.active)?;
-        let (level, msg) = s.message.clone().unwrap_or_default();
+        let (level, msg) = match &s.prompt {
+            Some(p) => ("prompt".to_string(), p.clone()),
+            None => s.message.clone().unwrap_or_default(),
+        };
         let status = format!(
             "{{\"url\":{},\"p\":{},\"loading\":{},\"crashed\":{},\"mode\":{},\"cmd\":{},\"keys\":{},\"level\":{},\"msg\":{},\"tab\":{},\"hist\":{},\"modename\":{}}}",
             js_str(&t.url),
@@ -649,6 +654,11 @@ wrap_task! {
 }
 
 /// Show a status bar message for a few seconds (`info`, `warning`, `error`).
+pub fn set_prompt(text: Option<String>) {
+    S.with_borrow_mut(|s| s.prompt = text);
+    refresh();
+}
+
 pub fn message(level: &str, text: &str) {
     eprintln!("novabrowser: {level}: {text}");
     let id = S.with_borrow_mut(|s| {
