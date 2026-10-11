@@ -5,8 +5,8 @@ session; update before ending one (rules in `AGENTS.md`).
 
 ## Now
 
-- **Phase:** 6 (External tools)
-- **Next action:** Phase 6 per PLAN.md (External tools): userscripts `spawn -u` with qutebrowser env/FIFO, qute-pass, toggle_darkmode.py/toggle_https.py, download-open. Deferred, not blocking: HiDPI (S1), IME (S3b), S9b YouTube jank, own CEF build (allocator + codecs).
+- **Phase:** 7 (Privacy, blocking, prompts)
+- **Next action:** Phase 7 per PLAN.md: adblock (content.blocking.*), cookies policy, headers, HTTPS-only with per-host toggle (built-in, replaces toggle_https.py), permission prompts with persisted per-site answers. Deferred, not blocking: HiDPI (S1), IME (S3b), S9b YouTube jank, own CEF build (allocator + codecs).
 - **Blockers:** none
 
 ## Checklist
@@ -36,7 +36,7 @@ Each done item links its evidence (file, commit, or session-log date).
 - [x] 4 Hints and search (2026-10-11; `src/{hints.rs,hints.js,clipboard.rs}`, find/yank/spawn in `commands.rs`, CDP request/response + isolated world in `devtools.rs`). Exit check, real keys (compositor) + CDP readback: Wikipedia `f` follows, `F` background tab, `;y` → `wl-paste` = link, `;o` fills `:open <url>`, Escape removes the label host; GitHub repo page labelled, `f` follows; Jira `f` opens the Dashboards menu, `gi` focuses quick search → insert mode; YouTube `hint links spawn … {hint-url}` got the `watch?v=` URL; `/borrow` incremental highlight, `n`/`N`; `yy`/`Pp`/`yank selection`/`yank inline [{title}]({url:yank})`. Labels = qutebrowser `_hint_scattered` (test values taken from the Python code). 34 tests green. User ran the 20-step manual list incl. real `mpv`: all work. Fixed on the way: `hint inputs --first` flag after the group; placeholders expanded per token; closed tabs/window kept running pages with unload handlers (YouTube audio) — see Decisions. Not here: cross-origin iframe hints (same as qutebrowser), hint styling (Phase 5), `;d` download, `-w` window target, beforeunload prompts on close (Phase 8).
 - [x] 5 config.ts (2026-10-11; `src/{config.rs,config.js,settings.rs,theme.rs,urlmatch.rs}`, `scripts/gen-settings.py`; `src/bindings.rs` removed — defaults now from the schema). Loader: oxc strips TS → QuickJS (rquickjs) before `cef::initialize`; `nova` module `c`/`bind`/`unbind`/`alias`/`pattern`/`readLines`/`configDir`, relative imports. Schema = qutebrowser `configdata.yml` (380 keys); typos/wrong types → `config.ts:<line>: <msg>`; broken file at start → defaults + message, on `:config-source` → old config kept (checked: appended `c.hints.chars = 42` → value unchanged, error names line 248; valid edit applied). Unbuilt settings accepted and listed (user config: 75). User config.py + theme.py translated to `~/.config/novabrowser/{config,theme,theme_colors}.ts` + `darkmode_excludes`. 70 tests green (28 = qutebrowser `test_urlmatch` port by `worker`). Live: theme vars on all UI pages (tabbar bg `#0c0e14`, JetBrainsMono 11pt), `<Space>tt` left↔top (213 px), `:set tabs.position middle` rejected, `g rust lang` → Google, per-site dark exclude luma 240–242 vs 29–34 non-excluded (first page of a tab and after navigation). User 8-step test: all pass after two fixes (hint colours navy/white, exclude `*.wikipedia.org`). Fixed: aliases with `;;` (expand before split), first-page dark override lost (resent on load state), missing import silently dropped. New: `novabrowser --check-config`. Not here: per-site values other than dark mode, autoconfig, `nova.d.ts`, status `scroll` widget, `:set` persistence.
 - [x] 5b Zen-style UI (2026-10-11; `ui/palette.html` replaces `ui/statusbar.html` + `ui/completion.html`; status moved into `ui/tabbar.html`). Floating rounded command box (input + completion + history) over a blurred `Page.captureScreenshot` of the page; `/` `?` search = thin strip under the tabs so matches stay visible; no status bar — mode badge, pending keys, messages, 2 px load line in the tab bar (bottom of the sidebar when vertical). Checked by real keys + screenshots: `o rust` filters in the box, `/iron` strip, insert badge, pending `g`, `:foobar` error in tab bar, vertical tabs + box over content only, 70 tests green. User: everything works. Fixed: overlay needs `can_activate=1` for keys; overlay bounds are window coords (mid + content offset); refocus page after re-layout. Not here: URL display (only window title), `statusbar.widgets` now unused, open latency not measured.
-- [ ] 6 External tools
+- [x] 6 External tools (2026-10-11; `src/{spawn,ipc}.rs`, `set -u` in `config.rs`, `dark-toggle` in `commands.rs`). Exit check (rev, see PLAN): test userscript got `QUTE_URL/TITLE/FIFO/HTML/TEXT/CONFIG_DIR/DATA_DIR/…`, its FIFO lines `message-info` + `tab-focus 1` ran, temp dir removed; missing script / non-zero exit → error message. `fake-key` one key per command (qute-pass style) on the-internet login: `jk< x`, `<Tab>`, `pw` landed in username/password, all `isTrusted`, normal-mode binds don't catch them; `insert-text` works. `dark-toggle` on a config copy: luma 34→240→34, `darkmode_excludes` updated atomically; wildcard-excluded host gets a restart note. `--query state` JSON, `--cmd ':open -t x'`, second `novabrowser <url>` → tab in the running instance. 72 tests green. User: no qutebrowser userscripts — removed copies + their binds; `<Space>td` → `dark-toggle`. Not here: multi-char `fake-key "abc"` (parse error, same notation as qutebrowser), FIFO runs in the active tab not the spawning one, `spawn -o` → message not a tab, `download-open` (Phase 8). Socket is `<data dir>/ipc` (per profile), not `$XDG_RUNTIME_DIR`.
 - [ ] 7 Privacy, blocking, prompts
 - [ ] 8 Sessions and daily driving (revisit codecs option A first)
 - [ ] 9 Packaging and upkeep
@@ -46,6 +46,8 @@ Each done item links its evidence (file, commit, or session-log date).
 ## Decisions
 
 Newest first. Settled — don't reopen without new evidence.
+
+- 2026-10-11 — Extensions (Phase 6, user): built-ins for common needs (`dark-toggle`, HTTPS-only toggle in Phase 7, passwords in Phase 10) plus qutebrowser-protocol userscripts as the user's extension point; no qutebrowser scripts copied or searched (`/usr/share/qutebrowser/userscripts` not used). Assistant offered config.ts-defined commands instead; not chosen. `fake-key` = CDP `Input.dispatchKeyEvent` (bypasses our key handler, page sees trusted events). Control socket per profile (`<data>/ipc`) so test profiles never talk to the real instance.
 
 - 2026-10-11 — UI chrome (5b, user): Zen-like floating palette under the tabs for all command input, status bar removed, status in the tab bar. CEF windowed/Views browsers can't be transparent (BrowserSettings + CefSettings background_color 0 both tested: corners stay opaque), so the palette paints a blurred page screenshot behind the card; search uses a strip instead (page must stay live). Overlays need `can_activate=1` to take keyboard focus.
 
@@ -94,6 +96,10 @@ Newest first. Settled — don't reopen without new evidence.
 ## Session log
 
 Newest first. One entry per session: date, what changed, evidence, what's next.
+
+### 2026-10-11 (session 2, Phase 6)
+- Phase 6 built and passed (see checklist); user dropped qutebrowser userscripts in favour of built-ins + own scripts; added `dark-toggle`.
+- Next: Phase 7.
 
 ### 2026-10-11 (session 2, 5b UI)
 - Zen-style palette + tab-bar status built; user confirmed. Transparency spike negative (recorded in Decisions).

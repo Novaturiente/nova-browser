@@ -9,10 +9,12 @@ mod devtools;
 mod hints;
 mod history;
 mod import;
+mod ipc;
 mod keys;
 mod modes;
 mod renderer;
 mod settings;
+mod spawn;
 mod urlmatch;
 mod window;
 
@@ -26,6 +28,7 @@ wrap_browser_process_handler! {
             modes::init();
             // here, not in main(): its first post_task needs CEF running
             history::start(xdg_dir("XDG_DATA_HOME", ".local/share").join("history.sqlite"));
+            ipc::start(); // after CEF init: its requests post_task to the UI thread
             window::create(self.start_url.clone());
         }
     }
@@ -139,7 +142,7 @@ fn start_url() -> String {
     }
 }
 
-fn xdg_dir(var: &str, fallback: &str) -> PathBuf {
+pub(crate) fn xdg_dir(var: &str, fallback: &str) -> PathBuf {
     let base = std::env::var_os(var)
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").expect("HOME")).join(fallback));
@@ -171,11 +174,37 @@ fn main() {
         }
         return;
     }
+    // Control socket: `--cmd` / `--query` talk to the running instance; a plain
+    // start while one runs hands the URL over (new_instance_open_target = tab).
+    let is_subprocess = argv.iter().any(|a| a.starts_with("--type="));
+    if !is_subprocess {
+        let req = match argv.get(1).map(String::as_str) {
+            Some("--cmd") => Some(format!("cmd {}", argv[2..].join(" "))),
+            Some("--query") => Some(format!("query {}", argv.get(2).map_or("state", String::as_str))),
+            _ => None,
+        };
+        if let Some(req) = req {
+            match ipc::request(&req) {
+                Some(reply) => println!("{reply}"),
+                None => {
+                    eprintln!("novabrowser: no running instance ({})", ipc::socket_path().display());
+                    std::process::exit(1);
+                }
+            }
+            return;
+        }
+        if let Some(url) = std::env::args().skip(1).find(|a| !a.starts_with('-')) {
+            if ipc::request(&format!("cmd open -t {url}")).is_some() {
+                return;
+            }
+        } else if ipc::request("cmd open -t").is_some() {
+            return;
+        }
+    }
     let _ = api_hash(sys::CEF_API_VERSION_LAST, 0);
     let args = args::Args::new();
     // Before CEF: config sets Chromium switches. Subprocesses don't need it (they
     // get switches on their command line); loading there would just cost startup.
-    let is_subprocess = argv.iter().any(|a| a.starts_with("--type="));
     let config_error = if is_subprocess { None } else { config::load().err() };
     let mut app = NovaApp::new(if is_subprocess { String::new() } else { start_url() });
     // Subprocesses exit here; they need the App too, or the renderer gets no handler.

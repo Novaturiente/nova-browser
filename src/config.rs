@@ -95,6 +95,8 @@ pub struct Config {
     pub binds: Vec<(String, String, Option<String>)>,
     /// `:set` / `:config-cycle` values, over config.ts until the next `:config-source`.
     runtime: RwLock<HashMap<String, Value>>,
+    /// `:set -u <pattern>` values, newest last; checked before config.ts patterns.
+    runtime_patterns: RwLock<Vec<(UrlPattern, String, Value)>>,
 }
 
 impl Config {
@@ -112,6 +114,11 @@ impl Config {
 
     /// Value for `url`: the last matching `pattern()` block that sets it wins.
     pub fn get_for(&self, name: &str, url: &str) -> Value {
+        for (pat, n, v) in self.runtime_patterns.read().unwrap().iter().rev() {
+            if n == name && pat.matches(url) {
+                return v.clone();
+            }
+        }
         for (pat, vals) in self.patterns.iter().rev() {
             if let Some(v) = vals.get(name) {
                 if pat.matches(url) {
@@ -152,6 +159,25 @@ impl Config {
 
     /// `:set name value` (value parsed like the schema expects, e.g. `true`, `40%`).
     pub fn set_runtime(&self, name: &str, value: &str) -> Result<(), String> {
+        let v = parse_value(name, value)?;
+        self.runtime.write().unwrap().insert(name.to_string(), v);
+        Ok(())
+    }
+
+    /// `:set -u <pattern> name value`: per-site value until the next `:config-source`.
+    pub fn set_runtime_for(&self, pattern: &str, name: &str, value: &str) -> Result<(), String> {
+        let pat = UrlPattern::parse(pattern).map_err(|e| format!("{pattern}: {}", e.0))?;
+        let v = parse_value(name, value)?;
+        let mut rp = self.runtime_patterns.write().unwrap();
+        rp.retain(|(p, n, _)| !(n == name && p.to_string() == pattern));
+        rp.push((pat, name.to_string(), v));
+        Ok(())
+    }
+}
+
+/// A `:set` value parsed the way the schema expects (e.g. `true`, `40%`, JSON lists).
+fn parse_value(name: &str, value: &str) -> Result<Value, String> {
+    {
         let (_, kind, none_ok, _, values) = SETTINGS
             .iter()
             .find(|s| s.0 == name)
@@ -176,9 +202,11 @@ impl Config {
         if !ok {
             return Err(format!("{name}: invalid value {value}"));
         }
-        self.runtime.write().unwrap().insert(name.to_string(), v);
-        Ok(())
+        Ok(v)
     }
+}
+
+impl Config {
 
     /// Does any `pattern()` block set `name` to `value`?
     pub fn any_pattern_value(&self, name: &str, value: &Value) -> bool {
@@ -522,6 +550,7 @@ fn parse_output(json: &str) -> Result<Config, String> {
         patterns,
         binds,
         runtime: Default::default(),
+        runtime_patterns: Default::default(),
     })
 }
 
@@ -654,5 +683,12 @@ bind("<Alt-Backspace>", "mode-leave", "insert");
             .set_runtime("content.blocking.enabled", "maybe")
             .is_err());
         assert!(cfg.set_runtime("nope", "1").is_err());
+        let d = "colors.webpage.darkmode.enabled";
+        cfg.set_runtime_for("*://a.com/*", d, "false").unwrap();
+        cfg.set_runtime_for("*://a.com/*", d, "true").unwrap();
+        assert_eq!(cfg.get_for(d, "https://a.com/x"), Value::Bool(true));
+        assert_eq!(cfg.runtime_patterns.read().unwrap().len(), 1);
+        assert_eq!(cfg.get_for(d, "https://b.com/"), cfg.get(d));
+        assert!(cfg.set_runtime_for("::bad", d, "true").is_err());
     }
 }

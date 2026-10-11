@@ -335,9 +335,10 @@ One command dispatcher, three ways in:
    `QUTE_TITLE`, `QUTE_FIFO`, `QUTE_MODE`, `QUTE_SELECTED_TEXT`, `QUTE_HTML`,
    `QUTE_TEXT`, `QUTE_COUNT`, `QUTE_CONFIG_DIR`, `QUTE_DATA_DIR`,
    `QUTE_DOWNLOAD_DIR`, `QUTE_COMMANDLINE_TEXT`, `QUTE_USER_AGENT`,
-   `QUTE_VERSION`), searching `<config>/userscripts/` first. `qute-pass`,
-   `qute-pass-add`, `toggle_darkmode.py`, `toggle_https.py` and `view_in_mpv`
-   run unchanged.
+   `QUTE_VERSION`), searching `<config>/userscripts/` then `<data>/userscripts/`.
+   No qutebrowser scripts are shipped or imported (user, 2026-10-11): common
+   needs are built in (`dark-toggle`, HTTPS-only in Phase 7, passwords in
+   Phase 10); userscripts are the user's own extension point.
 2. **`QUTE_FIFO`**: each line runs as a command in the spawning tab.
    `qute-pass` needs `fake-key`, `insert-text`, `mode-enter insert` (all via
    DevTools input, so the page sees trusted events).
@@ -390,8 +391,10 @@ keeps the old one.
 
 ### Phase 6 — External tools
 `spawn`, userscript env, `QUTE_FIFO`, `fake-key`, `insert-text`, IPC socket,
-`--cmd`, `--query`. **Exit:** `<Space>pp` fills a real login form; the toggle
-scripts work; `novabrowser --cmd` opens a tab in the running instance.
+`--cmd`, `--query`, built-in `dark-toggle`. **Exit:** a userscript's env and
+`QUTE_FIFO` commands work; `fake-key` fills a login form; `dark-toggle` flips
+and persists; `novabrowser --cmd` opens a tab in the running instance.
+(Rev 2026-10-11: the `<Space>pp`/qute-pass check moved to Phase 10.)
 
 ### Phase 7 — Privacy, blocking, prompts
 **Exit:** blocking matches qutebrowser on a test page set; per-site prompt

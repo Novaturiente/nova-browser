@@ -511,6 +511,19 @@ pub fn active_browser() -> Option<Browser> {
     S.with_borrow(|s| s.tabs.get(s.active)?.view.browser())
 }
 
+/// `--query state`: tabs, active index, mode (for scripts and the smoke test).
+pub fn state_json() -> String {
+    S.with_borrow(|s| {
+        serde_json::json!({
+            "tabs": s.tabs.iter().map(|t| serde_json::json!({"url": t.url, "title": t.title})).collect::<Vec<_>>(),
+            "active": s.active,
+            "url": s.tabs.get(s.active).map(|t| t.url.as_str()),
+            "mode": modes::mode_name(),
+        })
+        .to_string()
+    })
+}
+
 pub fn active_url_title() -> (String, String) {
     S.with_borrow(|s| {
         s.tabs

@@ -20,7 +20,8 @@ impl Cmd {
     }
 }
 
-/// Shell-like split: whitespace separates, '…' and "…" group, `\` escapes in "…".
+/// Shell-like split: whitespace separates, '…' and "…" group, `\` escapes outside
+/// '…' (qutebrowser; `fake-key \<` sends a literal `<`).
 fn tokenize(s: &str) -> Result<Vec<String>, String> {
     let (mut out, mut cur, mut quote, mut has) = (vec![], String::new(), None, false);
     let mut chars = s.chars();
@@ -37,7 +38,10 @@ fn tokenize(s: &str) -> Result<Vec<String>, String> {
                 has = true;
             }
             (Some(q), c) if c == q => quote = None,
-            (Some('"'), '\\') => cur.extend(chars.next()),
+            (None | Some('"'), '\\') => {
+                cur.extend(chars.next());
+                has = true;
+            }
             (_, c) => {
                 cur.push(c);
                 has = true;
@@ -230,6 +234,42 @@ pub fn host(url: &str) -> &str {
     auth.split(':').next().unwrap_or(auth)
 }
 
+/// `dark-toggle`: flip force-dark for this host now, and remember it in
+/// `<config>/darkmode_excludes` (the file config.ts reads with `readLines`).
+fn dark_toggle() -> Result<(), String> {
+    const D: &str = "colors.webpage.darkmode.enabled";
+    let (url, _) = window::active_url_title();
+    let host = host(&url).to_string();
+    if host.is_empty() {
+        return Err("no host for this page".into());
+    }
+    let file = config::path().with_file_name("darkmode_excludes");
+    let mut lines: Vec<String> = std::fs::read_to_string(&file)
+        .unwrap_or_default()
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(str::to_string)
+        .collect();
+    let cfg = config::get();
+    let dark = !cfg.get_for(D, &url).as_bool().unwrap_or(false);
+    if dark {
+        lines.retain(|l| *l != host);
+    } else if !lines.contains(&host) {
+        lines.push(host.clone());
+    }
+    let tmp = file.with_extension("tmp");
+    std::fs::write(&tmp, lines.join("\n") + "\n")
+        .and_then(|_| std::fs::rename(&tmp, &file))
+        .map_err(|e| format!("{}: {e}", file.display()))?;
+    cfg.set_runtime_for(&format!("*://{host}/*"), D, &dark.to_string())?;
+    window::config_changed();
+    let still = dark && lines.iter().any(|l| l.starts_with("*.") && host.ends_with(&l[1..]));
+    let note = if still { " (a wildcard in darkmode_excludes still excludes it after a restart)" } else { "" };
+    window::message("info", &format!("Dark mode {} for {host}{note}", if dark { "on" } else { "off" }));
+    Ok(())
+}
+
 /// Run a command line (`a ;; b`), reporting errors in the status bar.
 /// `/text` and `?text` (from the command line) search forward / backward.
 pub fn run(line: &str, count: Option<u32>) {
@@ -330,14 +370,7 @@ fn search_again(reverse: bool, n: u32) -> Result<(), String> {
 
 /// `spawn cmd args…`: start a program, never wait for it on the UI thread.
 pub fn spawn(argv: &[String]) -> Result<(), String> {
-    let (prog, args) = argv.split_first().ok_or("usage: spawn <command> [args…]")?;
-    let mut child = std::process::Command::new(prog)
-        .args(args)
-        .stdin(std::process::Stdio::null())
-        .spawn()
-        .map_err(|e| format!("{prog}: {e}"))?;
-    std::thread::spawn(move || child.wait()); // reap
-    Ok(())
+    crate::spawn::spawn(argv, false, false, None)
 }
 
 /// Implemented commands, for `:` completion. Keep in sync with `run_one`.
@@ -348,9 +381,12 @@ pub const NAMES: &[&str] = &[
     "config-cycle",
     "config-source",
     "cmd-set-text",
+    "dark-toggle",
+    "fake-key",
     "forward",
     "fullscreen",
     "hint",
+    "insert-text",
     "message-error",
     "message-info",
     "message-warning",
@@ -392,7 +428,7 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
         "nop" | "clear-keychain" => modes::clear_keychain(),
         "open" => {
             let url = if cmd.args.is_empty() {
-                "about:blank".to_string()
+                config::get().str("url.default_page")
             } else {
                 url_or_search(&cmd.rest())
             };
@@ -448,6 +484,7 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
         "undo" => window::undo_close(),
         "back" => js(&need()?, &format!("history.go(-{n})")),
         "forward" => js(&need()?, &format!("history.go({n})")),
+        "dark-toggle" => dark_toggle()?,
         "reload" => {
             let b = need()?;
             if !window::reload_crashed(&b) {
@@ -531,12 +568,11 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
         "search-next" => search_again(false, n)?,
         "search-prev" => search_again(true, n)?,
         "hint" => hints::start(cmd)?,
-        "spawn" => {
-            if cmd.flag("-u", "--userscript") {
-                return Err("userscripts come in Phase 6".into());
-            }
-            spawn(&cmd.args)?
-        }
+        // -d/--detach: children never block us, so it is the default
+        "spawn" => crate::spawn::spawn(&cmd.args, cmd.flag("-u", "--userscript"), cmd.flag("-o", "--output"), count)?,
+        // shortcut: -g (keys to the browser UI) not supported
+        "fake-key" => crate::spawn::fake_key(&cmd.rest())?,
+        "insert-text" => crate::spawn::insert_text(&cmd.rest())?,
         "yank" => yank(cmd, &need()?)?,
         "fullscreen" if cmd.flag("", "--leave") => {
             if let Some(h) = browser.and_then(|b| b.host()) {
@@ -571,7 +607,10 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
         }
         "set" => {
             // `set name value`; `set name` shows the value
-            let (name, value) = match cmd.args.as_slice() {
+            // -t (don't save) is the only behaviour: :set never writes a file yet
+            let pattern = cmd.flag("-u", "--pattern").then(|| cmd.args.first().cloned()).flatten();
+            let args = &cmd.args[pattern.is_some() as usize..];
+            let (name, value) = match args {
                 [n] => return {
                     window::message("info", &format!("{n} = {}", config::get().get(n)));
                     Ok(())
@@ -579,7 +618,10 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
                 [n, rest @ ..] if !rest.is_empty() => (n, rest.join(" ")),
                 _ => return Err("usage: set <setting> [value]".into()),
             };
-            config::get().set_runtime(name, &value)?;
+            match &pattern {
+                Some(p) => config::get().set_runtime_for(p, name, &value)?,
+                None => config::get().set_runtime(name, &value)?,
+            }
             window::config_changed();
         }
         "config-cycle" => {
@@ -678,6 +720,8 @@ mod tests {
         );
         assert_eq!(tokenize("  x  ").unwrap(), ["x"]);
         assert_eq!(tokenize("''").unwrap(), [""]);
+        assert_eq!(tokenize(r#"fake-key \< \a " ""#).unwrap(), ["fake-key", "<", "a", " "]);
+        assert_eq!(tokenize(r"'\x'").unwrap(), [r"\x"]);
         assert!(tokenize("'open").is_err());
     }
 
