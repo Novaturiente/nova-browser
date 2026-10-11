@@ -19,6 +19,7 @@ mod net;
 mod permissions;
 mod renderer;
 mod session;
+mod profiles;
 mod settings;
 mod settings_page;
 mod spawn;
@@ -218,15 +219,54 @@ pub(crate) fn write_atomic(path: &std::path::Path, data: &[u8]) -> std::io::Resu
     std::fs::rename(tmp, path)
 }
 
+/// This instance's data/state dir: `<XDG dir>/novabrowser`, or for a named
+/// profile `<XDG dir>/novabrowser/profiles/<name>` (all data per profile; config shared).
 pub(crate) fn xdg_dir(var: &str, fallback: &str) -> PathBuf {
+    let root = xdg_root(var, fallback);
+    match profile() {
+        Some(name) => root.join("profiles").join(name),
+        None => root,
+    }
+}
+
+/// `<XDG dir>/novabrowser`, the same for every profile.
+pub(crate) fn xdg_root(var: &str, fallback: &str) -> PathBuf {
     let base = std::env::var_os(var)
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").expect("HOME")).join(fallback));
     base.join("novabrowser")
 }
 
+static PROFILE: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+
+/// Named profile from `--profile=<name>`; None = the default profile.
+pub(crate) fn profile() -> Option<&'static str> {
+    PROFILE
+        .get_or_init(|| {
+            std::env::args()
+                .find_map(|a| a.strip_prefix("--profile=").map(str::to_string))
+                .filter(|n| n != "default")
+        })
+        .as_deref()
+}
+
+/// Profile names: letters, digits, space, `-`, `_`; "default" is the unnamed one.
+pub(crate) fn valid_profile_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 40
+        && name.chars().all(|c| c.is_alphanumeric() || matches!(c, ' ' | '-' | '_'))
+        && !name.starts_with(' ')
+}
+
 fn main() {
-    let argv: Vec<String> = std::env::args().collect();
+    // --profile=<name> may come first; the subcommands below look at argv[1]
+    let argv: Vec<String> = std::env::args().filter(|a| !a.starts_with("--profile=")).collect();
+    if let Some(name) = profile() {
+        if !valid_profile_name(name) {
+            eprintln!("novabrowser: bad profile name {name:?} (letters, digits, space, - and _)");
+            std::process::exit(2);
+        }
+    }
     if argv.get(1).map(String::as_str) == Some("--import") {
         let data = xdg_dir("XDG_DATA_HOME", ".local/share");
         std::fs::create_dir_all(&data).expect("create data dir");
@@ -281,11 +321,12 @@ fn main() {
             }
             return;
         }
+        // no URL: a new window, like other browsers
         if let Some(url) = std::env::args().skip(1).find(|a| !a.starts_with('-')) {
             if ipc::request(&format!("cmd open -t {url}")).is_some() {
                 return;
             }
-        } else if ipc::request("cmd open -t").is_some() {
+        } else if ipc::request("cmd open -w").is_some() {
             return;
         }
     }

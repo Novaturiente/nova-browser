@@ -23,6 +23,12 @@
   .t.e { border-left-color: var(--colors-tabs-indicator-error); }
   /* Status (no status bar): mode, pending keys, message at the end; load progress as a line. */
   #tabs { display: contents; }
+  /* named profile, always first in the bar */
+  #profile { flex: 0 0 auto; align-self: center; margin: 0 6px; padding: 1px 10px; border-radius: 999px;
+             font: var(--fonts-tabs-selected, inherit); font-weight: bold;
+             background: var(--colors-tabs-indicator-start, #48f); color: var(--colors-tabs-bar-bg, #000); }
+  #profile:empty { display: none; }
+  body.vertical #profile { align-self: stretch; margin: 6px 8px; text-align: center; }
   #info { margin-left: auto; display: flex; align-items: center; gap: 6px; padding: 0 8px; flex: 0 1 auto;
           min-width: 0; font: var(--fonts-statusbar, 10pt monospace); white-space: nowrap; }
   body.vertical #info { margin: auto 0 0; padding: 6px 8px; flex-wrap: wrap; white-space: normal; }
@@ -48,7 +54,7 @@
   body.vertical #progress { top: 0; bottom: auto; }
 </style>
 <body>
-<div id="tabs"></div><div id="info"><span id="msg"></span><span id="keys"></span><span id="dl" title="Downloads"></span><span id="mode"></span></div><div id="progress"></div>
+<div id="profile"></div><div id="tabs"></div><div id="info"><span id="msg"></span><span id="keys"></span><span id="dl" title="Downloads"></span><span id="mode"></span></div><div id="progress"></div>
 <script>
   const $ = (id) => document.getElementById(id);
   nova.theme = (t) => {
@@ -60,6 +66,7 @@
   let tipTimer;
   nova.apply = (s) => {
     const st = s.status;
+    $("profile").textContent = st.profile;
     $("mode").textContent = st.cmd ? "" : st.mode.replace(/^-- | --$/g, "");
     $("mode").className = st.modename;
     $("keys").textContent = st.keys;

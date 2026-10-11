@@ -18,11 +18,20 @@ thread_local! {
     static M: RefCell<Marks> = RefCell::new(Marks::default());
 }
 
+/// Default profile: next to config.ts (qutebrowser's place); named profiles keep
+/// their own marks in their data dir.
+fn dir() -> PathBuf {
+    match crate::profile() {
+        Some(_) => crate::xdg_dir("XDG_DATA_HOME", ".local/share"),
+        None => config::dir(),
+    }
+}
+
 fn quick_file() -> PathBuf {
-    config::dir().join("quickmarks")
+    dir().join("quickmarks")
 }
 fn book_file() -> PathBuf {
-    config::dir().join("bookmarks").join("urls")
+    dir().join("bookmarks").join("urls")
 }
 
 /// `name url` / `url title`: split at the first (quickmarks: last) space.

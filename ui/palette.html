@@ -81,14 +81,14 @@
   // `:open [-t|-b|-w] ` is kept out of sight (o/O just ask for an address, like Zen);
   // the core always gets and sends the full command line.
   let pre = "";
-  const OPEN = /^:(?:open(?: -[tbw])*|bindings) /;
+  const OPEN = /^:(?:open(?: -[tbw])*|bindings|profile-new) /;
   const full = () => pre + c.value;
   const show = (text) => {
     const m = text.match(OPEN);
     pre = m ? m[0] : "";
     c.value = text.slice(pre.length);
     document.body.classList.toggle("tall", pre === ":bindings ");
-    c.placeholder = !pre ? "" : pre === ":bindings " ? "Filter key bindings…  (Esc closes)" : / -[tw]/.test(pre) ? "Open in new tab…" : / -b/.test(pre) ? "Open in background tab…" : "Search or enter address…";
+    c.placeholder = !pre ? "" : pre === ":bindings " ? "Filter key bindings…  (Esc closes)" : pre === ":profile-new " ? "Name for the new profile…" : / -[tw]/.test(pre) ? "Open in new tab…" : / -b/.test(pre) ? "Open in background tab…" : "Search or enter address…";
     c.setSelectionRange(c.value.length, c.value.length);
   };
   nova.cmdline = (text, compact) => {

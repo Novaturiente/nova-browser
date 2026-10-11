@@ -708,7 +708,8 @@ pub fn refresh() {
             None => s.message.clone().unwrap_or_default(),
         };
         let status = format!(
-            "{{\"url\":{},\"p\":{},\"loading\":{},\"crashed\":{},\"mode\":{},\"cmd\":{},\"keys\":{},\"level\":{},\"msg\":{},\"tab\":{},\"hist\":{},\"modename\":{}}}",
+            "{{\"profile\":{},\"url\":{},\"p\":{},\"loading\":{},\"crashed\":{},\"mode\":{},\"cmd\":{},\"keys\":{},\"level\":{},\"msg\":{},\"tab\":{},\"hist\":{},\"modename\":{}}}",
+            js_str(crate::profile().unwrap_or("")),
             js_str(&t.url),
             t.progress,
             t.loading,
@@ -729,7 +730,10 @@ pub fn refresh() {
         );
         let (dl, dl_class) = crate::downloads::summary();
         let status = format!("{},\"dl\":{},\"dlc\":{}}}", &status[..status.len() - 1], js_str(&dl), js_str(dl_class));
-        let title = theme::format_title(&cfg.str("window.title_format"), &fields(s.active, t));
+        let mut title = theme::format_title(&cfg.str("window.title_format"), &fields(s.active, t));
+        if let Some(p) = crate::profile() {
+            title = format!("[{p}] {title}");
+        }
         Some((
             s.tabbar.clone()?,
             s.window.clone()?,

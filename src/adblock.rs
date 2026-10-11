@@ -32,7 +32,8 @@ thread_local! {
 }
 
 fn dir() -> PathBuf {
-    crate::xdg_dir("XDG_DATA_HOME", ".local/share").join("adblock")
+    // lists + engine are the same for every profile
+    crate::xdg_root("XDG_DATA_HOME", ".local/share").join("adblock")
 }
 
 /// uBlock Origin scriptlets, built by scripts/gen-adblock-resources.mjs.

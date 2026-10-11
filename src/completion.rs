@@ -67,6 +67,15 @@ fn complete(text: &str) {
             };
             set(prefix, title, marks::filter(rows, arg));
         }
+        Some(("profile-open", rest)) => {
+            let rows = crate::profiles::list()
+                .into_iter()
+                .filter(|n| n.to_lowercase().contains(&rest.trim().to_lowercase()))
+                .map(|n| (format!(":profile-open {n}"), if Some(n.as_str()) == crate::profile().or(Some("default")) { "this profile (new window)".into() } else { String::new() }))
+                .collect();
+            set(String::new(), "Profiles", rows);
+            render();
+        }
         Some(("bindings", rest)) => {
             // yours first, then the defaults per mode; filter on key and command
             let words: Vec<String> = rest.split_whitespace().map(str::to_lowercase).collect();
