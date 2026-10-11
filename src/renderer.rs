@@ -22,7 +22,10 @@ fn call_helper(frame: &Frame, name: &str, args: &[&str]) -> Option<String> {
     // outside on_context_created the context must be entered by hand
     ctx.enter();
     let r = obj.value_bykey(Some(&s(name))).and_then(|f| {
-        let args: Vec<Option<V8Value>> = args.iter().map(|a| v8_value_create_string(Some(&s(a)))).collect();
+        let args: Vec<Option<V8Value>> = args
+            .iter()
+            .map(|a| v8_value_create_string(Some(&s(a))))
+            .collect();
         f.execute_function(Some(&mut obj), Some(&args))
     });
     ctx.exit();
@@ -124,7 +127,14 @@ wrap_render_process_handler! {
 fn install_helper(frame: &Frame, context: &mut V8Context) {
     let mut ret = None;
     let mut exc = None;
-    if context.eval(Some(&s(PASSWORDS_JS)), Some(&s("novabrowser://passwords.js")), 1, Some(&mut ret), Some(&mut exc)) == 0 {
+    if context.eval(
+        Some(&s(PASSWORDS_JS)),
+        Some(&s("novabrowser://passwords.js")),
+        1,
+        Some(&mut ret),
+        Some(&mut exc),
+    ) == 0
+    {
         return;
     }
     let Some(f) = ret else { return };

@@ -50,11 +50,17 @@ fn label(b: Backend) -> &'static str {
 /// bare host as stored in vault URIs ("github.com", "100.88.1.2:8080/x").
 pub fn site(uri: &str) -> Option<String> {
     let uri = uri.trim();
-    let full = if uri.contains("://") { uri.to_string() } else { format!("https://{uri}") };
+    let full = if uri.contains("://") {
+        uri.to_string()
+    } else {
+        format!("https://{uri}")
+    };
     if !(full.starts_with("http://") || full.starts_with("https://")) {
         return None; // androidapp://, ssh://, …
     }
-    adblock::url_parser::parse_url(&full).map(|u| u.domain().to_string()).filter(|d| !d.is_empty())
+    adblock::url_parser::parse_url(&full)
+        .map(|u| u.domain().to_string())
+        .filter(|d| !d.is_empty())
 }
 
 fn host(url: &str) -> String {
@@ -65,24 +71,39 @@ fn host(url: &str) -> String {
 fn origin(url: &str) -> String {
     let (scheme, rest) = url.split_once("://").unwrap_or(("https", url));
     let auth = rest.split(['/', '?', '#']).next().unwrap_or("");
-    format!("{scheme}://{}", auth.rsplit_once('@').map_or(auth, |(_, h)| h))
+    format!(
+        "{scheme}://{}",
+        auth.rsplit_once('@').map_or(auth, |(_, h)| h)
+    )
 }
 
 // ---- running the CLIs ----
 
-fn run(prog: &str, args: &[&str], stdin: Option<&str>, env: &[(&str, &str)]) -> Result<String, String> {
+fn run(
+    prog: &str,
+    args: &[&str],
+    stdin: Option<&str>,
+    env: &[(&str, &str)],
+) -> Result<String, String> {
     let mut cmd = Command::new(prog);
     cmd.args(args).stdout(Stdio::piped()).stderr(Stdio::piped());
-    cmd.stdin(if stdin.is_some() { Stdio::piped() } else { Stdio::null() });
+    cmd.stdin(if stdin.is_some() {
+        Stdio::piped()
+    } else {
+        Stdio::null()
+    });
     for (k, v) in env {
         cmd.env(k, v);
     }
     let mut child = cmd.spawn().map_err(|e| format!("{prog}: {e}"))?;
     if let Some(input) = stdin {
         let mut i = child.stdin.take().unwrap();
-        i.write_all(input.as_bytes()).map_err(|e| format!("{prog}: {e}"))?;
+        i.write_all(input.as_bytes())
+            .map_err(|e| format!("{prog}: {e}"))?;
     }
-    let out = child.wait_with_output().map_err(|e| format!("{prog}: {e}"))?;
+    let out = child
+        .wait_with_output()
+        .map_err(|e| format!("{prog}: {e}"))?;
     if !out.status.success() {
         let err = String::from_utf8_lossy(&out.stderr);
         let err = err.trim().lines().last().unwrap_or("failed");
@@ -102,7 +123,9 @@ fn s(v: &Value) -> String {
 fn pass_dir() -> PathBuf {
     std::env::var_os("PASSWORD_STORE_DIR")
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").expect("HOME")).join(".password-store"))
+        .unwrap_or_else(|| {
+            PathBuf::from(std::env::var_os("HOME").expect("HOME")).join(".password-store")
+        })
 }
 
 /// Metadata only (no secrets kept). Cached: `bw` takes about a second per call.
@@ -137,7 +160,12 @@ fn list_all(b: Backend) -> Result<Vec<Entry>, String> {
                 id: s(&e["id"]),
                 name: s(&e["name"]),
                 user: s(&e["login"]["username"]),
-                uris: e["login"]["uris"].as_array().into_iter().flatten().map(|u| s(&u["uri"])).collect(),
+                uris: e["login"]["uris"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(|u| s(&u["uri"]))
+                    .collect(),
             })
             .collect(),
         Backend::Pass => pass_entries(),
@@ -161,12 +189,30 @@ fn pass_entries() -> Vec<Entry> {
             if p.is_dir() {
                 stack.push(p);
             } else if let Some(stem) = name.strip_suffix(".gpg") {
-                let id = p.strip_prefix(&root).unwrap().with_extension("").to_string_lossy().into_owned();
+                let id = p
+                    .strip_prefix(&root)
+                    .unwrap()
+                    .with_extension("")
+                    .to_string_lossy()
+                    .into_owned();
                 let parts: Vec<&str> = id.split('/').collect();
-                let uris: Vec<String> = parts.iter().filter(|x| x.contains('.')).map(|x| x.to_string()).collect();
+                let uris: Vec<String> = parts
+                    .iter()
+                    .filter(|x| x.contains('.'))
+                    .map(|x| x.to_string())
+                    .collect();
                 let parent_is_site = parts.len() > 1 && parts[parts.len() - 2].contains('.');
-                let user = if parent_is_site { stem.to_string() } else { String::new() };
-                out.push(Entry { id: id.clone(), name: id, user, uris });
+                let user = if parent_is_site {
+                    stem.to_string()
+                } else {
+                    String::new()
+                };
+                out.push(Entry {
+                    id: id.clone(),
+                    name: id,
+                    user,
+                    uris,
+                });
             }
         }
     }
@@ -176,13 +222,20 @@ fn pass_entries() -> Vec<Entry> {
 
 /// Entries whose URI shares the registrable domain of `url`; same host first.
 pub fn matching(b: Backend, url: &str) -> Result<Vec<Entry>, String> {
-    let Some(want) = site(url) else { return Ok(Vec::new()) };
+    let Some(want) = site(url) else {
+        return Ok(Vec::new());
+    };
     let h = host(url);
     let mut v: Vec<Entry> = list_all(b)?
         .into_iter()
         .filter(|e| e.uris.iter().any(|u| site(u).as_deref() == Some(&want)))
         .collect();
-    let exact = |e: &Entry| e.uris.iter().any(|u| site(u).is_some() && host(&format!("https://{}", u.split("://").last().unwrap_or(u))) == h);
+    let exact = |e: &Entry| {
+        e.uris.iter().any(|u| {
+            site(u).is_some()
+                && host(&format!("https://{}", u.split("://").last().unwrap_or(u))) == h
+        })
+    };
     v.sort_by_key(|e| !exact(e));
     Ok(v)
 }
@@ -205,8 +258,11 @@ pub fn secret(b: Backend, e: &Entry) -> Result<(String, String), String> {
             let user = lines
                 .find_map(|l| {
                     let (k, v) = l.split_once(':')?;
-                    matches!(k.trim().to_lowercase().as_str(), "login" | "user" | "username" | "email")
-                        .then(|| v.trim().to_string())
+                    matches!(
+                        k.trim().to_lowercase().as_str(),
+                        "login" | "user" | "username" | "email"
+                    )
+                    .then(|| v.trim().to_string())
                 })
                 .unwrap_or_else(|| e.user.clone());
             Ok((user, pw))
@@ -231,7 +287,10 @@ pub fn generate() -> String {
         .and_then(|mut f| std::io::Read::read_exact(&mut f, &mut buf))
         .expect("/dev/urandom");
     // 256 % 64 == 0: no modulo bias
-    buf.iter().take(20).map(|b| CHARS[*b as usize % CHARS.len()] as char).collect()
+    buf.iter()
+        .take(20)
+        .map(|b| CHARS[*b as usize % CHARS.len()] as char)
+        .collect()
 }
 
 /// `$VISUAL` for `rbw add`/`rbw edit`: novabrowser itself in editor mode, the secret
@@ -249,7 +308,12 @@ fn rbw_editor(mode: &str, secret: &str) -> Result<Vec<(&'static str, String)>, S
 /// Editor mode (see rbw_editor): put the secret on the first line of the file.
 /// "replace" swaps the old password line (edit), "insert" adds it on top (add).
 pub fn editor_main(path: &str) -> i32 {
-    let (Ok(secret), Ok(mode)) = (std::env::var("NOVA_PW_SECRET"), std::env::var("NOVA_PW_MODE")) else { return 2 };
+    let (Ok(secret), Ok(mode)) = (
+        std::env::var("NOVA_PW_SECRET"),
+        std::env::var("NOVA_PW_MODE"),
+    ) else {
+        return 2;
+    };
     let text = std::fs::read_to_string(path).unwrap_or_default();
     let rest = match mode.as_str() {
         "replace" => text.split_once('\n').map(|(_, r)| r).unwrap_or(""),
@@ -286,11 +350,20 @@ pub fn save(b: Backend, url: &str, user: &str, pw: &str) -> Result<(), String> {
             run("bw", &["create", "item"], Some(enc.trim()), &[])?;
         }
         Backend::Pass => {
-            let name = if user.is_empty() { h.clone() } else { format!("{h}/{}", user.replace('/', "_")) };
+            let name = if user.is_empty() {
+                h.clone()
+            } else {
+                format!("{h}/{}", user.replace('/', "_"))
+            };
             if pass_dir().join(format!("{name}.gpg")).exists() {
                 return Err(format!("pass: {name} already exists"));
             }
-            run("pass", &["insert", "-m", &name], Some(&format!("{pw}\nlogin: {user}\nurl: {origin}\n")), &[])?;
+            run(
+                "pass",
+                &["insert", "-m", &name],
+                Some(&format!("{pw}\nlogin: {user}\nurl: {origin}\n")),
+                &[],
+            )?;
         }
     }
     *CACHE.lock().unwrap() = None;
@@ -312,7 +385,12 @@ pub fn update(b: Backend, e: &Entry, pw: &str) -> Result<(), String> {
         Backend::Pass => {
             let old = run("pass", &["show", &e.id], None, &[])?;
             let rest = old.split_once('\n').map(|(_, r)| r).unwrap_or("");
-            run("pass", &["insert", "-m", "-f", &e.id], Some(&format!("{pw}\n{rest}")), &[])?;
+            run(
+                "pass",
+                &["insert", "-m", "-f", &e.id],
+                Some(&format!("{pw}\n{rest}")),
+                &[],
+            )?;
         }
     }
     *CACHE.lock().unwrap() = None;
@@ -384,7 +462,10 @@ fn frame_url(f: &Frame) -> String {
 
 /// Cross-site frames get nothing: the frame must share the tab's site.
 fn same_site_as_top(browser: &Browser, frame: &Frame) -> bool {
-    let top = browser.main_frame().map(|m| frame_url(&m)).unwrap_or_default();
+    let top = browser
+        .main_frame()
+        .map(|m| frame_url(&m))
+        .unwrap_or_default();
     let (a, b) = (site(&top), site(&frame_url(frame)));
     a.is_some() && a == b
 }
@@ -393,8 +474,13 @@ fn same_site_as_top(browser: &Browser, frame: &Frame) -> bool {
 /// bounds in the frame's CSS px.
 pub fn on_focus(browser: &Browser, frame: &Frame, kind: &str, rect: Rect) {
     let Some(b) = backend() else { return };
-    let Some(kind) = Kind::parse(kind) else { return hide() };
-    if FILLED_AT.get().is_some_and(|t| t.elapsed() < Duration::from_millis(800)) {
+    let Some(kind) = Kind::parse(kind) else {
+        return hide();
+    };
+    if FILLED_AT
+        .get()
+        .is_some_and(|t| t.elapsed() < Duration::from_millis(800))
+    {
         return;
     }
     if !same_site_as_top(browser, frame) {
@@ -405,7 +491,16 @@ pub fn on_focus(browser: &Browser, frame: &Frame, kind: &str, rect: Rect) {
         g.get()
     });
     let url = frame_url(frame);
-    FIELD.set(Some(Field { seq, browser: browser.identifier(), frame: frame.clone(), kind, url: url.clone(), rect, items: Vec::new(), sel: None }));
+    FIELD.set(Some(Field {
+        seq,
+        browser: browser.identifier(),
+        frame: frame.clone(),
+        kind,
+        url: url.clone(),
+        rect,
+        items: Vec::new(),
+        sel: None,
+    }));
     if kind == Kind::New {
         return show(seq, Vec::new());
     }
@@ -430,7 +525,9 @@ fn show(seq: u64, entries: Vec<Entry>) {
         Some(rows(f))
     });
     match rows {
-        Some(r) if r.1["rows"].as_array().is_some_and(|a| !a.is_empty()) => window::suggest(r.0, &r.1),
+        Some(r) if r.1["rows"].as_array().is_some_and(|a| !a.is_empty()) => {
+            window::suggest(r.0, &r.1)
+        }
         _ => hide(),
     }
 }
@@ -444,14 +541,29 @@ fn rows(f: &Field) -> (Rect, Value) {
         .enumerate()
         .map(|(i, it)| {
             let (a, c) = match it {
-                Item::Entry(e) if f.kind == Kind::Otp => (format!("{} code", e.name), e.user.clone()),
-                Item::Entry(e) => (if e.user.is_empty() { e.name.clone() } else { e.user.clone() }, e.name.clone()),
-                Item::Generate => ("Generate a strong password".into(), format!("saved to {b} after you submit")),
+                Item::Entry(e) if f.kind == Kind::Otp => {
+                    (format!("{} code", e.name), e.user.clone())
+                }
+                Item::Entry(e) => (
+                    if e.user.is_empty() {
+                        e.name.clone()
+                    } else {
+                        e.user.clone()
+                    },
+                    e.name.clone(),
+                ),
+                Item::Generate => (
+                    "Generate a strong password".into(),
+                    format!("saved to {b} after you submit"),
+                ),
             };
             serde_json::json!({ "a": a, "b": c, "sel": f.sel == Some(i) })
         })
         .collect();
-    (f.rect.clone(), serde_json::json!({ "title": b, "rows": rows }))
+    (
+        f.rect.clone(),
+        serde_json::json!({ "title": b, "rows": rows }),
+    )
 }
 
 /// Safe from any CEF callback: the overlay is hidden in a posted task, because CEF
@@ -507,13 +619,22 @@ pub fn on_click(i: usize) {
 
 fn pick_item(i: usize) {
     let Some(b) = backend() else { return };
-    let Some((item, kind, seq)) = FIELD.with_borrow(|f| f.as_ref().and_then(|f| Some((f.items.get(i)?.clone(), f.kind, f.seq)))) else { return };
+    let Some((item, kind, seq)) = FIELD.with_borrow(|f| {
+        f.as_ref()
+            .and_then(|f| Some((f.items.get(i)?.clone(), f.kind, f.seq)))
+    }) else {
+        return;
+    };
     hide();
     match item {
         Item::Generate => fill(seq, String::new(), generate(), "new"),
         Item::Entry(e) => {
             std::thread::spawn(move || {
-                let r = if kind == Kind::Otp { totp(b, &e).map(|c| (String::new(), c)) } else { secret(b, &e) };
+                let r = if kind == Kind::Otp {
+                    totp(b, &e).map(|c| (String::new(), c))
+                } else {
+                    secret(b, &e)
+                };
                 crate::on_ui(move || match r {
                     Ok((u, p)) => fill(seq, u, p, kind.fill_what()),
                     Err(e) => window::message("error", &e),
@@ -525,7 +646,13 @@ fn pick_item(i: usize) {
 
 /// Send the secret to the field's frame, if it is still the same page.
 fn fill(seq: u64, user: String, pass: String, what: &str) {
-    let Some((frame, url)) = FIELD.with_borrow(|f| f.as_ref().filter(|f| f.seq == seq).map(|f| (f.frame.clone(), f.url.clone()))) else { return };
+    let Some((frame, url)) = FIELD.with_borrow(|f| {
+        f.as_ref()
+            .filter(|f| f.seq == seq)
+            .map(|f| (f.frame.clone(), f.url.clone()))
+    }) else {
+        return;
+    };
     send_fill(&frame, &url, &user, &pass, what);
 }
 
@@ -535,7 +662,8 @@ fn send_fill(frame: &Frame, url: &str, user: &str, pass: &str, what: &str) {
         return window::message("warning", "page changed, nothing filled");
     }
     FILLED_AT.set(Some(Instant::now()));
-    let msg = process_message_create(Some(&CefString::from("nova.fill"))).expect("process_message_create");
+    let msg = process_message_create(Some(&CefString::from("nova.fill")))
+        .expect("process_message_create");
     let args = msg.argument_list().expect("argument_list");
     args.set_string(0, Some(&CefString::from(user)));
     args.set_string(1, Some(&CefString::from(pass)));
@@ -550,8 +678,15 @@ pub fn fill_command(otp: bool) -> Result<(), String> {
     let browser = window::active_browser().ok_or("no tab")?;
     let id = browser.identifier();
     // the focused field's frame when it's in this tab, else the main frame
-    let focused = FIELD.with_borrow(|f| f.as_ref().filter(|f| f.browser == id).map(|f| f.frame.clone()));
-    let frame = focused.filter(|f| f.is_valid() != 0).or_else(|| browser.main_frame()).ok_or("no page")?;
+    let focused = FIELD.with_borrow(|f| {
+        f.as_ref()
+            .filter(|f| f.browser == id)
+            .map(|f| f.frame.clone())
+    });
+    let frame = focused
+        .filter(|f| f.is_valid() != 0)
+        .or_else(|| browser.main_frame())
+        .ok_or("no page")?;
     if !same_site_as_top(&browser, &frame) {
         return Err("login form is in a cross-site frame".into());
     }
@@ -561,12 +696,34 @@ pub fn fill_command(otp: bool) -> Result<(), String> {
         g.get()
     });
     let url = frame_url(&frame);
-    let rect = FIELD.with_borrow(|f| f.as_ref().filter(|f| f.browser == id).map(|f| f.rect.clone())).unwrap_or(Rect { x: 24, y: 0, width: 300, height: 8 });
-    FIELD.set(Some(Field { seq, browser: id, frame, kind, url: url.clone(), rect, items: Vec::new(), sel: None }));
+    let rect = FIELD
+        .with_borrow(|f| {
+            f.as_ref()
+                .filter(|f| f.browser == id)
+                .map(|f| f.rect.clone())
+        })
+        .unwrap_or(Rect {
+            x: 24,
+            y: 0,
+            width: 300,
+            height: 8,
+        });
+    FIELD.set(Some(Field {
+        seq,
+        browser: id,
+        frame,
+        kind,
+        url: url.clone(),
+        rect,
+        items: Vec::new(),
+        sel: None,
+    }));
     std::thread::spawn(move || {
         let r = matching(b, &url);
         crate::on_ui(move || match r {
-            Ok(v) if v.is_empty() => window::message("info", &format!("no {} login for {}", label(b), host(&url))),
+            Ok(v) if v.is_empty() => {
+                window::message("info", &format!("no {} login for {}", label(b), host(&url)))
+            }
             Ok(v) if v.len() == 1 => {
                 FIELD.with_borrow_mut(|f| {
                     if let Some(f) = f.as_mut().filter(|f| f.seq == seq) {
@@ -598,7 +755,9 @@ pub fn on_submit(browser: &Browser, frame: &Frame, json: &str) {
     if !same_site_as_top(browser, frame) {
         return;
     }
-    let Ok(v) = serde_json::from_str::<Value>(json) else { return };
+    let Ok(v) = serde_json::from_str::<Value>(json) else {
+        return;
+    };
     let url = frame_url(frame);
     let Some(st) = site(&url) else { return };
     let id = browser.identifier();
@@ -614,10 +773,19 @@ pub fn on_submit(browser: &Browser, frame: &Frame, json: &str) {
         return;
     }
     if user.is_empty() {
-        user = LAST_USER.with_borrow(|l| l.iter().rev().find(|(b, s, _)| *b == id && *s == st).map(|x| x.2.clone())).unwrap_or_default();
+        user = LAST_USER
+            .with_borrow(|l| {
+                l.iter()
+                    .rev()
+                    .find(|(b, s, _)| *b == id && *s == st)
+                    .map(|x| x.2.clone())
+            })
+            .unwrap_or_default();
     }
     let repeat = LAST_SUBMIT.with_borrow(|l| {
-        l.as_ref().is_some_and(|(t, s, u, p)| t.elapsed() < Duration::from_secs(30) && *s == st && *u == user && *p == pass)
+        l.as_ref().is_some_and(|(t, s, u, p)| {
+            t.elapsed() < Duration::from_secs(30) && *s == st && *u == user && *p == pass
+        })
     });
     if repeat {
         return;
@@ -645,9 +813,20 @@ pub fn on_submit(browser: &Browser, frame: &Frame, json: &str) {
     });
 }
 
-fn ask(browser: &Browser, b: Backend, url: &str, user: String, pass: String, existing: Option<Entry>) {
+fn ask(
+    browser: &Browser,
+    b: Backend,
+    url: &str,
+    user: String,
+    pass: String,
+    existing: Option<Entry>,
+) {
     let h = host(url);
-    let who = if user.is_empty() { String::new() } else { format!(" for {user}") };
+    let who = if user.is_empty() {
+        String::new()
+    } else {
+        format!(" for {user}")
+    };
     let text = match &existing {
         Some(_) => format!("Update the {} password{who} on {h}? [y]es [n]o", label(b)),
         None => format!("Save this login{who} on {h} to {}? [y]es [n]o", label(b)),
@@ -657,7 +836,8 @@ fn ask(browser: &Browser, b: Backend, url: &str, user: String, pass: String, exi
         if !yes {
             return;
         }
-        let (url, user, pass, existing) = (url.clone(), user.clone(), pass.clone(), existing.clone());
+        let (url, user, pass, existing) =
+            (url.clone(), user.clone(), pass.clone(), existing.clone());
         std::thread::spawn(move || {
             let r = match &existing {
                 Some(e) => update(b, e, &pass).map(|_| "updated"),
@@ -687,10 +867,19 @@ mod tests {
 
     #[test]
     fn site_matches_base_domain() {
-        assert_eq!(site("https://login.github.com/x").as_deref(), Some("github.com"));
+        assert_eq!(
+            site("https://login.github.com/x").as_deref(),
+            Some("github.com")
+        );
         assert_eq!(site("github.com").as_deref(), Some("github.com"));
-        assert_eq!(site("accounts.google.co.uk:443/a").as_deref(), Some("google.co.uk"));
-        assert_eq!(site("http://129.159.225.36").as_deref(), Some("129.159.225.36"));
+        assert_eq!(
+            site("accounts.google.co.uk:443/a").as_deref(),
+            Some("google.co.uk")
+        );
+        assert_eq!(
+            site("http://129.159.225.36").as_deref(),
+            Some("129.159.225.36")
+        );
         assert_eq!(site("androidapp://com.x"), None);
         assert_ne!(site("evilgithub.com"), site("github.com"));
     }

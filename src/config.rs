@@ -121,7 +121,10 @@ impl Config {
 
     /// How many `colors.*` settings config.ts sets (they hide the theme preset).
     pub fn colors_in_config_ts(&self) -> usize {
-        self.settings.keys().filter(|k| k.starts_with("colors.") && !k.starts_with("colors.webpage.")).count()
+        self.settings
+            .keys()
+            .filter(|k| k.starts_with("colors.") && !k.starts_with("colors.webpage."))
+            .count()
     }
 
     /// Value for `url`: the last matching `pattern()` block that sets it wins.
