@@ -1,39 +1,64 @@
-//! System clipboard / primary selection through `wl-copy` / `wl-paste`, off the UI thread.
-// shortcut: Wayland only (wl-clipboard); add xclip when X11 matters
+//! Clipboard. Copy goes through Chromium's own clipboard (works on Wayland and
+//! X11, no extra tools); the primary selection and reading (for `{clipboard}`)
+//! use `wl-copy`/`wl-paste`, else `xclip`, off the UI thread.
 use cef::*;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
 pub fn write(text: &str, primary: bool) {
+    let Some(ui) = (!primary).then(crate::window::tabbar_browser).flatten() else {
+        return write_external(text.to_string(), primary);
+    };
+    // a copy event in our own tab-bar page; userGesture lets execCommand reach the clipboard
+    let js = format!(
+        "document.addEventListener('copy',e=>{{e.clipboardData.setData('text/plain',{});e.preventDefault()}},{{once:true}});document.execCommand('copy')",
+        serde_json::Value::from(text)
+    );
     let text = text.to_string();
-    std::thread::spawn(move || {
-        let mut cmd = Command::new("wl-copy");
-        if primary {
-            cmd.arg("--primary");
-        }
-        let child = cmd.stdin(Stdio::piped()).stdout(Stdio::null()).spawn();
-        match child {
-            Ok(mut c) => {
-                if let Some(mut stdin) = c.stdin.take() {
-                    let _ = stdin.write_all(text.as_bytes());
-                }
-                let _ = c.wait();
-            }
-            Err(e) => eprintln!("novabrowser: wl-copy: {e}"),
+    let params = serde_json::json!({"expression": js, "userGesture": true, "returnByValue": true});
+    crate::devtools::call(&ui, "Runtime.evaluate", params, move |r| {
+        if r.and_then(|r| r["result"]["value"].as_bool()) != Some(true) {
+            write_external(text, false);
         }
     });
 }
 
-fn read(primary: bool) -> String {
-    let mut cmd = Command::new("wl-paste");
-    cmd.arg("--no-newline");
-    if primary {
-        cmd.arg("--primary");
+/// (program, args) tried in order: Wayland tool first, then X11.
+fn tools(primary: bool, copy: bool) -> [(&'static str, Vec<&'static str>); 2] {
+    let sel = if primary { "primary" } else { "clipboard" };
+    match (copy, primary) {
+        (true, true) => [("wl-copy", vec!["--primary"]), ("xclip", vec!["-selection", sel])],
+        (true, false) => [("wl-copy", vec![]), ("xclip", vec!["-selection", sel])],
+        (false, true) => [("wl-paste", vec!["--no-newline", "--primary"]), ("xclip", vec!["-o", "-selection", sel])],
+        (false, false) => [("wl-paste", vec!["--no-newline"]), ("xclip", vec!["-o", "-selection", sel])],
     }
-    cmd.stderr(Stdio::null())
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
-        .unwrap_or_default()
+}
+
+fn wayland() -> bool {
+    std::env::var_os("WAYLAND_DISPLAY").is_some()
+}
+
+fn write_external(text: String, primary: bool) {
+    std::thread::spawn(move || {
+        for (prog, args) in tools(primary, true).into_iter().skip(usize::from(!wayland())) {
+            let Ok(mut c) = Command::new(prog).args(args).stdin(Stdio::piped()).stdout(Stdio::null()).spawn() else { continue };
+            if let Some(mut stdin) = c.stdin.take() {
+                let _ = stdin.write_all(text.as_bytes());
+            }
+            let _ = c.wait();
+            return;
+        }
+        eprintln!("novabrowser: copy needs wl-clipboard or xclip");
+    });
+}
+
+fn read(primary: bool) -> String {
+    for (prog, args) in tools(primary, false).into_iter().skip(usize::from(!wayland())) {
+        if let Ok(o) = Command::new(prog).args(args).stderr(Stdio::null()).output() {
+            return String::from_utf8_lossy(&o.stdout).into_owned();
+        }
+    }
+    String::new()
 }
 
 wrap_task! {

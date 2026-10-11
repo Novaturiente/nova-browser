@@ -197,6 +197,11 @@ fn open_titled(url: &str, title: String, foreground: bool) {
 }
 
 /// Current tabs in session.rs's shape; None before the window exists.
+/// Our tab-bar page's browser (used for clipboard writes).
+pub fn tabbar_browser() -> Option<Browser> {
+    S.with_borrow(|s| s.tabbar.as_ref()?.browser())
+}
+
 pub fn session_json() -> Option<serde_json::Value> {
     S.with_borrow(|s| {
         s.window.as_ref()?;
