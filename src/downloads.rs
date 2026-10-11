@@ -51,9 +51,16 @@ fn unique(dir: &Path, name: &str, taken: &[PathBuf]) -> PathBuf {
 
 /// Untrusted server-suggested name → a plain file name.
 fn sanitize(name: &str) -> String {
-    let n: String = name.chars().map(|c| if c == '/' || c == '\0' { '_' } else { c }).collect();
+    let n: String = name
+        .chars()
+        .map(|c| if c == '/' || c == '\0' { '_' } else { c })
+        .collect();
     let n = n.trim().trim_start_matches('.').to_string();
-    if n.is_empty() { "download".into() } else { n }
+    if n.is_empty() {
+        "download".into()
+    } else {
+        n
+    }
 }
 
 pub fn before(item: &DownloadItem, suggested: &str, cb: &BeforeDownloadCallback) {
@@ -61,16 +68,35 @@ pub fn before(item: &DownloadItem, suggested: &str, cb: &BeforeDownloadCallback)
     if let Err(e) = std::fs::create_dir_all(&d) {
         return window::message("error", &format!("download: {}: {e}", d.display()));
     }
-    let taken: Vec<PathBuf> = LIST.with_borrow(|l| l.iter().filter(|x| !x.done).map(|x| x.path.clone()).collect());
+    let taken: Vec<PathBuf> = LIST.with_borrow(|l| {
+        l.iter()
+            .filter(|x| !x.done)
+            .map(|x| x.path.clone())
+            .collect()
+    });
     let path = unique(&d, &sanitize(suggested), &taken);
-    LIST.with_borrow_mut(|l| l.push(Dl { id: item.id(), path: path.clone(), done: false, failed: false, cb: None }));
+    LIST.with_borrow_mut(|l| {
+        l.push(Dl {
+            id: item.id(),
+            path: path.clone(),
+            done: false,
+            failed: false,
+            cb: None,
+        })
+    });
     window::message("info", &format!("Downloading {}", path.display()));
-    cb.cont(Some(&CefString::from(path.to_str().unwrap_or("download"))), 0);
+    cb.cont(
+        Some(&CefString::from(path.to_str().unwrap_or("download"))),
+        0,
+    );
 }
 
 pub fn updated(item: &DownloadItem, cb: Option<&DownloadItemCallback>) {
     let id = item.id();
-    let (complete, failed) = (item.is_complete() != 0, item.is_canceled() != 0 || item.is_interrupted() != 0);
+    let (complete, failed) = (
+        item.is_complete() != 0,
+        item.is_canceled() != 0 || item.is_interrupted() != 0,
+    );
     let report = LIST.with_borrow_mut(|l| {
         let d = l.iter_mut().find(|d| d.id == id)?;
         if d.done {
@@ -95,11 +121,20 @@ pub fn updated(item: &DownloadItem, cb: Option<&DownloadItemCallback>) {
 /// `download-open [cmd…]`: newest finished download, with `cmd` or the dispatcher/xdg-open.
 pub fn open(cmdline: &[String]) -> Result<(), String> {
     let path = LIST
-        .with_borrow(|l| l.iter().rev().find(|d| d.done && !d.failed).map(|d| d.path.clone()))
+        .with_borrow(|l| {
+            l.iter()
+                .rev()
+                .find(|d| d.done && !d.failed)
+                .map(|d| d.path.clone())
+        })
         .ok_or("No finished download")?;
     let p = path.to_string_lossy().to_string();
     let argv: Vec<String> = if !cmdline.is_empty() {
-        cmdline.iter().map(|a| a.replace("{}", &p)).chain((!cmdline.iter().any(|a| a.contains("{}"))).then(|| p.clone())).collect()
+        cmdline
+            .iter()
+            .map(|a| a.replace("{}", &p))
+            .chain((!cmdline.iter().any(|a| a.contains("{}"))).then(|| p.clone()))
+            .collect()
     } else {
         match config::get().str("downloads.open_dispatcher") {
             d if d.is_empty() => vec!["xdg-open".into(), p],
@@ -126,7 +161,10 @@ mod tests {
         std::fs::create_dir_all(&d).unwrap();
         std::fs::write(d.join("a.pdf"), "").unwrap();
         assert_eq!(unique(&d, "a.pdf", &[]), d.join("a (1).pdf"));
-        assert_eq!(unique(&d, "a.pdf", &[d.join("a (1).pdf")]), d.join("a (2).pdf"));
+        assert_eq!(
+            unique(&d, "a.pdf", &[d.join("a (1).pdf")]),
+            d.join("a (2).pdf")
+        );
         assert_eq!(unique(&d, "b", &[]), d.join("b"));
         std::fs::remove_dir_all(&d).unwrap();
         assert_eq!(sanitize("../../etc/passwd"), "_.._etc_passwd");

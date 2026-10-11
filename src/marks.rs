@@ -31,7 +31,11 @@ pub fn parse(text: &str, name_first: bool) -> Vec<(String, String)> {
         .map(str::trim)
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
         .map(|l| {
-            let split = if name_first { l.rsplit_once(' ') } else { l.split_once(' ') };
+            let split = if name_first {
+                l.rsplit_once(' ')
+            } else {
+                l.split_once(' ')
+            };
             let (a, b) = split.unwrap_or((l, ""));
             (a.trim().to_string(), b.trim().to_string())
         })
@@ -42,8 +46,14 @@ fn with<R>(f: impl FnOnce(&mut Marks) -> R) -> R {
     M.with_borrow_mut(|m| {
         if !m.loaded {
             m.loaded = true;
-            m.quick = parse(&std::fs::read_to_string(quick_file()).unwrap_or_default(), true);
-            m.book = parse(&std::fs::read_to_string(book_file()).unwrap_or_default(), false);
+            m.quick = parse(
+                &std::fs::read_to_string(quick_file()).unwrap_or_default(),
+                true,
+            );
+            m.book = parse(
+                &std::fs::read_to_string(book_file()).unwrap_or_default(),
+                false,
+            );
         }
         f(m)
     })
@@ -69,8 +79,13 @@ pub fn bookmarks() -> Vec<(String, String)> {
 }
 
 pub fn quickmark_url(name: &str) -> Result<String, String> {
-    with(|m| m.quick.iter().find(|(n, _)| n == name).map(|(_, u)| u.clone()))
-        .ok_or_else(|| format!("Quickmark '{name}' does not exist!"))
+    with(|m| {
+        m.quick
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, u)| u.clone())
+    })
+    .ok_or_else(|| format!("Quickmark '{name}' does not exist!"))
 }
 
 /// `quickmark-add url name`: replaces an existing mark of that name.
@@ -118,7 +133,11 @@ pub fn bookmark_add(url: &str, title: &str, toggle: bool) -> Result<(), String> 
         Ok((m.book.clone(), true))
     })?;
     save(book_file(), &rows)?;
-    let what = if added { "Bookmarked" } else { "Removed bookmark" };
+    let what = if added {
+        "Bookmarked"
+    } else {
+        "Removed bookmark"
+    };
     window::message("info", &format!("{what} {url}"));
     Ok(())
 }
@@ -134,7 +153,10 @@ pub fn bookmark_del(url: &str) -> Result<(), String> {
 }
 
 /// Merge imported rows (import.rs); existing names/URLs win. Returns how many were new.
-pub fn import(quick: &[(String, String)], book: &[(String, String)]) -> Result<(usize, usize), String> {
+pub fn import(
+    quick: &[(String, String)],
+    book: &[(String, String)],
+) -> Result<(usize, usize), String> {
     let (q, b, nq, nb) = with(|m| {
         let (q0, b0) = (m.quick.len(), m.book.len());
         for (n, u) in quick {
@@ -147,7 +169,12 @@ pub fn import(quick: &[(String, String)], book: &[(String, String)]) -> Result<(
                 m.book.push((u.clone(), t.clone()));
             }
         }
-        (m.quick.clone(), m.book.clone(), m.quick.len() - q0, m.book.len() - b0)
+        (
+            m.quick.clone(),
+            m.book.clone(),
+            m.quick.len() - q0,
+            m.book.len() - b0,
+        )
     });
     save(quick_file(), &q)?;
     save(book_file(), &b)?;
@@ -167,11 +194,19 @@ pub fn filter(rows: Vec<(String, String)>, pattern: &str) -> Vec<(String, String
 
 /// `bookmark-list`: a local page with every quickmark and bookmark as a link.
 pub fn list_page() -> String {
-    let esc = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('"', "&quot;");
+    let esc = |s: &str| {
+        s.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('"', "&quot;")
+    };
     let link = |u: &str, t: &str| {
         let safe = u.starts_with("http") || u.starts_with("file:") || u.starts_with("about:");
         let href = if safe { esc(u) } else { "#".into() };
-        format!("<li><a href=\"{href}\">{}</a> <small>{}</small></li>", esc(if t.is_empty() { u } else { t }), esc(u))
+        format!(
+            "<li><a href=\"{href}\">{}</a> <small>{}</small></li>",
+            esc(if t.is_empty() { u } else { t }),
+            esc(u)
+        )
     };
     let q: String = quickmarks().iter().map(|(n, u)| link(u, n)).collect();
     let b: String = bookmarks().iter().map(|(u, t)| link(u, t)).collect();
@@ -190,19 +225,26 @@ mod tests {
     fn parses_qutebrowser_files() {
         assert_eq!(
             parse("klee https://a/b\n\n# c\nmy mark https://x", true),
-            [("klee".into(), "https://a/b".into()), ("my mark".into(), "https://x".into())]
-                as [(String, String); 2]
+            [
+                ("klee".into(), "https://a/b".into()),
+                ("my mark".into(), "https://x".into())
+            ] as [(String, String); 2]
         );
         assert_eq!(
             parse("https://g/app?q=1 Google Gemini\nhttps://bare", false),
-            [("https://g/app?q=1".into(), "Google Gemini".into()), ("https://bare".into(), String::new())]
-                as [(String, String); 2]
+            [
+                ("https://g/app?q=1".into(), "Google Gemini".into()),
+                ("https://bare".into(), String::new())
+            ] as [(String, String); 2]
         );
     }
 
     #[test]
     fn filter_needs_every_word() {
-        let rows = vec![("https://gemini.google.com".into(), "Google Gemini".into()), ("https://x".into(), "Zoom".into())];
+        let rows = vec![
+            ("https://gemini.google.com".into(), "Google Gemini".into()),
+            ("https://x".into(), "Zoom".into()),
+        ];
         assert_eq!(filter(rows.clone(), "gem GOOGLE").len(), 1);
         assert_eq!(filter(rows, "").len(), 2);
     }

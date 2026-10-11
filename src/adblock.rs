@@ -2,6 +2,7 @@
 //! thread, plus per-site cosmetic CSS and uBlock scriptlets injected into the
 //! page's main world before its own scripts. Lists are fetched in the
 //! background, cached on disk, and refreshed when older than a day.
+use crate::write_atomic;
 use crate::{config, devtools, urlmatch::UrlPattern, window};
 use adblock::{
     lists::{FilterSet, ParseOptions},
@@ -10,7 +11,6 @@ use adblock::{
     Engine,
 };
 use cef::*;
-use crate::write_atomic;
 use serde_json::{json, Value};
 use std::{
     cell::RefCell,

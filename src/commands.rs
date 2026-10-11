@@ -731,7 +731,9 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
             window::open_cmdline(&format!(":quickmark-add {url} "));
         }
         "quickmark-add" => {
-            let [url, name] = &cmd.args[..] else { return Err("quickmark-add: url and name required".into()) };
+            let [url, name] = &cmd.args[..] else {
+                return Err("quickmark-add: url and name required".into());
+            };
             crate::marks::quickmark_add(url, name)?
         }
         "quickmark-load" => open_in(&crate::marks::quickmark_url(&cmd.rest())?, cmd)?,
@@ -742,22 +744,40 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
         "bookmark-add" => {
             let (cur_url, cur_title) = window::active_url_title();
             let url = cmd.args.first().cloned().unwrap_or(cur_url);
-            let title = if cmd.args.len() > 1 { cmd.args[1..].join(" ") } else if cmd.args.is_empty() { cur_title } else { String::new() };
+            let title = if cmd.args.len() > 1 {
+                cmd.args[1..].join(" ")
+            } else if cmd.args.is_empty() {
+                cur_title
+            } else {
+                String::new()
+            };
             crate::marks::bookmark_add(&url, &title, cmd.flag("", "--toggle"))?
         }
         "bookmark-load" => open_in(&url_or_search(&cmd.rest()), cmd)?,
         "bookmark-del" => {
-            let url = if cmd.args.is_empty() { window::active_url_title().0 } else { cmd.rest() };
+            let url = if cmd.args.is_empty() {
+                window::active_url_title().0
+            } else {
+                cmd.rest()
+            };
             crate::marks::bookmark_del(&url)?
         }
         "bookmark-list" => {
             let page = window::data_url(&crate::marks::list_page()).to_string();
-            if cmd.flag("-j", "--jump") { open_in(&page, cmd)? } else { window::open(&page, true) }
+            if cmd.flag("-j", "--jump") {
+                open_in(&page, cmd)?
+            } else {
+                window::open(&page, true)
+            }
         }
         "download-open" => crate::downloads::open(&cmd.args)?,
         "download-cancel" => crate::downloads::cancel()?,
         "download" => {
-            let url = if cmd.args.is_empty() { window::active_url_title().0 } else { url_or_search(&cmd.rest()) };
+            let url = if cmd.args.is_empty() {
+                window::active_url_title().0
+            } else {
+                url_or_search(&cmd.rest())
+            };
             let h = need()?.host().ok_or("no active tab")?;
             h.start_download(Some(&CefString::from(url.as_str())));
         }
@@ -766,7 +786,9 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
             cmd.args.first().ok_or("session-load: name required")?,
             cmd.flag("-c", "--clear"),
         )?,
-        "session-delete" => crate::session::delete(cmd.args.first().ok_or("session-delete: name required")?)?,
+        "session-delete" => {
+            crate::session::delete(cmd.args.first().ok_or("session-delete: name required")?)?
+        }
         "adblock-update" => crate::adblock::update_now(),
         "config-source" => {
             config::load().map_err(|e| format!("config unchanged: {e}"))?;

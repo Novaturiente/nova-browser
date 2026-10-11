@@ -21,12 +21,18 @@ fn path(name: &str) -> Result<PathBuf, String> {
     if name.is_empty() || name.starts_with('.') || name.contains('/') {
         return Err(format!("Invalid session name: {name}"));
     }
-    Ok(xdg_dir("XDG_DATA_HOME", ".local/share").join("sessions").join(format!("{name}.json")))
+    Ok(xdg_dir("XDG_DATA_HOME", ".local/share")
+        .join("sessions")
+        .join(format!("{name}.json")))
 }
 
 fn default_name() -> String {
     let n = config::get().str("session.default_name");
-    if n.is_empty() { "default".into() } else { n }
+    if n.is_empty() {
+        "default".into()
+    } else {
+        n
+    }
 }
 
 pub fn write(name: &str, v: &Value) -> Result<String, String> {
@@ -64,7 +70,9 @@ pub fn save_now() {
     if !config::get().bool("auto_save.session") {
         return;
     }
-    let Some(v) = window::session_json() else { return };
+    let Some(v) = window::session_json() else {
+        return;
+    };
     let text = serde_json::to_string_pretty(&v).unwrap();
     if LAST.with_borrow(|l| *l == text) {
         return;

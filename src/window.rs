@@ -200,7 +200,16 @@ fn open_titled(url: &str, title: String, foreground: bool) {
 pub fn session_json() -> Option<serde_json::Value> {
     S.with_borrow(|s| {
         s.window.as_ref()?;
-        let tabs = s.tabs.iter().map(|t| (t.crashed.clone().unwrap_or_else(|| t.url.clone()), t.title.clone())).collect();
+        let tabs = s
+            .tabs
+            .iter()
+            .map(|t| {
+                (
+                    t.crashed.clone().unwrap_or_else(|| t.url.clone()),
+                    t.title.clone(),
+                )
+            })
+            .collect();
         // shortcut: last 100 closed tabs survive a restart, enough for undo
         let closed = &s.closed[s.closed.len().saturating_sub(100)..];
         Some(crate::session::shape(tabs, s.active, closed))
@@ -216,7 +225,12 @@ pub fn restore(v: &serde_json::Value, clear: bool) {
         let url = t["url"].as_str().unwrap_or("about:blank");
         open_titled(url, t["title"].as_str().unwrap_or("").to_string(), false);
     }
-    let closed: Vec<String> = v["closed"].as_array().into_iter().flatten().filter_map(|u| u.as_str().map(str::to_string)).collect();
+    let closed: Vec<String> = v["closed"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|u| u.as_str().map(str::to_string))
+        .collect();
     S.with_borrow_mut(|s| {
         let mut c = closed;
         c.append(&mut s.closed);
@@ -276,7 +290,10 @@ pub fn show(n: usize) {
 pub fn close(n: usize) {
     let host = S.with_borrow(|s| {
         let t = s.tabs.get(n)?;
-        t.crashed.is_none().then(|| t.view.browser()?.host()).flatten()
+        t.crashed
+            .is_none()
+            .then(|| t.view.browser()?.host())
+            .flatten()
     });
     match host {
         Some(h) => h.close_browser(0),
@@ -383,7 +400,9 @@ fn release_view(view: BrowserView) {
     if CLOSED.get() {
         return; // DoClose already ran: dropping the view destroys the browser
     }
-    let Some(h) = view.browser().and_then(|b| b.host()) else { return };
+    let Some(h) = view.browser().and_then(|b| b.host()) else {
+        return;
+    };
     S.with_borrow_mut(|s| s.closing.push(view));
     h.close_browser(1);
 }
@@ -677,13 +696,20 @@ pub fn close_others() {
 
 /// First of `url.start_pages`.
 pub fn start_page() -> String {
-    config::get().list("url.start_pages").into_iter().next().unwrap_or_else(|| "about:blank".into())
+    config::get()
+        .list("url.start_pages")
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| "about:blank".into())
 }
 
 /// A page entered/left fullscreen (video). `content.fullscreen.window`: fill our
 /// window only (hide the tab bar); otherwise the window goes fullscreen too.
 pub fn page_fullscreen(on: bool) {
-    let Some((window, tabbar)) = S.with_borrow(|s| Some((s.window.clone()?, s.tabbar.clone()?))) else { return };
+    let Some((window, tabbar)) = S.with_borrow(|s| Some((s.window.clone()?, s.tabbar.clone()?)))
+    else {
+        return;
+    };
     if config::get().bool("content.fullscreen.window") {
         if on {
             tabbar.set_visible(0);

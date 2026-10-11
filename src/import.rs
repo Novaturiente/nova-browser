@@ -49,19 +49,28 @@ pub fn main(arg: Option<&str>, history_db: &Path) -> Result<(), String> {
             if let Some(n) = qutebrowser_session(&dir.join("sessions/default.yml"))? {
                 println!("imported qutebrowser session ({n} tabs) as session 'qutebrowser' (:session-load qutebrowser)");
             }
-            (crate::marks::parse(&read("quickmarks"), true), crate::marks::parse(&read("bookmarks/urls"), false))
+            (
+                crate::marks::parse(&read("quickmarks"), true),
+                crate::marks::parse(&read("bookmarks/urls"), false),
+            )
         }
         _ => (vec![], book),
     };
     let (nq, nb) = crate::marks::import(&quick, &book)?;
-    println!("imported {nq} new quickmarks and {nb} new bookmarks (of {} and {})", quick.len(), book.len());
+    println!(
+        "imported {nq} new quickmarks and {nb} new bookmarks (of {} and {})",
+        quick.len(),
+        book.len()
+    );
     Ok(())
 }
 
 fn qutebrowser_config() -> PathBuf {
     std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".config"))
+        .unwrap_or_else(|| {
+            PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".config")
+        })
         .join("qutebrowser")
 }
 
@@ -77,8 +86,12 @@ fn chromium_bookmarks(file: &Path) -> Vec<(String, String)> {
             walk(c, out);
         }
     }
-    let Ok(text) = std::fs::read_to_string(file) else { return vec![] };
-    let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else { return vec![] };
+    let Ok(text) = std::fs::read_to_string(file) else {
+        return vec![];
+    };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return vec![];
+    };
     let mut out = vec![];
     for root in v["roots"].as_object().into_iter().flat_map(|o| o.values()) {
         walk(root, &mut out);
@@ -91,7 +104,9 @@ fn chromium_bookmarks(file: &Path) -> Vec<(String, String)> {
 /// entry. shortcut: line-based reader for the layout qutebrowser writes (no YAML
 /// crate); all windows become one tab list; back history dropped (PLAN §5.4).
 fn qutebrowser_session(file: &Path) -> Result<Option<usize>, String> {
-    let Ok(text) = std::fs::read_to_string(file) else { return Ok(None) };
+    let Ok(text) = std::fs::read_to_string(file) else {
+        return Ok(None);
+    };
     let tabs = parse_qb_session(&text);
     if tabs.is_empty() {
         return Ok(None);
@@ -188,7 +203,9 @@ fn read(file: &Path) -> rusqlite::Result<(&'static str, Vec<Row>, Vec<(String, S
 fn firefox_bookmarks(db: &Connection) -> Vec<(String, String)> {
     let sql = "SELECT p.url, coalesce(b.title, p.title, '') FROM moz_bookmarks b JOIN moz_places p ON b.fk = p.id
                WHERE b.type = 1 AND (p.url LIKE 'http%' OR p.url LIKE 'file:%') ORDER BY b.dateAdded";
-    let Ok(mut st) = db.prepare(sql) else { return vec![] };
+    let Ok(mut st) = db.prepare(sql) else {
+        return vec![];
+    };
     st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
         .map(|rows| rows.flatten().collect())
         .unwrap_or_default()
@@ -251,7 +268,10 @@ mod tests {
         let y = "windows:\n- active: true\n  tabs:\n  - active: true\n    history:\n    - active: false\n      title: Old\n      url: https://old/\n    - active: true\n      title: 'It''s new'\n      url: https://new/?a=1\n  - history:\n    - active: true\n      title: B\n      url: https://b/\n";
         assert_eq!(
             parse_qb_session(y),
-            [("https://new/?a=1".into(), "It's new".into()), ("https://b/".into(), "B".into())] as [(String, String); 2]
+            [
+                ("https://new/?a=1".into(), "It's new".into()),
+                ("https://b/".into(), "B".into())
+            ] as [(String, String); 2]
         );
     }
 
@@ -265,7 +285,10 @@ mod tests {
              INSERT INTO moz_bookmarks VALUES (1, 1, NULL, 1), (2, NULL, 'Folder', 2), (1, 2, 'q', 3);",
         )
         .unwrap();
-        assert_eq!(firefox_bookmarks(&f), [("https://f.com/".into(), "F page".into())] as [(String, String); 1]);
+        assert_eq!(
+            firefox_bookmarks(&f),
+            [("https://f.com/".into(), "F page".into())] as [(String, String); 1]
+        );
     }
 
     #[test]

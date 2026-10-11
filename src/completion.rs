@@ -55,9 +55,16 @@ fn complete(text: &str) {
                 .collect();
             set(":".into(), "Commands", items);
         }
-        Some((c @ ("quickmark-load" | "quickmark-del" | "bookmark-load" | "bookmark-del"), rest)) => {
+        Some((
+            c @ ("quickmark-load" | "quickmark-del" | "bookmark-load" | "bookmark-del"),
+            rest,
+        )) => {
             let (arg, prefix) = strip_flags(text, rest);
-            let (rows, title) = if c.starts_with("quick") { (marks::quickmarks(), "Quickmarks") } else { (marks::bookmarks(), "Bookmarks") };
+            let (rows, title) = if c.starts_with("quick") {
+                (marks::quickmarks(), "Quickmarks")
+            } else {
+                (marks::bookmarks(), "Bookmarks")
+            };
             set(prefix, title, marks::filter(rows, arg));
         }
         Some(("open", rest)) => {
@@ -67,8 +74,16 @@ fn complete(text: &str) {
             let mut mk = Vec::new();
             for cat in config::get().list("completion.open_categories") {
                 match cat.as_str() {
-                    "quickmarks" => mk.extend(marks::filter(marks::quickmarks(), arg).into_iter().map(|(n, u)| (u, n, "Quickmarks"))),
-                    "bookmarks" => mk.extend(marks::filter(marks::bookmarks(), arg).into_iter().map(|(u, t)| (u, t, "Bookmarks"))),
+                    "quickmarks" => mk.extend(
+                        marks::filter(marks::quickmarks(), arg)
+                            .into_iter()
+                            .map(|(n, u)| (u, n, "Quickmarks")),
+                    ),
+                    "bookmarks" => mk.extend(
+                        marks::filter(marks::bookmarks(), arg)
+                            .into_iter()
+                            .map(|(u, t)| (u, t, "Bookmarks")),
+                    ),
                     _ => {}
                 }
             }
@@ -94,7 +109,11 @@ fn strip_flags<'a>(text: &str, rest: &'a str) -> (&'a str, String) {
 
 /// Answer from the history thread; stale answers are dropped.
 pub fn history_results(id: u64, items: Vec<(String, String)>) {
-    let Some((prefix, mk)) = S.with_borrow_mut(|s| (s.query == id).then(|| (s.prefix.clone(), std::mem::take(&mut s.marks)))) else { return };
+    let Some((prefix, mk)) = S.with_borrow_mut(|s| {
+        (s.query == id).then(|| (s.prefix.clone(), std::mem::take(&mut s.marks)))
+    }) else {
+        return;
+    };
     if mk.is_empty() {
         return set(prefix, "History", items);
     }

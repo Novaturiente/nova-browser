@@ -6,17 +6,17 @@ mod commands;
 mod completion;
 mod config;
 mod devtools;
+mod downloads;
 mod hints;
 mod history;
 mod import;
 mod ipc;
 mod keys;
+mod marks;
 mod modes;
 mod net;
 mod permissions;
 mod renderer;
-mod downloads;
-mod marks;
 mod session;
 mod settings;
 mod spawn;
@@ -158,11 +158,13 @@ fn cfg_any_dark_site(cfg: &config::Config) -> bool {
 /// `novabrowser [switches] [url]`: first non-switch argument; bare hosts get https://.
 fn start_url() -> Option<String> {
     let arg = std::env::args().skip(1).find(|a| !a.starts_with('-'))?;
-    Some(if arg.contains("://") || arg.starts_with("about:") || arg.starts_with("data:") {
-        arg
-    } else {
-        format!("https://{arg}")
-    })
+    Some(
+        if arg.contains("://") || arg.starts_with("about:") || arg.starts_with("data:") {
+            arg
+        } else {
+            format!("https://{arg}")
+        },
+    )
 }
 
 /// Set a Chromium profile preference; failures go to the log.
@@ -176,7 +178,9 @@ pub(crate) fn set_pref(ctx: &RequestContext, name: &str, mut v: Value) {
 
 /// `spellcheck.languages` → Chromium's spellcheck prefs (dictionaries download on first use).
 pub(crate) fn apply_spellcheck() {
-    let Some(ctx) = request_context_get_global_context() else { return };
+    let Some(ctx) = request_context_get_global_context() else {
+        return;
+    };
     let langs = config::get().list("spellcheck.languages");
     let on = value_create().expect("cef value");
     on.set_bool(!langs.is_empty() as i32);
