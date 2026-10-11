@@ -6,16 +6,36 @@ floating command palette, built-in ad blocking. Rust on top of CEF
 
 License: GPL-3.0-or-later.
 
-## Build and run
-
-Needs Rust and the CEF binary distribution matching the `cef` crate
-(currently CEF 154.0.34, unpacked with `export-cef-dir`).
+## Install (Arch Linux)
 
 ```sh
-export CEF_PATH=$HOME/.local/share/cef
-cargo build --release
-LD_LIBRARY_PATH=$CEF_PATH target/release/novabrowser [url]
+git clone https://github.com/Novaturiente/nova-browser
+cd nova-browser/packaging && makepkg -si
 ```
+
+This builds `novabrowser-git`. The build downloads the matching CEF
+(about 1.5 GB unpacked, so build on a real disk, not a small `/tmp`). It
+installs into `/usr/lib/novabrowser` (about 360 MB) with `/usr/bin/novabrowser`,
+a desktop entry and an icon.
+
+To make it the default browser:
+
+```sh
+xdg-settings set default-web-browser novabrowser.desktop
+```
+
+## Build and run from source
+
+Needs Rust, cmake and ninja. `cargo build` downloads the CEF version that
+matches the `cef` crate and copies it next to the binary, so this is all:
+
+```sh
+cargo build --release
+target/release/novabrowser [url]
+tests/smoke.sh            # start, tabs over IPC, :set, quit (needs a desktop session)
+```
+
+To reuse an unpacked CEF instead, set `CEF_PATH` to it (the version must match).
 
 Starting it again while it runs opens a new window (or the URL as a tab) in
 the running instance.
