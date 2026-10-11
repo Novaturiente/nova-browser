@@ -642,6 +642,29 @@ pub fn start_page() -> String {
     config::get().list("url.start_pages").into_iter().next().unwrap_or_else(|| "about:blank".into())
 }
 
+/// A page entered/left fullscreen (video). `content.fullscreen.window`: fill our
+/// window only (hide the tab bar); otherwise the window goes fullscreen too.
+pub fn page_fullscreen(on: bool) {
+    let Some((window, tabbar)) = S.with_borrow(|s| Some((s.window.clone()?, s.tabbar.clone()?))) else { return };
+    if config::get().bool("content.fullscreen.window") {
+        if on {
+            tabbar.set_visible(0);
+            window.layout();
+        } else {
+            apply_layout();
+        }
+    } else {
+        window.set_fullscreen(on as i32);
+    }
+}
+
+/// `:fullscreen`: toggle the window's fullscreen state.
+pub fn toggle_fullscreen() {
+    if let Some(w) = S.with_borrow(|s| s.window.clone()) {
+        w.set_fullscreen((w.is_fullscreen() == 0) as i32);
+    }
+}
+
 pub fn close_window() {
     if let Some(w) = S.with_borrow(|s| s.window.clone()) {
         w.close();
@@ -992,6 +1015,7 @@ pub fn ui_ready() {
 pub fn config_changed() {
     modes::init();
     crate::net::apply_cookie_policy();
+    crate::apply_spellcheck();
     apply_layout();
     let browsers: Vec<Browser> =
         S.with_borrow(|s| s.tabs.iter().filter_map(|t| t.view.browser()).collect());
@@ -1017,8 +1041,9 @@ wrap_browser_view_delegate! {
         fn delegate_for_popup_browser_view(&self, _view: Option<&mut BrowserView>, _settings: Option<&BrowserSettings>, _client: Option<&mut Client>, _is_devtools: ::std::os::raw::c_int) -> Option<BrowserViewDelegate> {
             Some(NovaBrowserViewDelegate::new(KIND_FIXED))
         }
-        fn on_popup_browser_view_created(&self, _view: Option<&mut BrowserView>, popup: Option<&mut BrowserView>, _is_devtools: ::std::os::raw::c_int) -> ::std::os::raw::c_int {
-            let Some(popup) = popup else { return 0 };
+        fn on_popup_browser_view_created(&self, _view: Option<&mut BrowserView>, popup: Option<&mut BrowserView>, is_devtools: ::std::os::raw::c_int) -> ::std::os::raw::c_int {
+            // DevTools get their own window (0 = CEF creates one); everything else becomes a tab.
+            let Some(popup) = popup.filter(|_| is_devtools == 0) else { return 0 };
             adopt_popup(popup.clone());
             1
         }

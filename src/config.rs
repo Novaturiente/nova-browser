@@ -16,6 +16,8 @@ use std::sync::{Arc, LazyLock, RwLock};
 const APPLIED: &[&str] = &[
     "aliases",
     "auto_save.session",
+    "content.fullscreen.window",
+    "spellcheck.languages",
     "downloads.location.directory",
     "downloads.open_dispatcher",
     "session.default_name",

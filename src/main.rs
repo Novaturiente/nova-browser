@@ -33,6 +33,7 @@ wrap_browser_process_handler! {
         fn on_context_initialized(&self) {
             modes::init();
             net::apply_cookie_policy();
+            apply_spellcheck();
             history::start(xdg_dir("XDG_DATA_HOME", ".local/share").join("history.sqlite"));
             adblock::start();
             ipc::start(); // after CEF init: its requests post_task to the UI thread
@@ -162,6 +163,31 @@ fn start_url() -> Option<String> {
     } else {
         format!("https://{arg}")
     })
+}
+
+/// Set a Chromium profile preference; failures go to the log.
+pub(crate) fn set_pref(ctx: &RequestContext, name: &str, mut v: Value) {
+    // cef-rs passes an empty CefString out-param as NULL and CEF then fails the call: pre-fill it.
+    let mut err = CefString::from("?");
+    if ctx.set_preference(Some(&name.into()), Some(&mut v), Some(&mut err)) == 0 {
+        eprintln!("novabrowser: pref {name}: {err}");
+    }
+}
+
+/// `spellcheck.languages` → Chromium's spellcheck prefs (dictionaries download on first use).
+pub(crate) fn apply_spellcheck() {
+    let Some(ctx) = request_context_get_global_context() else { return };
+    let langs = config::get().list("spellcheck.languages");
+    let on = value_create().expect("cef value");
+    on.set_bool(!langs.is_empty() as i32);
+    set_pref(&ctx, "browser.enable_spellchecking", on);
+    let list = list_value_create().expect("cef list");
+    for (i, l) in langs.iter().enumerate() {
+        list.set_string(i, Some(&CefString::from(l.as_str())));
+    }
+    let v = value_create().expect("cef value");
+    v.set_list(Some(&mut list.clone()));
+    set_pref(&ctx, "spellcheck.dictionaries", v);
 }
 
 /// Temp file, fsync, rename: a crash leaves the old or the new file, never half of one.

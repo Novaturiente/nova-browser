@@ -122,6 +122,9 @@ wrap_client! {
 wrap_display_handler! {
     struct TabDisplay {}
     impl DisplayHandler {
+        fn on_fullscreen_mode_change(&self, _browser: Option<&mut Browser>, fullscreen: ::std::os::raw::c_int) {
+            window::page_fullscreen(fullscreen != 0);
+        }
         fn on_address_change(&self, browser: Option<&mut Browser>, frame: Option<&mut Frame>, url: Option<&CefString>) {
             let (Some(b), Some(f), Some(url)) = (browser, frame, url) else { return };
             if f.is_main() != 0 { window::set_url(b, url.to_string()); }

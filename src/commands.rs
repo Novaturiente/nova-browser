@@ -476,6 +476,7 @@ pub const NAMES: &[&str] = &[
     "config-source",
     "cmd-set-text",
     "dark-toggle",
+    "devtools",
     "download",
     "download-cancel",
     "download-open",
@@ -688,6 +689,16 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
         "fullscreen" if cmd.flag("", "--leave") => {
             if let Some(h) = browser.and_then(|b| b.host()) {
                 h.exit_fullscreen(1);
+            }
+        }
+        "fullscreen" => window::toggle_fullscreen(),
+        "devtools" => {
+            let h = need()?.host().ok_or("no active tab")?;
+            if h.has_dev_tools() != 0 {
+                h.close_dev_tools();
+            } else {
+                // no client: our key bindings stay out of DevTools
+                h.show_dev_tools(Some(&WindowInfo::default()), None, None, None);
             }
         }
         "mode-enter" => modes::enter(match cmd.args.first().map(String::as_str) {

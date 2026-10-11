@@ -114,18 +114,9 @@ pub fn apply_cookie_policy() {
     };
     let cfg = config::get();
     let global = cfg.str("content.cookies.accept");
-    let mut v = value_create().expect("cef value");
+    let v = value_create().expect("cef value");
     v.set_int(matches!(global.as_str(), "no-3rdparty" | "no-unknown-3rdparty") as i32);
-    // cef-rs passes an empty CefString out-param as NULL and CEF then fails the call: pre-fill it.
-    let mut err = CefString::from("?");
-    if ctx.set_preference(
-        Some(&"profile.cookie_controls_mode".into()),
-        Some(&mut v),
-        Some(&mut err),
-    ) == 0
-    {
-        eprintln!("novabrowser: cookie_controls_mode: {err}");
-    }
+    crate::set_pref(&ctx, "profile.cookie_controls_mode", v);
     // shortcut: per-site overrides under a global `never` aren't mapped (they'd need allow pairs too).
     let default = if global == "never" {
         ContentSettingValues::BLOCK
