@@ -359,7 +359,10 @@ pub fn scheme() -> &'static str {
 
 /// Our own page's HTML with its colour scheme following the UI theme.
 pub fn themed_page(html: String) -> String {
-    html.replace("color-scheme:light dark", &format!("color-scheme:{}", scheme()))
+    // on :root, not body: text and canvas colours resolve from the root element
+    let s = scheme();
+    html.replace("color-scheme:light dark", &format!("color-scheme:{s}"))
+        .replacen("<style>", &format!("<style>:root{{color-scheme:{s}}}"), 1)
 }
 
 /// The preset's value for colour setting `name` (None = not a themed colour).
