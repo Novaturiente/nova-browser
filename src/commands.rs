@@ -466,6 +466,7 @@ fn open_in(url: &str, cmd: &Cmd) -> Result<(), String> {
 pub const NAMES: &[&str] = &[
     "adblock-update",
     "back",
+    "bindings",
     "bookmark-add",
     "bookmark-del",
     "bookmark-list",
@@ -765,6 +766,7 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
             };
             crate::marks::bookmark_del(&url)?
         }
+        "bindings" => window::open_cmdline(&format!(":bindings {}", cmd.rest())),
         "bookmarks" => window::open(&window::data_url(&crate::marks::page()).to_string(), true),
         "bookmark-list" => {
             let page = window::data_url(&crate::marks::page()).to_string();

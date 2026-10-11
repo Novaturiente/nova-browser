@@ -26,7 +26,8 @@
   #title { padding: 6px 16px 3px; font: var(--fonts-completion-category, bold 10pt monospace);
            color: var(--colors-completion-category-fg); border-top: 1px solid var(--colors-completion-category-border-top, #333); }
   #title:empty, #list:empty { display: none; }
-  #list { max-height: var(--palette-list-height, 40vh); overflow: hidden; padding: 0 6px 6px; }
+  #list { max-height: var(--palette-list-height, 40vh); overflow-y: auto; scrollbar-width: none; padding: 0 6px 6px; }
+  body.tall #list { max-height: 70vh; }
   .cat { padding: 6px 10px 3px; font: var(--fonts-completion-category, bold 10pt monospace);
          color: var(--colors-completion-category-fg); }
   .row { display: flex; padding: 5px 10px; white-space: nowrap; border-radius: 8px; }
@@ -80,13 +81,14 @@
   // `:open [-t|-b|-w] ` is kept out of sight (o/O just ask for an address, like Zen);
   // the core always gets and sends the full command line.
   let pre = "";
-  const OPEN = /^:open(?: -[tbw])* /;
+  const OPEN = /^:(?:open(?: -[tbw])*|bindings) /;
   const full = () => pre + c.value;
   const show = (text) => {
     const m = text.match(OPEN);
     pre = m ? m[0] : "";
     c.value = text.slice(pre.length);
-    c.placeholder = !pre ? "" : / -[tw]/.test(pre) ? "Open in new tab…" : / -b/.test(pre) ? "Open in background tab…" : "Search or enter address…";
+    document.body.classList.toggle("tall", pre === ":bindings ");
+    c.placeholder = !pre ? "" : pre === ":bindings " ? "Filter key bindings…  (Esc closes)" : / -[tw]/.test(pre) ? "Open in new tab…" : / -b/.test(pre) ? "Open in background tab…" : "Search or enter address…";
     c.setSelectionRange(c.value.length, c.value.length);
   };
   nova.cmdline = (text, compact) => {
@@ -121,7 +123,7 @@
   c.addEventListener("keydown", (e) => {
     const p = c.selectionStart, k = e.key, ctrl = e.ctrlKey && !e.altKey, alt = e.altKey && !e.ctrlKey;
     const act = (
-      k === "Enter" ? () => (pre && !c.value.trim() ? nova.send("cmdleave") : nova.send("run " + full())) :
+      k === "Enter" ? () => (pre === ":bindings " || (pre && !c.value.trim()) ? nova.send("cmdleave") : nova.send("run " + full())) :
       k === "Escape" || (ctrl && k === "[") ? () => nova.send("cmdleave") :
       k === "Backspace" && !ctrl && !alt && c.value === "" ? () => nova.send("cmdleave") :
       k === "Tab" && !ctrl && !alt ? () => nova.send(e.shiftKey ? "complete -1" : "complete 1") :

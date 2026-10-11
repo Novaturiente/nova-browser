@@ -67,6 +67,34 @@ fn complete(text: &str) {
             };
             set(prefix, title, marks::filter(rows, arg));
         }
+        Some(("bindings", rest)) => {
+            // yours first, then the defaults per mode; filter on key and command
+            let words: Vec<String> = rest.split_whitespace().map(str::to_lowercase).collect();
+            let mut rows: Vec<(&'static str, String, String)> = Vec::new();
+            for user in [true, false] {
+                for (mode, key, cmd, u) in crate::modes::bindings() {
+                    let hay = format!("{key} {cmd} {mode}").to_lowercase();
+                    if u == user && words.iter().all(|w| hay.contains(w)) {
+                        let cat = match (user, mode.as_str()) {
+                            (true, "normal") => "Your bindings",
+                            (true, "insert") => "Your bindings · insert mode",
+                            (true, _) => "Your bindings · passthrough mode",
+                            (false, "normal") => "Normal mode",
+                            (false, "insert") => "Insert mode",
+                            (false, _) => "Passthrough mode",
+                        };
+                        rows.push((cat, key, cmd));
+                    }
+                }
+            }
+            // one block per category (stable: keeps the binding order inside each)
+            let order = |c: &str| ["Your bindings", "Your bindings · insert mode", "Your bindings · passthrough mode", "Normal mode", "Insert mode", "Passthrough mode"].iter().position(|x| *x == c);
+            rows.sort_by_key(|r| order(r.0));
+            let cats = rows.iter().map(|r| r.0).collect();
+            set(String::new(), "", rows.into_iter().map(|(_, k, c)| (k, c)).collect());
+            S.with_borrow_mut(|s| s.cats = cats);
+            render();
+        }
         Some(("open", rest)) => {
             // flags (-t, -b, …) stay in the prefix
             let (arg, prefix) = strip_flags(text, rest);
