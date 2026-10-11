@@ -74,6 +74,13 @@ Fixing `ly-dm` itself is optional and outside this project.
 
 ## 1. Goals and non-goals
 
+### Audience (rev 2026-10-11, user)
+A general browser for **keyboard-heavy users** (Vimium / Tridactyl /
+qutebrowser / Zen people), not tuned to one person: it must be installable and
+usable with **zero config**, learnable from inside the browser, with the mouse
+as a fallback. Personal setup lives only in the user's own `config.ts`. Not
+aimed at mouse-only users (modal stays the default).
+
 ### Goals (v1)
 - Modal, keyboard-first: normal / insert / command / hint / passthrough /
   prompt modes. qutebrowser default bindings and command names, so muscle
@@ -415,17 +422,40 @@ quickmarks, bookmarks. History import is done (`novabrowser --import`,
 Phase 3). **Exit:** one week as the only
 browser; every problem logged.
 
-### Phase 9 — Packaging and upkeep
-PKGBUILD (with the ananicy rule), `.desktop`, default browser via
-`xdg-settings`, Hyprland bind (`binds.lua` line 22). Monthly: bump the `cef`
+### Phase 8b — General defaults (rev 2026-10-11, user)
+Make it work for a stranger with no config:
+- Clipboard: yank through Chromium's own clipboard (works on X11 and Wayland);
+  `{clipboard}`/`{primary}` read via `wl-paste`, falling back to `xclip`.
+- Discoverability: which-key popup after a pending prefix (`g`, `;`, `<Space>`…,
+  qutebrowser's keyhint + `colors.keyhint.*`); first-run page with ~10 keys,
+  F1, and an `--import` offer. F1 / `:bindings` overlay already done.
+- Settings without code: `:set` persisted (autoconfig.json, config.ts wins) and
+  a `:settings` page (like `:bookmarks`) for the common ones (search engine,
+  start page, theme, dark mode, tabs position, downloads dir, cookies).
+- A polished default theme + a few presets (light, dark, Tokyo Night).
+- Mouse fallback: URL visible somewhere besides the window title; right-click
+  menu checked (open in new tab, copy link, copy image, inspect).
+- Schema cleanup: drop or clearly mark qutebrowser settings with no meaning
+  here (`colors.statusbar.*`, `statusbar.*`, …); defaults say novabrowser.
+- README with install, keys, config.
+**Exit:** a fresh profile with no config.ts (clean-room tester given only the
+README) can browse, search, use hints, change the search engine and theme,
+and find a binding, on Wayland and on X11 (Xwayland session counts).
+
+### Phase 9 — Packaging and upkeep (rev 2026-10-11: general)
+AUR PKGBUILD only (user): binary + CEF libs under `/usr/lib/novabrowser`,
+launcher script setting the library path, `.desktop` + icon, `xdg-settings`
+default browser instructions, no machine-specific bits (no ananicy rule,
+compositor binds belong in the user's dotfiles). Monthly: bump the `cef`
 crate (it follows Chrome stable, so this is the security update), re-run
-`export-cef-dir`, run `tests/smoke.sh`.
+`export-cef-dir`, run `tests/smoke.sh`. Flatpak / AppImage: not now.
 
 ### Phase 10 — Password manager integration (rev 2026-10-11, user)
-No built-in store: novabrowser never keeps secrets at rest. Backend is
-Bitwarden through `rbw` (1.15, agent-based, already logged in here); other
-managers (`pass`, KeePassXC) only via Phase 6 userscripts until a second
-backend is actually wanted. Backend ops: `rbw list` (metadata only), `rbw get`,
+No built-in store: novabrowser never keeps secrets at rest. Backend-neutral
+(rev, user): one small contract (list entries for an origin, get secret, TOTP,
+generate, save/update) with per-manager adapters. `rbw` (Bitwarden) first;
+`pass`, 1Password CLI (`op`), KeePassXC (`keepassxc-cli`) after, each only as
+much as its CLI allows. The rest of this section describes the rbw adapter. Backend ops: `rbw list` (metadata only), `rbw get`,
 `rbw code` (TOTP), `rbw generate`, `rbw add --uri`, `rbw edit`.
 - **Field detection:** renderer script (S8 bridge) finds username / password /
   OTP fields on load and focus, including split login pages and iframes.
