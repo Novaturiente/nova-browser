@@ -447,10 +447,29 @@ pub fn spawn(argv: &[String]) -> Result<(), String> {
     crate::spawn::spawn(argv, false, false, None)
 }
 
+/// Open `url` here, or in a new tab with -t / background with -b (-w = tab for now).
+fn open_in(url: &str, cmd: &Cmd) -> Result<(), String> {
+    if cmd.flag("-b", "--bg") {
+        window::open(url, false);
+    } else if cmd.flag("-t", "--tab") || cmd.flag("-w", "--window") {
+        window::open(url, true);
+    } else {
+        let b = window::active_browser().ok_or("no active tab")?;
+        if let Some(f) = b.main_frame() {
+            f.load_url(Some(&CefString::from(url)));
+        }
+    }
+    Ok(())
+}
+
 /// Implemented commands, for `:` completion. Keep in sync with `run_one`.
 pub const NAMES: &[&str] = &[
     "adblock-update",
     "back",
+    "bookmark-add",
+    "bookmark-del",
+    "bookmark-list",
+    "bookmark-load",
     "clear-keychain",
     "close",
     "config-cycle",
@@ -470,6 +489,10 @@ pub const NAMES: &[&str] = &[
     "mode-leave",
     "nop",
     "open",
+    "quickmark-add",
+    "quickmark-del",
+    "quickmark-load",
+    "quickmark-save",
     "quit",
     "reload",
     "scroll",
@@ -689,6 +712,34 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
             }
             window::close_window()
         }
+        "quickmark-save" => {
+            let (url, _) = window::active_url_title();
+            window::open_cmdline(&format!(":quickmark-add {url} "));
+        }
+        "quickmark-add" => {
+            let [url, name] = &cmd.args[..] else { return Err("quickmark-add: url and name required".into()) };
+            crate::marks::quickmark_add(url, name)?
+        }
+        "quickmark-load" => open_in(&crate::marks::quickmark_url(&cmd.rest())?, cmd)?,
+        "quickmark-del" => {
+            let (url, _) = window::active_url_title();
+            crate::marks::quickmark_del(cmd.args.first().map(String::as_str), &url)?
+        }
+        "bookmark-add" => {
+            let (cur_url, cur_title) = window::active_url_title();
+            let url = cmd.args.first().cloned().unwrap_or(cur_url);
+            let title = if cmd.args.len() > 1 { cmd.args[1..].join(" ") } else if cmd.args.is_empty() { cur_title } else { String::new() };
+            crate::marks::bookmark_add(&url, &title, cmd.flag("", "--toggle"))?
+        }
+        "bookmark-load" => open_in(&url_or_search(&cmd.rest()), cmd)?,
+        "bookmark-del" => {
+            let url = if cmd.args.is_empty() { window::active_url_title().0 } else { cmd.rest() };
+            crate::marks::bookmark_del(&url)?
+        }
+        "bookmark-list" => {
+            let page = window::data_url(&crate::marks::list_page()).to_string();
+            if cmd.flag("-j", "--jump") { open_in(&page, cmd)? } else { window::open(&page, true) }
+        }
         "session-save" => crate::session::save(cmd.args.first().map(String::as_str))?,
         "session-load" => crate::session::load(
             cmd.args.first().ok_or("session-load: name required")?,
@@ -698,6 +749,7 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
         "adblock-update" => crate::adblock::update_now(),
         "config-source" => {
             config::load().map_err(|e| format!("config unchanged: {e}"))?;
+            crate::marks::reload();
             crate::net::load_https_excludes();
             window::config_changed();
             let pending = config::get().pending().len();

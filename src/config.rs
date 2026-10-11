@@ -284,6 +284,11 @@ pub fn path() -> PathBuf {
     base.join("novabrowser/config.ts")
 }
 
+/// `$XDG_CONFIG_HOME/novabrowser`.
+pub fn dir() -> PathBuf {
+    path().parent().unwrap().to_path_buf()
+}
+
 /// Load config.ts and make it active. A missing file = defaults. On error the
 /// previous config stays and the error (with config line) is returned.
 pub fn load() -> Result<(), String> {

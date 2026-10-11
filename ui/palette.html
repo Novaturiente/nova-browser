@@ -26,6 +26,8 @@
            color: var(--colors-completion-category-fg); border-top: 1px solid var(--colors-completion-category-border-top, #333); }
   #title:empty, #list:empty { display: none; }
   #list { max-height: var(--palette-list-height, 40vh); overflow: hidden; padding: 0 6px 6px; }
+  .cat { padding: 6px 10px 3px; font: var(--fonts-completion-category, bold 10pt monospace);
+         color: var(--colors-completion-category-fg); }
   .row { display: flex; padding: 5px 10px; white-space: nowrap; border-radius: 8px; }
   .row.sel { color: var(--colors-completion-item-selected-fg); background: var(--colors-completion-item-selected-bg); }
   .a { flex: 0 1 60%; overflow: hidden; text-overflow: ellipsis; padding-right: 12px; }
@@ -49,9 +51,18 @@
   };
   // Completion: nova.complete({title, items: [[text, description]], sel}) or null.
   const list = $("list");
+  // cats (optional): category per item; a header row goes where it changes.
   nova.complete = (s) => {
     $("title").textContent = s ? s.title : "";
-    list.replaceChildren(...(s ? s.items : []).map(([a, b], i) => {
+    const cats = (s && s.cats) || [];
+    list.replaceChildren(...(s ? s.items : []).flatMap(([a, b], i) => {
+      const head = [];
+      if (cats[i] && cats[i] !== cats[i - 1]) {
+        const h = document.createElement("div");
+        h.className = "cat";
+        h.textContent = cats[i];
+        head.push(h);
+      }
       const row = document.createElement("div");
       row.className = i === s.sel ? "row sel" : "row";
       for (const [cls, text] of [["a", a], ["b", b]]) {
@@ -60,9 +71,9 @@
         d.textContent = text;
         row.append(d);
       }
-      return row;
+      return [...head, row];
     }));
-    if (s) list.children[s.sel]?.scrollIntoView({ block: "nearest" });
+    if (s) list.querySelectorAll(".row")[s.sel]?.scrollIntoView({ block: "nearest" });
   };
   // cmd-set-text: show the input with text, cursor at the end. compact = search (no backdrop).
   nova.cmdline = (text, compact) => {

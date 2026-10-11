@@ -1,6 +1,6 @@
 //! `:` command line: completion (commands, history) and command history.
 //! The status bar `<input>` edits text natively and reports every change here.
-use crate::{commands, history, window};
+use crate::{commands, config, history, marks, window};
 use std::cell::RefCell;
 
 #[derive(Default)]
@@ -11,6 +11,10 @@ struct State {
     prefix: String,
     title: &'static str,
     items: Vec<(String, String)>,
+    /// Category of each item; a header row is drawn where it changes (empty = none).
+    cats: Vec<&'static str>,
+    /// Quickmark/bookmark rows for the pending `open` query, shown above history.
+    marks: Vec<(String, String, &'static str)>,
     sel: Option<usize>,
     /// History query whose answer we still want.
     query: u64,
@@ -51,29 +55,56 @@ fn complete(text: &str) {
                 .collect();
             set(":".into(), "Commands", items);
         }
+        Some((c @ ("quickmark-load" | "quickmark-del" | "bookmark-load" | "bookmark-del"), rest)) => {
+            let (arg, prefix) = strip_flags(text, rest);
+            let (rows, title) = if c.starts_with("quick") { (marks::quickmarks(), "Quickmarks") } else { (marks::bookmarks(), "Bookmarks") };
+            set(prefix, title, marks::filter(rows, arg));
+        }
         Some(("open", rest)) => {
             // flags (-t, -b, …) stay in the prefix
-            let mut arg = rest;
-            while let Some((_, tail)) = arg.split_once(' ').filter(|(f, _)| f.starts_with('-')) {
-                arg = tail;
+            let (arg, prefix) = strip_flags(text, rest);
+            // completion.open_categories order, history last (it answers asynchronously)
+            let mut mk = Vec::new();
+            for cat in config::get().list("completion.open_categories") {
+                match cat.as_str() {
+                    "quickmarks" => mk.extend(marks::filter(marks::quickmarks(), arg).into_iter().map(|(n, u)| (u, n, "Quickmarks"))),
+                    "bookmarks" => mk.extend(marks::filter(marks::bookmarks(), arg).into_iter().map(|(u, t)| (u, t, "Bookmarks"))),
+                    _ => {}
+                }
             }
-            let prefix = text[..text.len() - arg.len()].to_string();
             let id = history::query(arg);
             S.with_borrow_mut(|s| {
                 s.prefix = prefix;
                 s.query = id;
+                s.marks = mk;
             });
         }
         Some(_) => set(String::new(), "", Vec::new()),
     }
 }
 
+/// `rest` minus leading `-x` flags, and the command line text before the argument.
+fn strip_flags<'a>(text: &str, rest: &'a str) -> (&'a str, String) {
+    let mut arg = rest;
+    while let Some((_, tail)) = arg.split_once(' ').filter(|(f, _)| f.starts_with('-')) {
+        arg = tail;
+    }
+    (arg, text[..text.len() - arg.len()].to_string())
+}
+
 /// Answer from the history thread; stale answers are dropped.
 pub fn history_results(id: u64, items: Vec<(String, String)>) {
-    let (wanted, prefix) = S.with_borrow(|s| (s.query == id, s.prefix.clone()));
-    if wanted {
-        set(prefix, "History", items);
+    let Some((prefix, mk)) = S.with_borrow_mut(|s| (s.query == id).then(|| (s.prefix.clone(), std::mem::take(&mut s.marks)))) else { return };
+    if mk.is_empty() {
+        return set(prefix, "History", items);
     }
+    let mut cats: Vec<&'static str> = mk.iter().map(|m| m.2).collect();
+    let mut all: Vec<(String, String)> = mk.into_iter().map(|(a, b, _)| (a, b)).collect();
+    cats.extend(std::iter::repeat_n("History", items.len()));
+    all.extend(items);
+    set(prefix, "", all);
+    S.with_borrow_mut(|s| s.cats = cats);
+    render();
 }
 
 fn set(prefix: String, title: &'static str, items: Vec<(String, String)>) {
@@ -81,6 +112,7 @@ fn set(prefix: String, title: &'static str, items: Vec<(String, String)>) {
         s.prefix = prefix;
         s.title = title;
         s.items = items;
+        s.cats.clear();
         s.sel = None;
     });
     render();
@@ -96,10 +128,12 @@ fn render() {
             .iter()
             .map(|(a, b)| format!("[{},{}]", window::js_str(a), window::js_str(b)))
             .collect();
+        let cats: Vec<String> = s.cats.iter().map(|c| window::js_str(c)).collect();
         Some(format!(
-            "{{\"title\":{},\"items\":[{}],\"sel\":{}}}",
+            "{{\"title\":{},\"items\":[{}],\"cats\":[{}],\"sel\":{}}}",
             window::js_str(s.title),
             rows.join(","),
+            cats.join(","),
             s.sel.map_or(-1, |i| i as i64)
         ))
     });

@@ -327,11 +327,7 @@ pub fn close(n: usize) {
             c.remove_child_view(Some(&mut View::from(&tab.view)));
         }
         open(&url, true);
-        let host = tab.view.browser().and_then(|b| b.host());
-        S.with_borrow_mut(|s| s.closing.push(tab.view));
-        if let Some(h) = host {
-            h.close_browser(1);
-        }
+        release_view(tab.view);
         return;
     }
     if was_active {
@@ -343,11 +339,15 @@ pub fn close(n: usize) {
     } else {
         refresh();
     }
-    let host = tab.view.browser().and_then(|b| b.host());
-    S.with_borrow_mut(|s| s.closing.push(tab.view));
-    if let Some(h) = host {
-        h.close_browser(1);
-    }
+    release_view(tab.view);
+}
+
+/// Close a removed tab's browser; its view lives in `closing` until DoClose. A tab
+/// that was never shown has no browser and is dropped right away.
+fn release_view(view: BrowserView) {
+    let Some(h) = view.browser().and_then(|b| b.host()) else { return };
+    S.with_borrow_mut(|s| s.closing.push(view));
+    h.close_browser(1);
 }
 
 /// CEF reached DoClose for `browser`: drop its view so CEF destroys it.
@@ -1097,7 +1097,9 @@ wrap_window_delegate! {
             let hosts = S.with_borrow_mut(|s| {
                 let active = s.active;
                 let mut closing = std::mem::take(&mut s.closing);
-                closing.extend(s.tabs.drain(..).enumerate().filter(|(i, _)| *i != active).map(|(_, t)| t.view));
+                // Never-shown tabs have no browser and get no DoClose: drop them now, here,
+                // not at thread exit after CEF shutdown (CHECK observers_.empty()).
+                closing.extend(s.tabs.drain(..).enumerate().filter(|(i, t)| *i != active && t.view.browser().is_some()).map(|(_, t)| t.view));
                 let hosts: Vec<_> = closing.iter().filter_map(|v| v.browser().and_then(|b| b.host())).collect();
                 *s = State { closing, ..State::default() };
                 hosts
