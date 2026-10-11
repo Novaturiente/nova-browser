@@ -38,7 +38,7 @@ wrap_task! {
 wrap_task! {
     struct ReleaseClosing { browser: Browser }
     impl Task {
-        fn execute(&self) { window::release_closing(&self.browser); }
+        fn execute(&self) { window::did_close(&self.browser); }
     }
 }
 

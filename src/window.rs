@@ -227,7 +227,7 @@ pub fn restore(v: &serde_json::Value, clear: bool) {
     }
     if clear {
         for _ in 0..before {
-            close(0);
+            remove(0);
         }
     }
 }
@@ -270,7 +270,42 @@ pub fn show(n: usize) {
     refresh();
 }
 
+/// `tab-close` / `d` / middle click: ask the page first (beforeunload, answered in
+/// the tab bar prompt); the tab goes away in `did_close` once CEF reaches DoClose.
+/// Never-shown and crashed tabs have nothing to ask and close at once.
 pub fn close(n: usize) {
+    let host = S.with_borrow(|s| {
+        let t = s.tabs.get(n)?;
+        t.crashed.is_none().then(|| t.view.browser()?.host()).flatten()
+    });
+    match host {
+        Some(h) => h.close_browser(0),
+        None => remove(n),
+    }
+}
+
+thread_local! {
+    /// Set while `did_close` removes a tab whose browser already passed DoClose.
+    static CLOSED: Cell<bool> = const { Cell::new(false) };
+}
+
+/// CEF reached DoClose for `browser` (client.rs posts this): drop a tab that asked
+/// via `close`, or release a view `remove` already took out.
+pub fn did_close(browser: &Browser) {
+    let id = browser.identifier();
+    let n = S.with_borrow(|s| s.tabs.iter().position(|t| browser_id(&t.view) == Some(id)));
+    match n {
+        Some(n) => {
+            CLOSED.set(true);
+            remove(n);
+            CLOSED.set(false);
+        }
+        None => release_closing(browser),
+    }
+}
+
+/// Take tab `n` out now and force-close its browser (no beforeunload).
+pub fn remove(n: usize) {
     let Some((tab, was_active, left, content, window)) = S.with_borrow_mut(|s| {
         if n >= s.tabs.len() {
             return None;
@@ -345,13 +380,16 @@ pub fn close(n: usize) {
 /// Close a removed tab's browser; its view lives in `closing` until DoClose. A tab
 /// that was never shown has no browser and is dropped right away.
 fn release_view(view: BrowserView) {
+    if CLOSED.get() {
+        return; // DoClose already ran: dropping the view destroys the browser
+    }
     let Some(h) = view.browser().and_then(|b| b.host()) else { return };
     S.with_borrow_mut(|s| s.closing.push(view));
     h.close_browser(1);
 }
 
 /// CEF reached DoClose for `browser`: drop its view so CEF destroys it.
-pub fn release_closing(browser: &Browser) {
+fn release_closing(browser: &Browser) {
     let view = S.with_borrow_mut(|s| {
         let i = s.closing.iter().position(|v| {
             v.browser()
@@ -633,7 +671,7 @@ pub fn close_others() {
     loop {
         let n = S.with_borrow(|s| (s.tabs.len() > 1).then_some(if s.active == 0 { 1 } else { 0 }));
         let Some(n) = n else { break };
-        close(n);
+        remove(n);
     }
 }
 
@@ -1118,7 +1156,7 @@ wrap_window_delegate! {
         fn on_window_destroyed(&self, _window: Option<&mut Window>) {
             crate::session::save_now();
             // Detached tabs aren't destroyed with the window; close them by hand (S2).
-            // Their views stay in `closing` until DoClose (see close()).
+            // Their views stay in `closing` until DoClose (see remove()).
             let hosts = S.with_borrow_mut(|s| {
                 let active = s.active;
                 let mut closing = std::mem::take(&mut s.closing);
@@ -1133,7 +1171,7 @@ wrap_window_delegate! {
         }
 
         // cef-rs defaults every int return to 0; CEF's C++ defaults for these are true.
-        // shortcut: closing skips beforeunload prompts; add try_close_browser in Phase 8.
+        // shortcut: closing the window skips beforeunload (tab-close asks); add confirm_quit if missed.
         fn can_close(&self, _window: Option<&mut Window>) -> ::std::os::raw::c_int { 1 }
         fn can_resize(&self, _window: Option<&mut Window>) -> ::std::os::raw::c_int { 1 }
         fn can_maximize(&self, _window: Option<&mut Window>) -> ::std::os::raw::c_int { 1 }
