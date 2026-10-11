@@ -1,6 +1,6 @@
 //! Modes and key dispatch, decided in `on_pre_key_event` (PLAN.md §3 Keys).
 use crate::keys::{self, Key, Keymap, Mods, Outcome, Parser};
-use crate::{bindings, commands, window};
+use crate::{bindings, commands, hints, window};
 use std::cell::RefCell;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -9,6 +9,7 @@ pub enum Mode {
     Insert,
     Passthrough,
     Command,
+    Hint,
 }
 
 struct State {
@@ -55,11 +56,14 @@ pub fn pending() -> String {
 }
 
 pub fn enter(m: Mode) {
-    let changed = S.with_borrow_mut(|s| {
+    let old = S.with_borrow_mut(|s| {
         s.parser.clear();
-        std::mem::replace(&mut s.mode, m) != m
+        std::mem::replace(&mut s.mode, m)
     });
-    if changed {
+    if old == Mode::Hint && m != Mode::Hint {
+        hints::on_leave();
+    }
+    if old != m {
         window::refresh();
     }
 }
@@ -91,6 +95,7 @@ enum Act {
     Pass,
     Eat,
     Run(String, Option<u32>),
+    Hint(String),
 }
 
 /// A RAWKEYDOWN for a web tab. Returns true to consume it (the page sees nothing).
@@ -110,6 +115,8 @@ pub fn on_key(vk: i32, character: u16, cef_mods: u32) -> bool {
         Mode::Insert => single(&s.insert, &key),
         Mode::Passthrough => single(&s.passthrough, &key),
         Mode::Command => Act::Pass,
+        // shortcut: hint-mode keys are fixed (Escape leaves, label chars, Backspace); bindings come with config
+        Mode::Hint => Act::Hint(key.name.clone()),
     });
     match act {
         Act::Pass => {
@@ -118,6 +125,14 @@ pub fn on_key(vk: i32, character: u16, cef_mods: u32) -> bool {
         } // a NoMatch may have cleared a shown keychain
         Act::Eat => {
             window::refresh();
+            true
+        }
+        Act::Hint(name) if name == "Escape" => {
+            enter(Mode::Normal);
+            true
+        }
+        Act::Hint(name) => {
+            hints::on_key(&name);
             true
         }
         Act::Run(cmd, count) => {
@@ -148,5 +163,6 @@ pub fn mode_label() -> &'static str {
         Mode::Insert => "-- INSERT MODE --",
         Mode::Passthrough => "-- PASSTHROUGH MODE --",
         Mode::Command => "",
+        Mode::Hint => "-- HINT MODE --",
     }
 }

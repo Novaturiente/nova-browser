@@ -37,6 +37,11 @@ fn complete(text: &str) {
         s.sel = None;
         s.query = 0;
     });
+    // search.incremental: search as you type `/text` or `?text`
+    if let Some(t) = text.strip_prefix('/').or_else(|| text.strip_prefix('?')) {
+        let _ = commands::search(t, text.starts_with('?'));
+        return set(String::new(), "", Vec::new());
+    }
     match body.split_once(' ') {
         None => {
             let items = commands::NAMES

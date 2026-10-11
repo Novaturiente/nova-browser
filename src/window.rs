@@ -40,6 +40,9 @@ struct State {
     message: Option<(String, String)>,
     message_id: u64,
     start_url: String,
+    /// Closed tabs kept alive until CEF's DoClose: dropping the view earlier leaves
+    /// a page with unload handlers running forever (no OnBeforeClose).
+    closing: Vec<BrowserView>,
 }
 
 thread_local! {
@@ -190,9 +193,23 @@ pub fn close(n: usize) {
     } else {
         refresh();
     }
-    if let Some(h) = tab.view.browser().and_then(|b| b.host()) {
+    let host = tab.view.browser().and_then(|b| b.host());
+    S.with_borrow_mut(|s| s.closing.push(tab.view));
+    if let Some(h) = host {
         h.close_browser(1);
     }
+}
+
+/// CEF reached DoClose for `browser`: drop its view so CEF destroys it.
+pub fn release_closing(browser: &Browser) {
+    let view = S.with_borrow_mut(|s| {
+        let i = s.closing.iter().position(|v| {
+            v.browser()
+                .is_some_and(|b| b.is_same(Some(&mut browser.clone())) == 1)
+        })?;
+        Some(s.closing.remove(i))
+    });
+    drop(view);
 }
 
 /// Apply `f` to the tab owning `browser`, then redraw the bars.
@@ -292,7 +309,7 @@ pub fn refresh() {
             t.crashed.is_some(),
             js_str(modes::mode_label()),
             modes::mode() == Mode::Command,
-            js_str(&modes::pending()),
+            js_str(&if modes::mode() == Mode::Hint { crate::hints::typed() } else { modes::pending() }),
             js_str(&level),
             js_str(&msg),
             js_str(&format!("[{}/{}]", s.active + 1, s.tabs.len())),
@@ -603,15 +620,16 @@ wrap_window_delegate! {
 
         fn on_window_destroyed(&self, _window: Option<&mut Window>) {
             // Detached tabs aren't destroyed with the window; close them by hand (S2).
-            let tabs = S.with_borrow_mut(|s| {
+            // Their views stay in `closing` until DoClose (see close()).
+            let hosts = S.with_borrow_mut(|s| {
                 let active = s.active;
-                let tabs: Vec<BrowserView> = s.tabs.drain(..).enumerate().filter(|(i, _)| *i != active).map(|(_, t)| t.view).collect();
-                *s = State::default();
-                tabs
+                let mut closing = std::mem::take(&mut s.closing);
+                closing.extend(s.tabs.drain(..).enumerate().filter(|(i, _)| *i != active).map(|(_, t)| t.view));
+                let hosts: Vec<_> = closing.iter().filter_map(|v| v.browser().and_then(|b| b.host())).collect();
+                *s = State { closing, ..State::default() };
+                hosts
             });
-            for t in tabs {
-                if let Some(h) = t.browser().and_then(|b| b.host()) { h.close_browser(1); }
-            }
+            for h in hosts { h.close_browser(1); }
         }
 
         // cef-rs defaults every int return to 0; CEF's C++ defaults for these are true.

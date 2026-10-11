@@ -35,6 +35,13 @@ wrap_task! {
     }
 }
 
+wrap_task! {
+    struct ReleaseClosing { browser: Browser }
+    impl Task {
+        fn execute(&self) { window::release_closing(&self.browser); }
+    }
+}
+
 wrap_client! {
     pub struct TabClient {}
     impl Client {
@@ -176,12 +183,21 @@ wrap_life_span_handler! {
         }
         // A closing tab must never close the window (CEF's default for Views), and a
         // detached tab has no window: CloseHostWindow then hits a CHECK. We finish the
-        // close ourselves by dropping the removed BrowserView (window.rs close()).
-        fn do_close(&self, _browser: Option<&mut Browser>) -> ::std::os::raw::c_int { 1 }
+        // close ourselves: window.rs keeps the removed BrowserView until here, then drops
+        // it (posted, not while CEF is inside DoClose), and that destroys the browser.
+        fn do_close(&self, browser: Option<&mut Browser>) -> ::std::os::raw::c_int {
+            if let Some(b) = browser {
+                post_task(ThreadId::UI, Some(&mut ReleaseClosing::new(b.clone())));
+            }
+            1
+        }
         fn on_after_created(&self, _browser: Option<&mut Browser>) {
             OPEN.set(OPEN.get() + 1);
         }
-        fn on_before_close(&self, _browser: Option<&mut Browser>) {
+        fn on_before_close(&self, browser: Option<&mut Browser>) {
+            if let Some(b) = browser {
+                crate::devtools::forget(b);
+            }
             OPEN.set(OPEN.get() - 1);
             if OPEN.get() == 0 { quit_message_loop(); }
         }

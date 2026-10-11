@@ -1,9 +1,11 @@
 //! novabrowser: one binary; re-executes itself as the CEF subprocesses.
 mod bindings;
 mod client;
+mod clipboard;
 mod commands;
 mod completion;
 mod devtools;
+mod hints;
 mod history;
 mod import;
 mod keys;

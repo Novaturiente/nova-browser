@@ -5,8 +5,8 @@ session; update before ending one (rules in `AGENTS.md`).
 
 ## Now
 
-- **Phase:** 4 (hints and search)
-- **Next action:** Phase 4 per PLAN.md §5.3/§6: hint element selection from qutebrowser `webelem.js`, labels from `hints.py`, closed shadow root, follow via trusted `Input.dispatchMouseEvent`; `/` find; `yy`/`{clipboard}`. Deferred, not blocking: HiDPI (S1), IME (S3b), S9b YouTube jank, own CEF build (allocator + codecs).
+- **Phase:** 5 (config.ts)
+- **Next action:** Phase 5 per PLAN.md §5.5/§6: decide TS stripping (oxc vs alternatives) and setting scope with user, then `config.ts` loader in QuickJS before `cef::initialize`, `c` proxy with typed errors, bind/unbind/alias, URL patterns (urlmatch.py port), theming via CSS variables (user moved all UI customisation here). Deferred, not blocking: HiDPI (S1), IME (S3b), S9b YouTube jank, own CEF build (allocator + codecs).
 - **Blockers:** none
 
 ## Checklist
@@ -33,7 +33,7 @@ Each done item links its evidence (file, commit, or session-log date).
 - [x] 1 Skeleton (2026-10-11; `src/{main,window,client,renderer}.rs`, `ui/{tabbar,statusbar}.html`). Exit check: CDP-driven trusted mouse + user by hand — links, `target=_blank` and `window.open` → new tab (opener kept), middle-click link → background tab, click/middle-click tab bar → switch/close, status bar URL + progress, window title; web pages get no `window.nova`. `kill -9` of the tab's renderer (found by CPU-time delta via `SystemInfo.getProcessInfo`) → crash page with URL, status `[crashed] …`; real `r` (compositor `send_shortcut`) reloads; `r` types normally elsewhere (user). Mod+Q closes; exits 0 with a detached tab open, no leftover processes. `cargo test`: js_str escaping. Scripts: `/tmp/nova-p1/{drive,crash,bg}.mjs` (not kept). Not done here: hang watchdog, atomic writes (nothing writes yet), log rotation — later phases.
 - [x] 2 Modal core (2026-10-11; `src/{keys,bindings,commands,modes,devtools}.rs`, focus msg in `renderer.rs`, cmdline in `ui/statusbar.html`). `cargo test` 27 green (keys port of qutebrowser `test_keyutils`/`test_basekeyparser` rows by `worker`, command tokenizer/`;;`/aliases, zoom steps, js_str). Real keys via compositor `send_shortcut` + CDP readback: `o`/`O` + URL, `j`×3+`5j` = 320 px, `G`/`gg`, `J`/`K`, `d`/`u`, `H`/`L`, `+`/`-`/`=` zoom 110/125/100%, pending `g` shown + Escape clears, `:foobar` → error msg, `i`/Escape, click into input → auto insert (`jkr` typed), Escape → `j` scrolls, Ctrl-v passthrough / Shift-Escape. User drove HN without mouse (o/O, j k d u J K H L gg G, Ctrl-d/u, T+n, i/Escape, click into text box): all work. Not here: hints `f`, find `/`, `yy`/clipboard, completion/history, user config bindings (later phases); ~58 default commands, unimplemented ones report "not implemented yet".
 - [x] 3 Command line, completion, history (2026-10-11; `src/{history,completion}.rs`, `ui/completion.html`, readline keys in `ui/statusbar.html`). Exit check: `cargo test` `search_100k_rows_under_16ms` — 100k rows, queries `""`/site42/`topic 7`/`slug article`/nomatch/`site4999 99999`/`site 7`/`w`/`zq`/`x y` all 0.01–2.2 ms; live browser on a 100k-row profile logged no query > 16 ms. 30 tests green. Real keys (compositor): `o`+text → history list, Tab/Shift-Tab fill cmdline, Enter opens; `:tab-` → command list; Up/Down prefix history, persists across restart; Ctrl-u/a/k/w/y, Alt-b; Escape hides overlay. User checked both completion and history: working. Not here: settings/bookmark/quickmark models (Phase 5+), match highlighting, Ctrl-d delete-item, redirect filtering, qutebrowser history import.
-- [ ] 4 Hints and search
+- [x] 4 Hints and search (2026-10-11; `src/{hints.rs,hints.js,clipboard.rs}`, find/yank/spawn in `commands.rs`, CDP request/response + isolated world in `devtools.rs`). Exit check, real keys (compositor) + CDP readback: Wikipedia `f` follows, `F` background tab, `;y` → `wl-paste` = link, `;o` fills `:open <url>`, Escape removes the label host; GitHub repo page labelled, `f` follows; Jira `f` opens the Dashboards menu, `gi` focuses quick search → insert mode; YouTube `hint links spawn … {hint-url}` got the `watch?v=` URL; `/borrow` incremental highlight, `n`/`N`; `yy`/`Pp`/`yank selection`/`yank inline [{title}]({url:yank})`. Labels = qutebrowser `_hint_scattered` (test values taken from the Python code). 34 tests green. User ran the 20-step manual list incl. real `mpv`: all work. Fixed on the way: `hint inputs --first` flag after the group; placeholders expanded per token; closed tabs/window kept running pages with unload handlers (YouTube audio) — see Decisions. Not here: cross-origin iframe hints (same as qutebrowser), hint styling (Phase 5), `;d` download, `-w` window target, beforeunload prompts on close (Phase 8).
 - [ ] 5 config.ts
 - [ ] 6 External tools
 - [ ] 7 Privacy, blocking, prompts
@@ -45,6 +45,9 @@ Each done item links its evidence (file, commit, or session-log date).
 ## Decisions
 
 Newest first. Settled — don't reopen without new evidence.
+
+- 2026-10-11 — Closing tabs (Phase 4 bug, user found YouTube audio after close): for a page with (before)unload handlers, `close_browser(1)` runs them first and reaches `DoClose` later; if the removed BrowserView was already dropped the browser never finishes (no `OnBeforeClose`, page + audio keep running; with the window closed the process never exits). Fix: `window.rs` keeps removed tab views in `closing` until `do_close`, which posts `release_closing` to drop the view; window destroy moves detached tabs there too. Re-calling `close_browser` after DoClose does NOT finish it (tried).
+- 2026-10-11 — Hints/find/yank shape (Phase 4): hint JS runs in a CDP isolated world `novabrowser` (page can't see it), labels in a closed shadow root; following = trusted `Input.dispatchMouseEvent` at the element centre after `scrollIntoView`; tab targets open the href. Find = CEF `BrowserHost::find` (smart case), incremental from the cmdline. Clipboard = `wl-copy`/`wl-paste` subprocesses; reads happen on a thread, then the command runs on the UI thread. `devtools::call` = `send_dev_tools_message` + one observer per browser, forgotten in `on_before_close`.
 
 - 2026-10-11 — Passwords (user, supersedes the built-in manager below): integrate external managers instead of storing secrets. Main backend Bitwarden via `rbw` (logged in on this laptop); features: field detection, suggestion overlay, user-triggered fill, TOTP, generate, save/update prompt. Updates/saves go through an `$VISUAL` helper (rbw `add`/`edit` only take secrets via an editor), not `bw`. `pass`/KeePassXC via Phase 6 userscripts (qute-pass etc. unchanged).
 
@@ -86,6 +89,10 @@ Newest first. Settled — don't reopen without new evidence.
 ## Session log
 
 Newest first. One entry per session: date, what changed, evidence, what's next.
+
+### 2026-10-11 (session 2, Phase 4)
+- Phase 4 built and passed (see checklist); user manual test of 20 steps passed. Found and fixed the tab/window close leak for pages with unload handlers.
+- Next: Phase 5 (config.ts).
 
 ### 2026-10-11 (session 2, import)
 - Phase 10 rewritten: password manager integration (Bitwarden/rbw + editor helper) instead of a built-in store.

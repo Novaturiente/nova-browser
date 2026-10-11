@@ -1,6 +1,7 @@
 //! Command line parsing and the Phase 2 command set (qutebrowser names).
-use crate::{bindings, devtools, modes, window};
+use crate::{bindings, clipboard, devtools, hints, modes, window};
 use cef::*;
+use std::cell::RefCell;
 
 /// One parsed command: name, `-x`/`--long` flags, positional args.
 #[derive(Debug, PartialEq)]
@@ -68,7 +69,8 @@ fn parse_one(part: &str) -> Result<Cmd, String> {
         Some((_, target)) => format!("{target} {tail}"),
         None => part.to_string(),
     };
-    let mut tokens = tokenize(&expanded)?.into_iter();
+    // Placeholders are filled per token, so a title with quotes or spaces stays one argument.
+    let mut tokens = tokenize(&expanded)?.into_iter().map(|t| expand(&t));
     let name = tokens.next().ok_or("empty command")?;
     let (mut flags, mut args, mut flags_done) = (vec![], vec![], false);
     for t in tokens {
@@ -156,17 +158,70 @@ fn level_to_pct(level: f64) -> f64 {
     100.0 * 1.2f64.powf(level)
 }
 
+thread_local! {
+    /// {clipboard}, {primary} for the command line being run (read off-thread first).
+    static CLIP: RefCell<(String, String)> = const { RefCell::new((String::new(), String::new())) };
+}
+
 fn expand(text: &str) -> String {
+    if !text.contains('{') {
+        return text.to_string();
+    }
     let (url, title) = window::active_url_title();
-    // shortcut: {url:pretty} = {url}; {clipboard}/{primary} come with yank in Phase 4
+    let (clip, primary) = CLIP.with_borrow(|c| c.clone());
+    // shortcut: {url:pretty} and {url:yank} = {url}; add percent-decoding if it matters
     text.replace("{url:pretty}", &url)
+        .replace("{url:yank}", &url)
+        .replace("{url:host}", host(&url))
         .replace("{url}", &url)
         .replace("{title}", &title)
+        .replace("{clipboard}", &clip)
+        .replace("{primary}", &primary)
+}
+
+/// Host of a URL, without userinfo or port.
+pub fn host(url: &str) -> &str {
+    let rest = url.split_once("://").map_or(url, |(_, r)| r);
+    let auth = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let auth = auth.rsplit_once('@').map_or(auth, |(_, h)| h);
+    if auth.starts_with('[') {
+        return auth.split_inclusive(']').next().unwrap_or(auth);
+    }
+    auth.split(':').next().unwrap_or(auth)
 }
 
 /// Run a command line (`a ;; b`), reporting errors in the status bar.
+/// `/text` and `?text` (from the command line) search forward / backward.
 pub fn run(line: &str, count: Option<u32>) {
-    let cmds = match parse_line(&expand(line)) {
+    let line = line.trim();
+    if let Some(text) = line.strip_prefix('/') {
+        return report("search", search(text, false));
+    }
+    if let Some(text) = line.strip_prefix('?') {
+        return report("search", search(text, true));
+    }
+    if line.contains("{clipboard}") || line.contains("{primary}") {
+        // reading the clipboard can block: do it on a thread, run when it's back
+        return clipboard::expand_then_run(line, count);
+    }
+    run_parsed(line, count);
+}
+
+/// Run with `{clipboard}`/`{primary}` already read (clipboard.rs).
+pub fn run_with_clipboard(line: &str, count: Option<u32>, clip: String, primary: String) {
+    CLIP.set((clip, primary));
+    run_parsed(line, count);
+    CLIP.set((String::new(), String::new()));
+}
+
+fn report(name: &str, r: Result<(), String>) {
+    if let Err(e) = r {
+        window::message("error", &format!("{name}: {e}"));
+    }
+}
+
+fn run_parsed(line: &str, count: Option<u32>) {
+    let cmds = match parse_line(line) {
         Ok(c) => c,
         Err(e) => return window::message("error", &e),
     };
@@ -192,6 +247,59 @@ const SCROLL_TO_PERC_JS: &str = "((p, x) => { let e = document.elementFromPoint(
  if (!e || e === document.body || e === document.documentElement) e = document.scrollingElement || document.documentElement;\
  if (x) e.scrollLeft = (e.scrollWidth - e.clientWidth) * p / 100; else e.scrollTop = (e.scrollHeight - e.clientHeight) * p / 100; })";
 
+thread_local! {
+    /// Last search (text, backward), for `n` / `N`.
+    static SEARCH: RefCell<(String, bool)> = const { RefCell::new((String::new(), false)) };
+}
+
+/// Find `text` in the active tab (Chromium find bar logic, highlighted by Chromium).
+/// qutebrowser `search.ignore_case = smart`: case-sensitive only with an uppercase letter.
+pub fn search(text: &str, backward: bool) -> Result<(), String> {
+    let h = window::active_browser()
+        .and_then(|b| b.host())
+        .ok_or("no active tab")?;
+    SEARCH.set((text.to_string(), backward));
+    if text.is_empty() {
+        h.stop_finding(1);
+        return Ok(());
+    }
+    let case = text.chars().any(char::is_uppercase) as i32;
+    h.find(Some(&CefString::from(text)), !backward as i32, case, 0);
+    Ok(())
+}
+
+fn search_again(reverse: bool, n: u32) -> Result<(), String> {
+    let (text, backward) = SEARCH.with_borrow(|s| s.clone());
+    if text.is_empty() {
+        return Err("no previous search".into());
+    }
+    let h = window::active_browser()
+        .and_then(|b| b.host())
+        .ok_or("no active tab")?;
+    let case = text.chars().any(char::is_uppercase) as i32;
+    for _ in 0..n {
+        h.find(
+            Some(&CefString::from(text.as_str())),
+            (backward == reverse) as i32,
+            case,
+            1,
+        );
+    }
+    Ok(())
+}
+
+/// `spawn cmd args…`: start a program, never wait for it on the UI thread.
+pub fn spawn(argv: &[String]) -> Result<(), String> {
+    let (prog, args) = argv.split_first().ok_or("usage: spawn <command> [args…]")?;
+    let mut child = std::process::Command::new(prog)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| format!("{prog}: {e}"))?;
+    std::thread::spawn(move || child.wait()); // reap
+    Ok(())
+}
+
 /// Implemented commands, for `:` completion. Keep in sync with `run_one`.
 pub const NAMES: &[&str] = &[
     "back",
@@ -200,6 +308,7 @@ pub const NAMES: &[&str] = &[
     "cmd-set-text",
     "forward",
     "fullscreen",
+    "hint",
     "message-error",
     "message-info",
     "message-warning",
@@ -213,6 +322,9 @@ pub const NAMES: &[&str] = &[
     "scroll-page",
     "scroll-to-perc",
     "search",
+    "search-next",
+    "search-prev",
+    "spawn",
     "stop",
     "tab-clone",
     "tab-close",
@@ -223,6 +335,7 @@ pub const NAMES: &[&str] = &[
     "tab-only",
     "tab-prev",
     "undo",
+    "yank",
     "zoom",
     "zoom-in",
     "zoom-out",
@@ -369,11 +482,17 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
             h.set_zoom_level(pct_to_level(pct));
             window::message("info", &format!("Zoom level: {pct}%"));
         }
-        "search" if cmd.args.is_empty() => {
-            if let Some(h) = browser.and_then(|b| b.host()) {
-                h.stop_finding(1);
+        "search" => search(&cmd.rest(), cmd.flag("-r", "--reverse"))?,
+        "search-next" => search_again(false, n)?,
+        "search-prev" => search_again(true, n)?,
+        "hint" => hints::start(cmd)?,
+        "spawn" => {
+            if cmd.flag("-u", "--userscript") {
+                return Err("userscripts come in Phase 6".into());
             }
+            spawn(&cmd.args)?
         }
+        "yank" => yank(cmd, &need()?)?,
         "fullscreen" if cmd.flag("", "--leave") => {
             if let Some(h) = browser.and_then(|b| b.host()) {
                 h.exit_fullscreen(1);
@@ -404,9 +523,66 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
     Ok(())
 }
 
+/// `yank [url|title|domain|pretty-url|selection|inline <text>] [-s]`
+fn yank(cmd: &Cmd, browser: &Browser) -> Result<(), String> {
+    let primary = cmd.flag("-s", "--sel");
+    let (url, title) = window::active_url_title();
+    let what = cmd.args.first().map_or("url", String::as_str);
+    let text =
+        match what {
+            "url" | "pretty-url" => url.clone(),
+            "title" => title,
+            "domain" => match url.split_once("://") {
+                Some((scheme, _)) => format!(
+                    "{scheme}://{}",
+                    url[scheme.len() + 3..].split('/').next().unwrap_or("")
+                ),
+                None => url.clone(),
+            },
+            "inline" => cmd.args[1..].join(" "),
+            "selection" => {
+                devtools::eval_isolated(browser, "getSelection().toString()".into(), move |r| {
+                    match r
+                        .and_then(|(_, v)| v.as_str().map(str::to_string))
+                        .filter(|t| !t.is_empty())
+                    {
+                        Some(t) => yanked(&t, "selection", primary),
+                        None => window::message("error", "Nothing selected."),
+                    }
+                });
+                return Ok(());
+            }
+            w => return Err(format!("unknown yank target {w}")),
+        };
+    yanked(&text, what, primary);
+    Ok(())
+}
+
+fn yanked(text: &str, what: &str, primary: bool) {
+    clipboard::write(text, primary);
+    let to = if primary {
+        "primary selection"
+    } else {
+        "clipboard"
+    };
+    let what = if what == "url" { "URL" } else { what };
+    window::message("info", &format!("Yanked {what} to {to}: {text}"));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn url_host() {
+        assert_eq!(
+            host("https://user:pw@example.com:8080/x?y#z"),
+            "example.com"
+        );
+        assert_eq!(host("http://[::1]:80/"), "[::1]");
+        assert_eq!(host("file:///tmp/x"), "");
+        assert_eq!(host("example.org"), "example.org");
+    }
 
     #[test]
     fn tokenize_quotes() {
