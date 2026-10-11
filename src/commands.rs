@@ -1,5 +1,5 @@
 //! Command line parsing and the Phase 2 command set (qutebrowser names).
-use crate::{bindings, clipboard, devtools, hints, modes, window};
+use crate::{clipboard, config, devtools, hints, modes, window};
 use cef::*;
 use std::cell::RefCell;
 
@@ -53,24 +53,32 @@ fn tokenize(s: &str) -> Result<Vec<String>, String> {
     Ok(out)
 }
 
-/// `a ;; b` → ["a", "b"]; aliases expand on the first word.
+/// `a ;; b` → ["a", "b"]; aliases expand on the first word, and an alias may
+/// itself contain `;;` (qutebrowser expands before splitting).
 pub fn parse_line(line: &str) -> Result<Vec<Cmd>, String> {
-    let line = line.trim().trim_start_matches(':');
-    line.split(";;")
-        .map(str::trim)
-        .filter(|p| !p.is_empty())
-        .map(parse_one)
-        .collect()
+    let aliases = config::get().get("aliases");
+    let mut out = Vec::new();
+    split_expand(line.trim().trim_start_matches(':'), &aliases, 0, &mut out)?;
+    out.iter().map(|p| parse_one(p)).collect()
+}
+
+fn split_expand(line: &str, aliases: &serde_json::Value, depth: u32, out: &mut Vec<String>) -> Result<(), String> {
+    if depth > 8 {
+        return Err("alias loop".into());
+    }
+    for part in line.split(";;").map(str::trim).filter(|p| !p.is_empty()) {
+        let (first, tail) = part.split_once(char::is_whitespace).unwrap_or((part, ""));
+        match aliases.get(first).and_then(|v| v.as_str()) {
+            Some(target) => split_expand(&format!("{target} {tail}"), aliases, depth + 1, out)?,
+            None => out.push(part.to_string()),
+        }
+    }
+    Ok(())
 }
 
 fn parse_one(part: &str) -> Result<Cmd, String> {
-    let (first, tail) = part.split_once(char::is_whitespace).unwrap_or((part, ""));
-    let expanded = match bindings::ALIASES.iter().find(|(a, _)| *a == first) {
-        Some((_, target)) => format!("{target} {tail}"),
-        None => part.to_string(),
-    };
     // Placeholders are filled per token, so a title with quotes or spaces stays one argument.
-    let mut tokens = tokenize(&expanded)?.into_iter().map(|t| expand(&t));
+    let mut tokens = tokenize(part)?.into_iter().map(|t| expand(&t));
     let name = tokens.next().ok_or("empty command")?;
     let (mut flags, mut args, mut flags_done) = (vec![], vec![], false);
     for t in tokens {
@@ -95,9 +103,21 @@ fn parse_one(part: &str) -> Result<Cmd, String> {
     Ok(Cmd { name, flags, args })
 }
 
-/// qutebrowser `url.auto_search = naive`: one word with a dot/colon/localhost is a URL.
+/// qutebrowser `url.searchengines` + `url.auto_search`: `g rust` uses engine `g`;
+/// otherwise (naive) one word with a dot or localhost is a URL, the rest is searched.
 pub fn url_or_search(text: &str) -> String {
+    let cfg = config::get();
+    let engines = cfg.get("url.searchengines");
+    url_or_search_with(text, &engines, &cfg.str("url.auto_search"))
+}
+
+fn url_or_search_with(text: &str, engines: &serde_json::Value, auto_search: &str) -> String {
     let t = text.trim();
+    if let Some((word, rest)) = t.split_once(' ') {
+        if let Some(tpl) = engines.get(word).and_then(|v| v.as_str()).filter(|_| word != "DEFAULT") {
+            return search_url(tpl, rest.trim());
+        }
+    }
     let has_scheme = t.contains("://")
         || ["about:", "file:", "data:", "chrome:"]
             .iter()
@@ -105,7 +125,9 @@ pub fn url_or_search(text: &str) -> String {
     if has_scheme {
         return t.to_string();
     }
-    if !t.contains(char::is_whitespace) && (t.starts_with("localhost") || t.contains('.')) {
+    // shortcut: "dns" and "schemeless" behave like "naive" (no DNS lookups)
+    let looks_like_url = !t.contains(char::is_whitespace) && (t.starts_with("localhost") || t.contains('.'));
+    if auto_search == "never" || looks_like_url {
         let scheme = if t.starts_with("localhost") {
             "http"
         } else {
@@ -113,8 +135,13 @@ pub fn url_or_search(text: &str) -> String {
         };
         return format!("{scheme}://{t}");
     }
-    // shortcut: fixed default engine until config.ts (Phase 5) brings url.searchengines
-    let q: String = t
+    let tpl = engines.get("DEFAULT").and_then(|v| v.as_str()).unwrap_or("https://duckduckgo.com/?q={}");
+    search_url(tpl, t)
+}
+
+/// Fill a search engine template: `{}` quoted, `{unquoted}` raw (qutebrowser).
+fn search_url(tpl: &str, term: &str) -> String {
+    let q: String = term
         .bytes()
         .map(|b| match b {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
@@ -124,30 +151,43 @@ pub fn url_or_search(text: &str) -> String {
             _ => format!("%{b:02X}"),
         })
         .collect();
-    format!("https://duckduckgo.com/?q={q}")
+    tpl.replace("{unquoted}", term).replace("{semiquoted}", &q).replace("{quoted}", &q).replace("{}", &q)
 }
 
-/// qutebrowser `zoom.levels` default.
-const ZOOM_LEVELS: &[f64] = &[
-    25., 33., 50., 67., 75., 90., 100., 110., 125., 150., 175., 200., 250., 300., 400., 500.,
-];
+/// `zoom.levels` as numbers ("110%" → 110).
+fn zoom_levels() -> Vec<f64> {
+    let mut v: Vec<f64> = config::get()
+        .list("zoom.levels")
+        .iter()
+        .filter_map(|z| z.trim_end_matches('%').parse().ok())
+        .collect();
+    v.sort_by(f64::total_cmp);
+    if v.is_empty() {
+        v.push(100.0);
+    }
+    v
+}
 
 /// Next zoom level `steps` away from `current` percent (negative = out).
 pub fn zoom_step(current: f64, steps: i32) -> f64 {
-    let last = ZOOM_LEVELS.len() as i32 - 1;
+    zoom_step_in(&zoom_levels(), current, steps)
+}
+
+fn zoom_step_in(levels: &[f64], current: f64, steps: i32) -> f64 {
+    let last = levels.len() as i32 - 1;
     // first level above (zoom in) / below (zoom out) the current one, then the remaining steps
     let target = if steps > 0 {
-        ZOOM_LEVELS
+        levels
             .iter()
             .position(|&z| z > current + 0.5)
             .map_or(last, |i| i as i32 + steps - 1)
     } else {
-        ZOOM_LEVELS
+        levels
             .iter()
             .rposition(|&z| z < current - 0.5)
             .map_or(0, |i| i as i32 + steps + 1)
     };
-    ZOOM_LEVELS[target.clamp(0, last) as usize]
+    levels[target.clamp(0, last) as usize]
 }
 
 /// CEF zoom level is log base 1.2 of the factor.
@@ -305,6 +345,8 @@ pub const NAMES: &[&str] = &[
     "back",
     "clear-keychain",
     "close",
+    "config-cycle",
+    "config-source",
     "cmd-set-text",
     "forward",
     "fullscreen",
@@ -323,6 +365,7 @@ pub const NAMES: &[&str] = &[
     "scroll-to-perc",
     "search",
     "search-next",
+    "set",
     "search-prev",
     "spawn",
     "stop",
@@ -389,8 +432,10 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
             window::open(&url, !cmd.flag("-b", "--bg"));
         }
         "tab-mute" => {
-            let h = need()?.host().ok_or("no host")?;
+            let b = need()?;
+            let h = b.host().ok_or("no host")?;
             h.set_audio_muted((h.is_audio_muted() == 0) as i32);
+            window::set_muted(&b, h.is_audio_muted() != 0);
             window::message(
                 "info",
                 if h.is_audio_muted() != 0 {
@@ -518,6 +563,38 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
             window::message(cmd.name.trim_start_matches("message-"), &cmd.rest());
         }
         "close" | "quit" => window::close_window(),
+        "config-source" => {
+            config::load().map_err(|e| format!("config unchanged: {e}"))?;
+            window::config_changed();
+            let pending = config::get().pending().len();
+            window::message("info", &format!("config.ts loaded ({pending} settings not built yet)"));
+        }
+        "set" => {
+            // `set name value`; `set name` shows the value
+            let (name, value) = match cmd.args.as_slice() {
+                [n] => return {
+                    window::message("info", &format!("{n} = {}", config::get().get(n)));
+                    Ok(())
+                },
+                [n, rest @ ..] if !rest.is_empty() => (n, rest.join(" ")),
+                _ => return Err("usage: set <setting> [value]".into()),
+            };
+            config::get().set_runtime(name, &value)?;
+            window::config_changed();
+        }
+        "config-cycle" => {
+            // `config-cycle name v1 v2 …`: next value after the current one
+            let [name, values @ ..] = cmd.args.as_slice() else { return Err("usage: config-cycle <setting> <values…>".into()) };
+            if values.len() < 2 {
+                return Err("config-cycle needs at least two values".into());
+            }
+            let cfg = config::get();
+            let cur = cfg.get(name);
+            let cur = cur.as_str().map(str::to_string).unwrap_or_else(|| cur.to_string());
+            let i = values.iter().position(|v| *v == cur).map_or(0, |i| (i + 1) % values.len());
+            cfg.set_runtime(name, &values[i])?;
+            window::config_changed();
+        }
         other => return Err(format!("not implemented yet ({other})")),
     }
     Ok(())
@@ -572,6 +649,15 @@ fn yanked(text: &str, what: &str, primary: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn aliases_expand_before_splitting() {
+        let a = serde_json::json!({"t": "config-cycle tabs.position left top ;; message-info 'x'", "loop": "loop", "q": "close"});
+        let mut out = Vec::new();
+        split_expand("t ;; q", &a, 0, &mut out).unwrap();
+        assert_eq!(out, ["config-cycle tabs.position left top", "message-info 'x'", "close"]);
+        assert!(split_expand("loop", &a, 0, &mut Vec::new()).is_err());
+    }
 
     #[test]
     fn url_host() {
@@ -638,6 +724,12 @@ mod tests {
             "https://duckduckgo.com/?q=rust+lang"
         );
         assert_eq!(url_or_search("a&b"), "https://duckduckgo.com/?q=a%26b");
+        let e = serde_json::json!({"DEFAULT": "https://s.x/?q={}", "g": "https://g.x/search?q={}", "raw": "https://r.x/{unquoted}"});
+        assert_eq!(url_or_search_with("g rust lang", &e, "naive"), "https://g.x/search?q=rust+lang");
+        assert_eq!(url_or_search_with("raw a/b", &e, "naive"), "https://r.x/a/b");
+        assert_eq!(url_or_search_with("hello world", &e, "naive"), "https://s.x/?q=hello+world");
+        assert_eq!(url_or_search_with("DEFAULT x", &e, "naive"), "https://s.x/?q=DEFAULT+x");
+        assert_eq!(url_or_search_with("intranet", &e, "never"), "https://intranet");
     }
 
     #[test]

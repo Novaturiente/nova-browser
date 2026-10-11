@@ -1,9 +1,10 @@
 //! novabrowser: one binary; re-executes itself as the CEF subprocesses.
-mod bindings;
 mod client;
 mod clipboard;
 mod commands;
 mod completion;
+mod config;
+mod theme;
 mod devtools;
 mod hints;
 mod history;
@@ -11,6 +12,8 @@ mod import;
 mod keys;
 mod modes;
 mod renderer;
+mod settings;
+mod urlmatch;
 mod window;
 
 use cef::*;
@@ -37,6 +40,14 @@ wrap_app! {
             if std::env::var_os("WAYLAND_DISPLAY").is_some() && cmd.has_switch(Some(&ozone)) == 0 {
                 cmd.append_switch_with_value(Some(&ozone), Some(&CefString::from("wayland")));
             }
+            for (name, value) in switches(&config::get()) {
+                let name = CefString::from(name.as_str());
+                if cmd.has_switch(Some(&name)) == 1 { continue } // command line wins
+                match value {
+                    Some(v) => cmd.append_switch_with_value(Some(&name), Some(&CefString::from(v.as_str()))),
+                    None => cmd.append_switch(Some(&name)),
+                }
+            }
         }
         fn browser_process_handler(&self) -> Option<BrowserProcessHandler> {
             Some(NovaBrowserProcess::new(self.start_url.clone()))
@@ -47,10 +58,79 @@ wrap_app! {
     }
 }
 
+/// Chromium switches from config (qutebrowser qtargs.py + darkmode.py): `qt.args`
+/// verbatim, then the settings that map to a switch.
+fn switches(cfg: &config::Config) -> Vec<(String, Option<String>)> {
+    let mut out: Vec<(String, Option<String>)> = cfg
+        .list("qt.args")
+        .iter()
+        .map(|a| {
+            let a = a.trim_start_matches('-');
+            match a.split_once('=') {
+                Some((k, v)) => (k.to_string(), Some(v.to_string())),
+                None => (a.to_string(), None),
+            }
+        })
+        .collect();
+    let mut add = |k: &str, v: Option<&str>| out.push((k.into(), v.map(Into::into)));
+    add(if cfg.bool("scrolling.smooth") { "enable-smooth-scrolling" } else { "disable-smooth-scrolling" }, None);
+    if !cfg.bool("content.autoplay") {
+        add("autoplay-policy", Some("user-gesture-required"));
+    }
+    if !cfg.bool("content.canvas_reading") {
+        add("disable-reading-from-canvas", None);
+    }
+    match cfg.str("content.webrtc_ip_handling_policy").as_str() {
+        "all-interfaces" => {}
+        p => add("force-webrtc-ip-handling-policy", Some(&p.replace('-', "_"))),
+    }
+    match cfg.str("qt.chromium.low_end_device_mode").as_str() {
+        "always" => add("enable-low-end-device-mode", None),
+        "never" => add("disable-low-end-device-mode", None),
+        _ => {}
+    }
+    let mut blink = Vec::new();
+    match cfg.str("colors.webpage.preferred_color_scheme").as_str() {
+        "dark" => blink.push("preferredColorScheme=0".to_string()),
+        "light" => blink.push("preferredColorScheme=1".to_string()),
+        _ => {}
+    }
+    // Dark mode is on for every page; per-site exclusions switch it off per tab (window.rs).
+    if cfg.bool("colors.webpage.darkmode.enabled") || cfg_any_dark_site(cfg) {
+        blink.push("forceDarkModeEnabled=true".into());
+        let alg = match cfg.str("colors.webpage.darkmode.algorithm").as_str() {
+            "brightness-rgb" => 1,
+            "lightness-hsl" => 2,
+            _ => 3,
+        };
+        let (policy, classifier) = match cfg.str("colors.webpage.darkmode.policy.images").as_str() {
+            "always" => (0, None),
+            "never" => (1, None),
+            "smart-simple" => (2, Some(1)),
+            _ => (2, Some(0)),
+        };
+        let mut dm = format!("InversionAlgorithm={alg},ImagePolicy={policy}");
+        if let Some(c) = classifier {
+            dm.push_str(&format!(",ImageClassifierPolicy={c}"));
+        }
+        out.push(("dark-mode-settings".into(), Some(dm)));
+    }
+    if !blink.is_empty() {
+        out.push(("blink-settings".into(), Some(blink.join(","))));
+    }
+    out
+}
+
+/// Dark mode off globally but on for some pattern: still start Chromium with it.
+fn cfg_any_dark_site(cfg: &config::Config) -> bool {
+    cfg.any_pattern_value("colors.webpage.darkmode.enabled", &serde_json::Value::Bool(true))
+}
+
 /// `novabrowser [switches] [url]`: first non-switch argument; bare hosts get https://.
+/// Without one: the first of `url.start_pages`.
 fn start_url() -> String {
     let Some(arg) = std::env::args().skip(1).find(|a| !a.starts_with('-')) else {
-        return "about:blank".into();
+        return config::get().list("url.start_pages").into_iter().next().unwrap_or_else(|| "about:blank".into());
     };
     if arg.contains("://") || arg.starts_with("about:") || arg.starts_with("data:") {
         arg
@@ -80,9 +160,24 @@ fn main() {
         }
         return;
     }
+    if argv.get(1).map(String::as_str) == Some("--check-config") {
+        // load config.ts without starting the browser: errors and unbuilt settings
+        match config::load() {
+            Ok(()) => println!("{}: ok; not built yet: {}", config::path().display(), config::get().pending().join(", ")),
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
     let _ = api_hash(sys::CEF_API_VERSION_LAST, 0);
     let args = args::Args::new();
-    let mut app = NovaApp::new(start_url());
+    // Before CEF: config sets Chromium switches. Subprocesses don't need it (they
+    // get switches on their command line); loading there would just cost startup.
+    let is_subprocess = argv.iter().any(|a| a.starts_with("--type="));
+    let config_error = if is_subprocess { None } else { config::load().err() };
+    let mut app = NovaApp::new(if is_subprocess { String::new() } else { start_url() });
     // Subprocesses exit here; they need the App too, or the renderer gets no handler.
     let code = execute_process(
         Some(args.as_main_args()),
@@ -114,6 +209,15 @@ fn main() {
         1,
         "cef::initialize failed"
     );
+    if let Some(e) = config_error {
+        window::startup_message("error", &format!("config: {e}"));
+    } else {
+        let pending = config::get().pending();
+        if !pending.is_empty() {
+            eprintln!("novabrowser: config settings not applied yet: {}", pending.join(", "));
+            window::startup_message("info", &format!("config: {} settings not built yet: {}", pending.len(), pending.join(", ")));
+        }
+    }
     run_message_loop();
     shutdown();
 }

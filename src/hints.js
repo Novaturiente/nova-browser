@@ -41,7 +41,8 @@
     return elems.length;
   };
 
-  H.draw = (ls, uppercase) => {
+  // st: {font, fg, bg, match, border, radius, padding} from config (hints.rs style()).
+  H.draw = (ls, uppercase, st) => {
     H.clear();
     labels = ls;
     host = document.createElement("novabrowser-hints");
@@ -50,9 +51,9 @@
     const style = document.createElement("style");
     style.textContent = `
       :host { all: initial; position: fixed; inset: 0; z-index: 2147483647; pointer-events: none; }
-      div { position: fixed; font: bold 12px monospace; color: #000; background: #fc6; border: 1px solid #000;
-            border-radius: 3px; padding: 0 2px; line-height: 14px; white-space: nowrap; }
-      div[hidden] { display: none; } b { color: #a60; }`;
+      div { position: fixed; font: ${st.font}; color: ${st.fg}; background: ${st.bg}; border: ${st.border};
+            border-radius: ${st.radius}; padding: ${st.padding}; line-height: 1.15; white-space: nowrap; }
+      div[hidden] { display: none; } b { color: ${st.match}; font-weight: inherit; }`;
     root.append(style);
     H.nodes = elems.map(([e, off], i) => {
       const r = e.getClientRects()[0];

@@ -1,6 +1,6 @@
 //! Modes and key dispatch, decided in `on_pre_key_event` (PLAN.md §3 Keys).
 use crate::keys::{self, Key, Keymap, Mods, Outcome, Parser};
-use crate::{bindings, commands, hints, window};
+use crate::{commands, config, hints, window};
 use std::cell::RefCell;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -30,18 +30,39 @@ thread_local! {
     });
 }
 
-/// Load the default bindings; bad key strings are reported, not fatal.
+/// (Re)build the keymaps: `bindings.default`, then `bindings.commands`, then
+/// config.ts bind()/unbind() in order. Bad key strings are reported, not fatal.
 pub fn init() {
+    let cfg = config::get();
+    let mut binds: Vec<(String, String, Option<String>)> = Vec::new();
+    for setting in ["bindings.default", "bindings.commands"] {
+        for (mode, map) in cfg.get(setting).as_object().into_iter().flatten() {
+            for (key, cmd) in map.as_object().into_iter().flatten() {
+                // an empty/null command in bindings.commands unbinds (qutebrowser)
+                let cmd = cmd.as_str().filter(|c| !c.is_empty()).map(str::to_string);
+                binds.push((mode.clone(), key.clone(), cmd));
+            }
+        }
+    }
+    binds.extend(cfg.binds.iter().cloned());
     S.with_borrow_mut(|s| {
-        for (mode, keystr, cmd) in bindings::DEFAULTS {
-            let map = match *mode {
+        s.parser.clear();
+        s.normal = Keymap::new();
+        s.insert = Keymap::new();
+        s.passthrough = Keymap::new();
+        for (mode, keystr, cmd) in &binds {
+            let map = match mode.as_str() {
                 "normal" => &mut s.normal,
                 "insert" => &mut s.insert,
-                _ => &mut s.passthrough,
+                "passthrough" => &mut s.passthrough,
+                _ => continue, // command/hint/prompt keys are fixed in the UI for now
             };
-            match keys::parse_keystring(keystr) {
-                Ok(seq) => map.bind(&seq, cmd),
-                Err(e) => eprintln!("novabrowser: bad default binding {keystr:?}: {e}"),
+            match (keys::parse_keystring(keystr), cmd) {
+                (Ok(seq), Some(cmd)) => map.bind(&seq, cmd),
+                (Ok(seq), None) => {
+                    map.unbind(&seq);
+                }
+                (Err(e), _) => eprintln!("novabrowser: bad binding {keystr:?}: {e}"),
             }
         }
     });
@@ -82,11 +103,12 @@ pub fn clear_keychain() {
 }
 
 /// Focus moved inside the active tab (renderer `on_focused_node_changed`).
-/// qutebrowser `input.insert_mode.auto_enter/auto_leave/auto_load` = true.
+/// qutebrowser `input.insert_mode.auto_enter` / `auto_leave`.
 pub fn on_focus(editable: bool) {
+    let cfg = config::get();
     match (mode(), editable) {
-        (Mode::Normal, true) => enter(Mode::Insert),
-        (Mode::Insert, false) => enter(Mode::Normal),
+        (Mode::Normal, true) if cfg.bool("input.insert_mode.auto_enter") => enter(Mode::Insert),
+        (Mode::Insert, false) if cfg.bool("input.insert_mode.auto_leave") => enter(Mode::Normal),
         _ => {}
     }
 }
@@ -155,6 +177,16 @@ fn is_plain_char(key: &Key) -> bool {
         && !key.mods.contains(Mods::CTRL)
         && !key.mods.contains(Mods::ALT)
         && !key.mods.contains(Mods::META)
+}
+
+/// For the status bar colour (`colors.statusbar.<mode>`).
+pub fn mode_name() -> &'static str {
+    match mode() {
+        Mode::Normal | Mode::Hint => "normal",
+        Mode::Insert => "insert",
+        Mode::Passthrough => "passthrough",
+        Mode::Command => "command",
+    }
 }
 
 pub fn mode_label() -> &'static str {

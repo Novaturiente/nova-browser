@@ -2,35 +2,39 @@
 //! here; finding, drawing and picking elements runs in `hints.js` inside an
 //! isolated world of the page.
 use crate::modes::{self, Mode};
-use crate::{clipboard, commands, devtools, window};
+use crate::{clipboard, commands, config, devtools, theme, window};
 use cef::*;
 use serde_json::Value;
 use std::cell::RefCell;
 
 const JS: &str = include_str!("hints.js");
-// shortcut: qutebrowser defaults + the user's hints.chars/uppercase; config.ts (Phase 5) replaces these
-const CHARS: &str = "asdfghjkl";
-const MIN_CHARS: usize = 1;
-const UPPERCASE: bool = true;
+/// `hints.selectors[group]`, joined into one CSS selector.
+fn selector(group: &str) -> Option<String> {
+    let sels = config::get().get("hints.selectors");
+    let list = sels.get(group)?.as_array()?;
+    Some(
+        list.iter()
+            .filter_map(|v| v.as_str())
+            .collect::<Vec<_>>()
+            .join(", "),
+    )
+}
 
-/// qutebrowser `hints.selectors` defaults.
-fn selector(group: &str) -> Option<&'static str> {
-    Some(match group {
-        "all" => "a, area, textarea, select, input:not([type=\"hidden\"]), button, frame, iframe, img, link, summary, \
-                  [contenteditable]:not([contenteditable=\"false\"]), [onclick], [onmousedown], [role=\"link\"], \
-                  [role=\"option\"], [role=\"button\"], [role=\"tab\"], [role=\"checkbox\"], [role=\"switch\"], \
-                  [role=\"menuitem\"], [role=\"menuitemcheckbox\"], [role=\"menuitemradio\"], [role=\"treeitem\"], \
-                  [aria-haspopup], [ng-click], [ngClick], [data-ng-click], [x-ng-click], [tabindex]:not([tabindex=\"-1\"])",
-        "links" => "a[href], area[href], link[href], [role=\"link\"][href]",
-        "images" => "img",
-        "media" => "audio, img, video",
-        "url" => "[src], [href]",
-        "inputs" => "input[type=\"text\"], input[type=\"date\"], input[type=\"datetime-local\"], input[type=\"email\"], \
-                     input[type=\"month\"], input[type=\"number\"], input[type=\"password\"], input[type=\"search\"], \
-                     input[type=\"tel\"], input[type=\"time\"], input[type=\"url\"], input[type=\"week\"], input:not([type]), \
-                     [contenteditable]:not([contenteditable=\"false\"]), textarea",
-        _ => return None,
+/// Label look from `colors.hints.*`, `fonts.hints`, `hints.border/radius/padding`.
+fn style() -> String {
+    let cfg = config::get();
+    let pad = cfg.get("hints.padding");
+    let p = |k: &str| pad[k].as_i64().unwrap_or(0);
+    serde_json::json!({
+        "font": theme::css_font(&cfg, &cfg.str("fonts.hints")),
+        "fg": theme::css_color(&cfg.str("colors.hints.fg")),
+        "bg": theme::css_color(&cfg.str("colors.hints.bg")),
+        "match": theme::css_color(&cfg.str("colors.hints.match.fg")),
+        "border": cfg.str("hints.border"),
+        "radius": format!("{}px", cfg.int("hints.radius")),
+        "padding": format!("{}px {}px {}px {}px", p("top"), p("right"), p("bottom"), p("left")),
     })
+    .to_string()
 }
 
 struct Session {
@@ -41,6 +45,8 @@ struct Session {
     target: String,
     args: Vec<String>,
     rapid: bool,
+    chars: String,
+    uppercase: bool,
 }
 
 thread_local! {
@@ -74,7 +80,7 @@ pub fn start(cmd: &commands::Cmd) -> Result<(), String> {
     let browser = window::active_browser().ok_or("no active tab")?;
     let js = format!(
         "{JS}; __nova.collect({})",
-        serde_json::to_string(sel).unwrap()
+        serde_json::to_string(&sel).unwrap()
     );
     let b = browser.clone();
     devtools::eval_isolated(&browser, js, move |r| {
@@ -88,10 +94,14 @@ pub fn start(cmd: &commands::Cmd) -> Result<(), String> {
         if first {
             return devtools::eval_in(&b, ctx, "__nova.focusFirst()".into(), |_| {});
         }
-        let labels = scattered(n, CHARS, MIN_CHARS);
+        let cfg = config::get();
+        let (chars, uppercase) = (cfg.str("hints.chars"), cfg.bool("hints.uppercase"));
+        let min_chars = cfg.int("hints.min_chars").max(1) as usize;
+        let labels = scattered(n, &chars, min_chars);
         let draw = format!(
-            "__nova.draw({}, {UPPERCASE})",
-            serde_json::to_string(&labels).unwrap()
+            "__nova.draw({}, {uppercase}, {})",
+            serde_json::to_string(&labels).unwrap(),
+            style()
         );
         devtools::eval_in(&b, ctx, draw, |_| {});
         S.set(Some(Session {
@@ -102,6 +112,8 @@ pub fn start(cmd: &commands::Cmd) -> Result<(), String> {
             target,
             args,
             rapid,
+            chars,
+            uppercase,
         }));
         modes::enter(Mode::Hint);
     });
@@ -116,7 +128,7 @@ pub fn on_key(name: &str) {
             "Backspace" => {
                 s.typed.pop();
             }
-            n if n.chars().count() == 1 && CHARS.contains(&n.to_lowercase()) => {
+            n if n.chars().count() == 1 && s.chars.contains(&n.to_lowercase()) => {
                 s.typed.push_str(&n.to_lowercase())
             }
             _ => return None,
@@ -124,9 +136,15 @@ pub fn on_key(name: &str) {
         let matching: Vec<usize> = (0..s.labels.len())
             .filter(|&i| s.labels[i].starts_with(&s.typed))
             .collect();
-        Some((s.browser.clone(), s.ctx, s.typed.clone(), matching))
+        Some((
+            s.browser.clone(),
+            s.ctx,
+            s.typed.clone(),
+            matching,
+            s.uppercase,
+        ))
     });
-    let Some((b, ctx, typed, matching)) = action else {
+    let Some((b, ctx, typed, matching, uppercase)) = action else {
         return;
     };
     match matching.as_slice() {
@@ -139,7 +157,7 @@ pub fn on_key(name: &str) {
         [i] => follow(&b, ctx, *i),
         _ => {
             let js = format!(
-                "__nova.filter({}, {UPPERCASE})",
+                "__nova.filter({}, {uppercase})",
                 serde_json::to_string(&typed).unwrap()
             );
             devtools::eval_in(&b, ctx, js, |_| {});
@@ -158,15 +176,15 @@ fn follow(b: &Browser, ctx: i64, i: usize) {
         let Some(info) = info else {
             return window::message("error", "hints: element is gone");
         };
-        let (target, args, rapid) = S
+        let (target, args, rapid, uppercase) = S
             .with_borrow(|s| {
                 s.as_ref()
-                    .map(|s| (s.target.clone(), s.args.clone(), s.rapid))
+                    .map(|s| (s.target.clone(), s.args.clone(), s.rapid, s.uppercase))
             })
             .unwrap_or_default();
         if rapid {
             S.with_borrow_mut(|s| s.as_mut().map(|s| s.typed.clear()));
-            devtools::eval_in(&b2, ctx, format!("__nova.filter('', {UPPERCASE})"), |_| {});
+            devtools::eval_in(&b2, ctx, format!("__nova.filter('', {uppercase})"), |_| {});
         } else {
             modes::enter(Mode::Normal); // clears the labels (on_leave)
         }

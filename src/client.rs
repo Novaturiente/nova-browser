@@ -85,7 +85,7 @@ wrap_client! {
             let text = message.argument_list().map(|l| CefString::from(&l.string(0)).to_string()).unwrap_or_default();
             let (cmd, arg) = text.split_once(' ').unwrap_or((&text, ""));
             match (cmd, arg.parse::<i64>()) {
-                ("ready", _) => window::refresh(),
+                ("ready", _) => window::ui_ready(),
                 ("tab", Ok(n)) if n >= 0 => window::show(n as usize),
                 ("close", Ok(n)) if n >= 0 => window::close(n as usize),
                 ("run", _) => { completion::record(arg); window::close_cmdline(); commands::run(arg, None); }
@@ -119,8 +119,8 @@ wrap_display_handler! {
 wrap_load_handler! {
     struct TabLoad {}
     impl LoadHandler {
-        fn on_loading_state_change(&self, browser: Option<&mut Browser>, is_loading: ::std::os::raw::c_int, _back: ::std::os::raw::c_int, _fwd: ::std::os::raw::c_int) {
-            if let Some(b) = browser { window::set_loading(b, is_loading != 0); }
+        fn on_loading_state_change(&self, browser: Option<&mut Browser>, is_loading: ::std::os::raw::c_int, back: ::std::os::raw::c_int, fwd: ::std::os::raw::c_int) {
+            if let Some(b) = browser { window::set_loading(b, is_loading != 0, back != 0, fwd != 0); }
         }
     }
 }

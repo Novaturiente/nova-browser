@@ -3,12 +3,11 @@
 //! All state lives on the CEF UI thread. CEF calls that can call back into our
 //! handlers (attach, focus, close) run after the state borrow is dropped.
 use crate::client::{TabClient, UiClient};
-use crate::history;
 use crate::modes::{self, Mode};
+use crate::theme::{self, TitleFields};
+use crate::{config, devtools, history};
 use cef::*;
-use std::cell::RefCell;
-
-const BAR_H: i32 = 24;
+use std::cell::{Cell, RefCell};
 const TABBAR_HTML: &str = include_str!("../ui/tabbar.html");
 const STATUS_HTML: &str = include_str!("../ui/statusbar.html");
 const COMPLETION_HTML: &str = include_str!("../ui/completion.html");
@@ -21,11 +20,18 @@ struct Tab {
     loading: bool,
     /// Set while the crashed page shows; holds the URL `r` reloads.
     crashed: Option<String>,
+    can_back: bool,
+    can_fwd: bool,
+    muted: bool,
+    /// Dark-mode override sent to this tab: None = none sent, Some(None) = cleared.
+    dark: Option<Option<bool>>,
 }
 
 #[derive(Default)]
 struct State {
     window: Option<Window>,
+    /// Holds content (+ the tab bar when it is on the left/right).
+    mid: Option<Panel>,
     content: Option<Panel>,
     tabbar: Option<BrowserView>,
     status: Option<BrowserView>,
@@ -43,11 +49,22 @@ struct State {
     /// Closed tabs kept alive until CEF's DoClose: dropping the view earlier leaves
     /// a page with unload handlers running forever (no OnBeforeClose).
     closing: Vec<BrowserView>,
+    /// Message to show once the window exists (config errors at startup).
+    startup: Option<(String, String)>,
+    /// Chromium was started with force-dark on (switches are fixed at startup).
+    dark_global: bool,
 }
 
 thread_local! {
     static S: RefCell<State> = RefCell::new(State::default());
+    /// Preferred sizes the bar views report (S2: must be non-zero): tab bar (w, h), status h.
+    static TABBAR_SIZE: Cell<(i32, i32)> = const { Cell::new((1, 24)) };
+    static STATUS_H: Cell<i32> = const { Cell::new(24) };
 }
+
+const KIND_FIXED: u8 = 0;
+const KIND_TABBAR: u8 = 1;
+const KIND_STATUS: u8 = 2;
 
 /// JS string literal; everything but ASCII alphanumerics and space as \uXXXX,
 /// so page titles/URLs can't break out of the script we inject them into.
@@ -69,16 +86,59 @@ pub fn data_url(html: &str) -> CefString {
     CefString::from(format!("data:text/html;base64,{b64}").as_str())
 }
 
-fn browser_view(client: &mut Client, url: &str, height: i32) -> BrowserView {
+fn browser_view(
+    client: &mut Client,
+    url: &str,
+    kind: u8,
+    settings: &BrowserSettings,
+) -> BrowserView {
     browser_view_create(
         Some(client),
         Some(&CefString::from(url)),
-        Some(&BrowserSettings::default()),
+        Some(settings),
         None,
         None,
-        Some(&mut NovaBrowserViewDelegate::new(height)),
+        Some(&mut NovaBrowserViewDelegate::new(kind)),
     )
     .expect("browser_view_create")
+}
+
+/// Web page settings from `fonts.web.*` and `colors.webpage.bg` (fixed per browser at creation).
+fn page_settings() -> BrowserSettings {
+    let cfg = config::get();
+    let s = |n: &str| CefString::from(cfg.str(n).as_str());
+    let px = |n: &str| cfg.int(n) as i32;
+    BrowserSettings {
+        standard_font_family: s("fonts.web.family.standard"),
+        fixed_font_family: s("fonts.web.family.fixed"),
+        serif_font_family: s("fonts.web.family.serif"),
+        sans_serif_font_family: s("fonts.web.family.sans_serif"),
+        cursive_font_family: s("fonts.web.family.cursive"),
+        fantasy_font_family: s("fonts.web.family.fantasy"),
+        default_font_size: px("fonts.web.size.default"),
+        default_fixed_font_size: px("fonts.web.size.default_fixed"),
+        minimum_font_size: px("fonts.web.size.minimum"),
+        minimum_logical_font_size: px("fonts.web.size.minimum_logical"),
+        background_color: argb(&cfg.str("colors.webpage.bg")).unwrap_or(0),
+        ..Default::default()
+    }
+}
+
+/// `#rgb`/`#rrggbb`/`#aarrggbb` → CEF ARGB (opaque unless given). Named colours → None.
+fn argb(c: &str) -> Option<u32> {
+    let h = c.trim().strip_prefix('#')?;
+    let v = u32::from_str_radix(h, 16).ok()?;
+    Some(match h.len() {
+        3 => {
+            0xff00_0000
+                | ((v >> 8 & 0xf) * 0x11) << 16
+                | ((v >> 4 & 0xf) * 0x11) << 8
+                | ((v & 0xf) * 0x11)
+        }
+        6 => 0xff00_0000 | v,
+        8 => v,
+        _ => return None,
+    })
 }
 
 fn browser_id(view: &BrowserView) -> Option<i32> {
@@ -86,7 +146,16 @@ fn browser_id(view: &BrowserView) -> Option<i32> {
 }
 
 pub fn create(start_url: String) {
-    S.with_borrow_mut(|s| s.start_url = start_url);
+    let cfg = config::get();
+    let dark = cfg.bool("colors.webpage.darkmode.enabled")
+        || cfg.any_pattern_value(
+            "colors.webpage.darkmode.enabled",
+            &serde_json::Value::Bool(true),
+        );
+    S.with_borrow_mut(|s| {
+        s.start_url = start_url;
+        s.dark_global = dark;
+    });
     window_create_top_level(Some(&mut NovaWindowDelegate::new()));
 }
 
@@ -99,6 +168,10 @@ fn add_tab(view: BrowserView, url: String, foreground: bool) {
             progress: 0.0,
             loading: false,
             crashed: None,
+            can_back: false,
+            can_fwd: false,
+            muted: false,
+            dark: None,
         });
         s.tabs.len() - 1
     });
@@ -112,7 +185,7 @@ fn add_tab(view: BrowserView, url: String, foreground: bool) {
 /// shortcut: a background tab created here loads only when first shown (CEF
 /// creates the browser on attach); fine for mouse use, revisit for session restore.
 pub fn open(url: &str, foreground: bool) {
-    let view = browser_view(&mut TabClient::new(), url, 1);
+    let view = browser_view(&mut TabClient::new(), url, KIND_FIXED, &page_settings());
     add_tab(view, url.to_string(), foreground);
 }
 
@@ -178,9 +251,43 @@ pub fn close(n: usize) {
         return;
     };
     if left == 0 {
-        // Closing the window closes the attached browsers; quit follows in on_before_close.
-        if let Some(w) = window {
-            w.close();
+        // qutebrowser tabs.last_close; the tab we removed goes back as a fresh one
+        let cfg = config::get();
+        let reopen = match cfg.str("tabs.last_close").as_str() {
+            "close" => None,
+            "blank" => Some("about:blank".to_string()),
+            "startpage" => Some(
+                cfg.list("url.start_pages")
+                    .into_iter()
+                    .next()
+                    .unwrap_or_else(|| "about:blank".into()),
+            ),
+            "default-page" => Some(cfg.str("url.default_page")),
+            _ => {
+                // "ignore": keep the tab
+                S.with_borrow_mut(|s| {
+                    s.closed.pop();
+                    s.tabs.push(tab);
+                    s.active = 0;
+                });
+                return;
+            }
+        };
+        let Some(url) = reopen else {
+            // Closing the window closes the attached browsers; quit follows in on_before_close.
+            if let Some(w) = window {
+                w.close();
+            }
+            return;
+        };
+        if let Some(c) = content {
+            c.remove_child_view(Some(&mut View::from(&tab.view)));
+        }
+        open(&url, true);
+        let host = tab.view.browser().and_then(|b| b.host());
+        S.with_borrow_mut(|s| s.closing.push(tab.view));
+        if let Some(h) = host {
+            h.close_browser(1);
         }
         return;
     }
@@ -234,6 +341,43 @@ pub fn set_url(browser: &Browser, url: String) {
             t.url = url
         }
     });
+    apply_dark(browser);
+}
+
+/// Per-site dark mode (S5): `pattern()` values of colors.webpage.darkmode.enabled
+/// override Chromium's global force-dark for this tab; the override survives navigation.
+fn apply_dark(browser: &Browser) {
+    let id = browser.identifier();
+    let cfg = config::get();
+    let send = S.with_borrow_mut(|s| {
+        let global = s.dark_global;
+        let t = s
+            .tabs
+            .iter_mut()
+            .find(|t| browser_id(&t.view) == Some(id))?;
+        let want = cfg
+            .get_for("colors.webpage.darkmode.enabled", &t.url)
+            .as_bool()
+            .unwrap_or(false);
+        let over = (want != global).then_some(want);
+        // Resend overrides every time: one sent before the renderer exists is lost
+        // (first page of a new tab). Clear only once.
+        let prev = t.dark.replace(over);
+        (over.is_some() || matches!(prev, Some(Some(_)))).then_some(over)
+    });
+    match send {
+        Some(Some(on)) => devtools::send(
+            browser,
+            "Emulation.setAutoDarkModeOverride",
+            serde_json::json!({ "enabled": on }),
+        ),
+        Some(None) => devtools::send(
+            browser,
+            "Emulation.setAutoDarkModeOverride",
+            serde_json::json!({}),
+        ),
+        None => {}
+    }
 }
 pub fn set_title(browser: &Browser, title: String) {
     update(browser, |t| {
@@ -246,8 +390,17 @@ pub fn set_title(browser: &Browser, title: String) {
 pub fn set_progress(browser: &Browser, p: f64) {
     update(browser, |t| t.progress = p);
 }
-pub fn set_loading(browser: &Browser, loading: bool) {
-    update(browser, |t| t.loading = loading);
+pub fn set_loading(browser: &Browser, loading: bool, back: bool, fwd: bool) {
+    update(browser, |t| {
+        t.loading = loading;
+        t.can_back = back;
+        t.can_fwd = fwd;
+    });
+    apply_dark(browser);
+}
+
+pub fn set_muted(browser: &Browser, muted: bool) {
+    update(browser, |t| t.muted = muted);
 }
 
 /// Renderer died: keep the tab, show a local page with the URL (PLAN.md §7).
@@ -282,27 +435,41 @@ pub fn reload_crashed(browser: &Browser) -> bool {
     true
 }
 
+fn fields(i: usize, t: &Tab) -> TitleFields<'_> {
+    TitleFields {
+        index: i + 1,
+        title: &t.title,
+        url: &t.url,
+        progress: t.loading.then_some(t.progress),
+        muted: t.muted,
+    }
+}
+
 /// Push the current state into the tab bar, status bar and window title.
 pub fn refresh() {
+    let cfg = config::get();
+    let tab_fmt = cfg.str("tabs.title.format");
     let Some((tabbar, status, window, bar_json, status_json, title)) = S.with_borrow(|s| {
         let tabs: Vec<String> = s
             .tabs
             .iter()
             .enumerate()
             .map(|(i, t)| {
-                let label = if t.title.is_empty() { &t.url } else { &t.title };
+                let label = theme::format_title(&tab_fmt, &fields(i, t));
                 format!(
-                    "{{\"t\":{},\"a\":{},\"l\":{}}}",
-                    js_str(label),
+                    "{{\"t\":{},\"a\":{},\"l\":{},\"p\":{},\"e\":{}}}",
+                    js_str(&label),
                     i == s.active,
-                    t.loading
+                    t.loading,
+                    t.progress,
+                    t.crashed.is_some()
                 )
             })
             .collect();
         let t = s.tabs.get(s.active)?;
         let (level, msg) = s.message.clone().unwrap_or_default();
         let status = format!(
-            "{{\"url\":{},\"p\":{},\"loading\":{},\"crashed\":{},\"mode\":{},\"cmd\":{},\"keys\":{},\"level\":{},\"msg\":{},\"tab\":{}}}",
+            "{{\"url\":{},\"p\":{},\"loading\":{},\"crashed\":{},\"mode\":{},\"cmd\":{},\"keys\":{},\"level\":{},\"msg\":{},\"tab\":{},\"hist\":{},\"modename\":{}}}",
             js_str(&t.url),
             t.progress,
             t.loading,
@@ -313,12 +480,15 @@ pub fn refresh() {
             js_str(&level),
             js_str(&msg),
             js_str(&format!("[{}/{}]", s.active + 1, s.tabs.len())),
+            js_str(match (t.can_back, t.can_fwd) {
+                (true, true) => "[<>]",
+                (true, false) => "[<]",
+                (false, true) => "[>]",
+                _ => "",
+            }),
+            js_str(modes::mode_name()),
         );
-        let title = if t.title.is_empty() {
-            t.url.clone()
-        } else {
-            t.title.clone()
-        };
+        let title = theme::format_title(&cfg.str("window.title_format"), &fields(s.active, t));
         Some((
             s.tabbar.clone()?,
             s.status.clone()?,
@@ -336,9 +506,7 @@ pub fn refresh() {
             f.execute_java_script(Some(&CefString::from(js.as_str())), None, 0);
         }
     }
-    window.set_title(Some(&CefString::from(
-        format!("{title} - novabrowser").as_str(),
-    )));
+    window.set_title(Some(&CefString::from(title.as_str())));
 }
 
 // ---- queries and actions for commands.rs
@@ -453,7 +621,15 @@ pub fn message(level: &str, text: &str) {
         s.message_id
     });
     refresh();
-    post_delayed_task(ThreadId::UI, Some(&mut ClearMessage::new(id)), 4000);
+    let ms = config::get().int("messages.timeout");
+    if ms > 0 {
+        post_delayed_task(ThreadId::UI, Some(&mut ClearMessage::new(id)), ms);
+    }
+}
+
+/// Show `text` once the window is up (startup config errors).
+pub fn startup_message(level: &str, text: &str) {
+    S.with_borrow_mut(|s| s.startup = Some((level.to_string(), text.to_string())));
 }
 
 /// `cmd-set-text`: focus the status bar input with `text`.
@@ -506,7 +682,7 @@ pub fn show_completion(json: Option<&str>) {
     overlay.set_visible(1);
 }
 
-/// Bottom half of the content area (qutebrowser `completion.height` 50%).
+/// Bottom of the content area, `completion.height` tall (percent or px).
 fn place_completion() {
     let Some((overlay, r)) = S.with_borrow(|s| {
         Some((
@@ -516,13 +692,27 @@ fn place_completion() {
     }) else {
         return;
     };
-    let h = r.height / 2;
+    let h = match config::get().get("completion.height") {
+        serde_json::Value::String(p) => p
+            .trim_end_matches('%')
+            .parse::<f64>()
+            .map_or(r.height / 2, |p| (r.height as f64 * p / 100.0) as i32),
+        v => v.as_i64().unwrap_or(0) as i32,
+    }
+    .clamp(1, r.height.max(1));
     overlay.set_bounds(Some(&Rect {
         x: r.x,
         y: r.y + r.height - h,
         width: r.width,
         height: h,
     }));
+}
+
+wrap_task! {
+    struct Relayout {}
+    impl Task {
+        fn execute(&self) { apply_layout(); }
+    }
 }
 
 wrap_task! {
@@ -555,17 +745,153 @@ fn adopt_popup(view: BrowserView) {
     add_tab(view, url, foreground);
 }
 
+// ---- layout and theme from config
+
+/// Tab bar side and size from `tabs.position` / `tabs.width` / fonts + paddings.
+fn bar_sizes(window_width: i32) -> (String, (i32, i32), i32) {
+    let cfg = config::get();
+    let pos = cfg.str("tabs.position");
+    let tab_h = theme::bar_height(&cfg, "fonts.tabs.selected", "tabs.padding");
+    let status_h = theme::bar_height(&cfg, "fonts.statusbar", "statusbar.padding");
+    let size = if pos == "left" || pos == "right" {
+        let w = match cfg.get("tabs.width") {
+            serde_json::Value::String(p) => p
+                .trim_end_matches('%')
+                .parse::<f64>()
+                .map_or(200, |p| (window_width as f64 * p / 100.0) as i32),
+            v => v.as_i64().unwrap_or(200) as i32,
+        };
+        (w.max(1), 1)
+    } else {
+        (1, tab_h)
+    };
+    (pos, size, status_h)
+}
+
+/// Put the tab bar where `tabs.position` says and size the bars; called at window
+/// creation and when the config changes. Views are re-parented, not recreated.
+fn apply_layout() {
+    let Some((window, mid, content, tabbar, status)) = S.with_borrow(|s| {
+        Some((
+            s.window.clone()?,
+            s.mid.clone()?,
+            s.content.clone()?,
+            s.tabbar.clone()?,
+            s.status.clone()?,
+        ))
+    }) else {
+        return;
+    };
+    let (pos, size, status_h) = bar_sizes(window.bounds().width);
+    TABBAR_SIZE.set(size);
+    STATUS_H.set(status_h);
+    let (tb, m, st) = (View::from(&tabbar), View::from(&mid), View::from(&status));
+    for v in [&tb, &m, &st] {
+        if let Some(p) = v.parent_view() {
+            if let Some(p) = p.as_panel() {
+                p.remove_child_view(Some(&mut v.clone()))
+            }
+        }
+    }
+    let order: Vec<&View> = match pos.as_str() {
+        "bottom" => vec![&m, &tb, &st],
+        "left" | "right" => vec![&m, &st],
+        _ => vec![&tb, &m, &st],
+    };
+    for v in order {
+        window.add_child_view(Some(&mut v.clone()));
+    }
+    let wl = window.get_layout().and_then(|l| l.as_box_layout());
+    if let Some(l) = wl {
+        l.set_flex_for_view(Some(&mut m.clone()), 1);
+    }
+    // mid: [tabbar] content [tabbar], horizontal
+    let cv = View::from(&content);
+    if cv.parent_view().is_none() {
+        mid.add_child_view(Some(&mut cv.clone()));
+    }
+    match pos.as_str() {
+        "left" => mid.add_child_view_at(Some(&mut tb.clone()), 0),
+        "right" => mid.add_child_view(Some(&mut tb.clone())),
+        _ => {}
+    }
+    if let Some(l) = mid.get_layout().and_then(|l| l.as_box_layout()) {
+        l.set_flex_for_view(Some(&mut cv.clone()), 1);
+    }
+    let show = match config::get().str("tabs.show").as_str() {
+        "never" => false,
+        // shortcut: "switching" (show briefly on tab switch) behaves like "multiple"
+        "multiple" | "switching" => S.with_borrow(|s| s.tabs.len() > 1),
+        _ => true,
+    };
+    tabbar.set_visible(show as i32);
+    for v in [&tb, &st] {
+        v.invalidate_layout();
+    }
+    window.layout();
+    place_completion();
+    push_theme();
+}
+
+/// Send the CSS variables and layout facts to every UI page.
+fn push_theme() {
+    let cfg = config::get();
+    let vertical = matches!(cfg.str("tabs.position").as_str(), "left" | "right");
+    let json = serde_json::json!({
+        "vars": theme::vars(&cfg),
+        "vertical": vertical,
+        "widgets": cfg.list("statusbar.widgets"),
+    })
+    .to_string();
+    let views = S.with_borrow(|s| {
+        [
+            s.tabbar.clone(),
+            s.status.clone(),
+            s.completion.as_ref().map(|c| c.0.clone()),
+        ]
+    });
+    for v in views.into_iter().flatten() {
+        if let Some(f) = v.browser().and_then(|b| b.main_frame()) {
+            let js = format!("window.nova && nova.theme && nova.theme({json})");
+            f.execute_java_script(Some(&CefString::from(js.as_str())), None, 0);
+        }
+    }
+}
+
+/// A UI page finished loading: give it the theme and the current state.
+pub fn ui_ready() {
+    push_theme();
+    refresh();
+}
+
+/// After `:config-source` / `:set`: rebuild keys, layout, theme, per-site dark mode.
+pub fn config_changed() {
+    modes::init();
+    apply_layout();
+    let browsers: Vec<Browser> =
+        S.with_borrow(|s| s.tabs.iter().filter_map(|t| t.view.browser()).collect());
+    for b in &browsers {
+        apply_dark(b);
+    }
+    refresh();
+}
+
 wrap_browser_view_delegate! {
-    struct NovaBrowserViewDelegate { height: i32 }
+    struct NovaBrowserViewDelegate { kind: u8 }
     impl ViewDelegate {
         fn preferred_size(&self, _view: Option<&mut View>) -> Size {
             // Width and height must be non-zero, else CEF uses the whole window (S2).
-            Size { width: 1, height: self.height }
+            let (width, height) = match self.kind {
+                KIND_TABBAR => TABBAR_SIZE.get(),
+                KIND_STATUS => (1, STATUS_H.get()),
+                _ => (1, 1),
+            };
+            Size { width, height }
         }
     }
     impl BrowserViewDelegate {
         fn delegate_for_popup_browser_view(&self, _view: Option<&mut BrowserView>, _settings: Option<&BrowserSettings>, _client: Option<&mut Client>, _is_devtools: ::std::os::raw::c_int) -> Option<BrowserViewDelegate> {
-            Some(NovaBrowserViewDelegate::new(1))
+            Some(NovaBrowserViewDelegate::new(KIND_FIXED))
         }
         fn on_popup_browser_view_created(&self, _view: Option<&mut BrowserView>, popup: Option<&mut BrowserView>, _is_devtools: ::std::os::raw::c_int) -> ::std::os::raw::c_int {
             let Some(popup) = popup else { return 0 };
@@ -580,7 +906,15 @@ wrap_window_delegate! {
     struct NovaWindowDelegate {}
     impl ViewDelegate {
         fn preferred_size(&self, _view: Option<&mut View>) -> Size { Size { width: 1200, height: 800 } }
-        fn on_layout_changed(&self, _view: Option<&mut View>, _bounds: Option<&Rect>) { place_completion(); }
+        fn on_layout_changed(&self, _view: Option<&mut View>, bounds: Option<&Rect>) {
+            place_completion();
+            // vertical tab bar width is a percentage of the window: re-layout on resize
+            let w = bounds.map_or(0, |b| b.width);
+            let (_, size, _) = bar_sizes(w);
+            if size.1 == 1 && size != TABBAR_SIZE.get() {
+                post_task(ThreadId::UI, Some(&mut Relayout::new()));
+            }
+        }
     }
     impl PanelDelegate {}
     impl WindowDelegate {
@@ -593,29 +927,39 @@ wrap_window_delegate! {
                     ..Default::default()
                 }))
                 .expect("box layout");
-            let tabbar = browser_view(&mut UiClient::new(), &data_url(TABBAR_HTML).to_string(), BAR_H);
+            let _ = layout;
+            let ui = BrowserSettings::default();
+            let tabbar = browser_view(&mut UiClient::new(), &data_url(TABBAR_HTML).to_string(), KIND_TABBAR, &ui);
+            let mid = panel_create(None).expect("panel");
+            mid.set_to_box_layout(Some(&BoxLayoutSettings {
+                horizontal: 1,
+                cross_axis_alignment: AxisAlignment::STRETCH,
+                ..Default::default()
+            }));
             let content = panel_create(None).expect("panel");
             content.set_to_fill_layout();
-            let status = browser_view(&mut UiClient::new(), &data_url(STATUS_HTML).to_string(), BAR_H);
-            window.add_child_view(Some(&mut View::from(&tabbar)));
-            window.add_child_view(Some(&mut View::from(&content)));
-            window.add_child_view(Some(&mut View::from(&status)));
-            layout.set_flex_for_view(Some(&mut View::from(&content)), 1);
+            let status = browser_view(&mut UiClient::new(), &data_url(STATUS_HTML).to_string(), KIND_STATUS, &ui);
             // Added last so it stays on top (cef_window.h); positioned by place_completion.
-            let completion = browser_view(&mut UiClient::new(), &data_url(COMPLETION_HTML).to_string(), BAR_H);
+            let completion = browser_view(&mut UiClient::new(), &data_url(COMPLETION_HTML).to_string(), KIND_FIXED, &ui);
             let overlay = window
                 .add_overlay_view(Some(&mut View::from(&completion)), DockingMode::CUSTOM, 0)
                 .expect("completion overlay");
-            let start = S.with_borrow_mut(|s| {
+            let (start, startup) = S.with_borrow_mut(|s| {
                 s.completion = Some((completion, overlay));
                 s.window = Some(window.clone());
+                s.mid = Some(mid);
                 s.content = Some(content);
                 s.tabbar = Some(tabbar);
                 s.status = Some(status);
-                s.start_url.clone()
+                (s.start_url.clone(), s.startup.take())
             });
+            apply_layout();
             window.show();
             open(&start, true);
+            apply_layout(); // tabs.show = multiple depends on the tab count
+            if let Some((level, text)) = startup {
+                message(&level, &text);
+            }
         }
 
         fn on_window_destroyed(&self, _window: Option<&mut Window>) {

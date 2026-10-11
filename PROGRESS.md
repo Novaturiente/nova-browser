@@ -5,8 +5,8 @@ session; update before ending one (rules in `AGENTS.md`).
 
 ## Now
 
-- **Phase:** 5 (config.ts)
-- **Next action:** Phase 5 per PLAN.md §5.5/§6: decide TS stripping (oxc vs alternatives) and setting scope with user, then `config.ts` loader in QuickJS before `cef::initialize`, `c` proxy with typed errors, bind/unbind/alias, URL patterns (urlmatch.py port), theming via CSS variables (user moved all UI customisation here). Deferred, not blocking: HiDPI (S1), IME (S3b), S9b YouTube jank, own CEF build (allocator + codecs).
+- **Phase:** 6 (External tools)
+- **Next action:** decide with user: Zen-style UI (floating URL bar etc., new item below) before or after Phase 6; then Phase 6 per PLAN.md (userscripts `spawn -u`, qute-pass, toggle_darkmode/https). Deferred, not blocking: HiDPI (S1), IME (S3b), S9b YouTube jank, own CEF build (allocator + codecs).
 - **Blockers:** none
 
 ## Checklist
@@ -34,7 +34,8 @@ Each done item links its evidence (file, commit, or session-log date).
 - [x] 2 Modal core (2026-10-11; `src/{keys,bindings,commands,modes,devtools}.rs`, focus msg in `renderer.rs`, cmdline in `ui/statusbar.html`). `cargo test` 27 green (keys port of qutebrowser `test_keyutils`/`test_basekeyparser` rows by `worker`, command tokenizer/`;;`/aliases, zoom steps, js_str). Real keys via compositor `send_shortcut` + CDP readback: `o`/`O` + URL, `j`×3+`5j` = 320 px, `G`/`gg`, `J`/`K`, `d`/`u`, `H`/`L`, `+`/`-`/`=` zoom 110/125/100%, pending `g` shown + Escape clears, `:foobar` → error msg, `i`/Escape, click into input → auto insert (`jkr` typed), Escape → `j` scrolls, Ctrl-v passthrough / Shift-Escape. User drove HN without mouse (o/O, j k d u J K H L gg G, Ctrl-d/u, T+n, i/Escape, click into text box): all work. Not here: hints `f`, find `/`, `yy`/clipboard, completion/history, user config bindings (later phases); ~58 default commands, unimplemented ones report "not implemented yet".
 - [x] 3 Command line, completion, history (2026-10-11; `src/{history,completion}.rs`, `ui/completion.html`, readline keys in `ui/statusbar.html`). Exit check: `cargo test` `search_100k_rows_under_16ms` — 100k rows, queries `""`/site42/`topic 7`/`slug article`/nomatch/`site4999 99999`/`site 7`/`w`/`zq`/`x y` all 0.01–2.2 ms; live browser on a 100k-row profile logged no query > 16 ms. 30 tests green. Real keys (compositor): `o`+text → history list, Tab/Shift-Tab fill cmdline, Enter opens; `:tab-` → command list; Up/Down prefix history, persists across restart; Ctrl-u/a/k/w/y, Alt-b; Escape hides overlay. User checked both completion and history: working. Not here: settings/bookmark/quickmark models (Phase 5+), match highlighting, Ctrl-d delete-item, redirect filtering, qutebrowser history import.
 - [x] 4 Hints and search (2026-10-11; `src/{hints.rs,hints.js,clipboard.rs}`, find/yank/spawn in `commands.rs`, CDP request/response + isolated world in `devtools.rs`). Exit check, real keys (compositor) + CDP readback: Wikipedia `f` follows, `F` background tab, `;y` → `wl-paste` = link, `;o` fills `:open <url>`, Escape removes the label host; GitHub repo page labelled, `f` follows; Jira `f` opens the Dashboards menu, `gi` focuses quick search → insert mode; YouTube `hint links spawn … {hint-url}` got the `watch?v=` URL; `/borrow` incremental highlight, `n`/`N`; `yy`/`Pp`/`yank selection`/`yank inline [{title}]({url:yank})`. Labels = qutebrowser `_hint_scattered` (test values taken from the Python code). 34 tests green. User ran the 20-step manual list incl. real `mpv`: all work. Fixed on the way: `hint inputs --first` flag after the group; placeholders expanded per token; closed tabs/window kept running pages with unload handlers (YouTube audio) — see Decisions. Not here: cross-origin iframe hints (same as qutebrowser), hint styling (Phase 5), `;d` download, `-w` window target, beforeunload prompts on close (Phase 8).
-- [ ] 5 config.ts
+- [x] 5 config.ts (2026-10-11; `src/{config.rs,config.js,settings.rs,theme.rs,urlmatch.rs}`, `scripts/gen-settings.py`; `src/bindings.rs` removed — defaults now from the schema). Loader: oxc strips TS → QuickJS (rquickjs) before `cef::initialize`; `nova` module `c`/`bind`/`unbind`/`alias`/`pattern`/`readLines`/`configDir`, relative imports. Schema = qutebrowser `configdata.yml` (380 keys); typos/wrong types → `config.ts:<line>: <msg>`; broken file at start → defaults + message, on `:config-source` → old config kept (checked: appended `c.hints.chars = 42` → value unchanged, error names line 248; valid edit applied). Unbuilt settings accepted and listed (user config: 75). User config.py + theme.py translated to `~/.config/novabrowser/{config,theme,theme_colors}.ts` + `darkmode_excludes`. 70 tests green (28 = qutebrowser `test_urlmatch` port by `worker`). Live: theme vars on all UI pages (tabbar bg `#0c0e14`, JetBrainsMono 11pt), `<Space>tt` left↔top (213 px), `:set tabs.position middle` rejected, `g rust lang` → Google, per-site dark exclude luma 240–242 vs 29–34 non-excluded (first page of a tab and after navigation). User 8-step test: all pass after two fixes (hint colours navy/white, exclude `*.wikipedia.org`). Fixed: aliases with `;;` (expand before split), first-page dark override lost (resent on load state), missing import silently dropped. New: `novabrowser --check-config`. Not here: per-site values other than dark mode, autoconfig, `nova.d.ts`, status `scroll` widget, `:set` persistence.
+- [ ] 5b Zen-style UI: floating URL bar and related chrome (user 2026-10-11) — scope to agree with user.
 - [ ] 6 External tools
 - [ ] 7 Privacy, blocking, prompts
 - [ ] 8 Sessions and daily driving (revisit codecs option A first)
@@ -45,6 +46,8 @@ Each done item links its evidence (file, commit, or session-log date).
 ## Decisions
 
 Newest first. Settled — don't reopen without new evidence.
+
+- 2026-10-11 — config.ts (Phase 5, user): qutebrowser setting names and schema (generated from `configdata.yml`); valid-but-unbuilt settings are stored and listed, typos/types error. Lookup: `:set` (runtime, not saved) → config.ts → default; last matching `pattern()` wins. Per-site dark mode = override sent on every load-state change (one sent before the renderer exists is lost). `www.wikipedia.org` itself honours `prefers-color-scheme: dark`, so it looks dark even when excluded — not a bug. oxc must keep side-effect imports (`only_remove_type_imports`).
 
 - 2026-10-11 — Closing tabs (Phase 4 bug, user found YouTube audio after close): for a page with (before)unload handlers, `close_browser(1)` runs them first and reaches `DoClose` later; if the removed BrowserView was already dropped the browser never finishes (no `OnBeforeClose`, page + audio keep running; with the window closed the process never exits). Fix: `window.rs` keeps removed tab views in `closing` until `do_close`, which posts `release_closing` to drop the view; window destroy moves detached tabs there too. Re-calling `close_browser` after DoClose does NOT finish it (tried).
 - 2026-10-11 — Hints/find/yank shape (Phase 4): hint JS runs in a CDP isolated world `novabrowser` (page can't see it), labels in a closed shadow root; following = trusted `Input.dispatchMouseEvent` at the element centre after `scrollIntoView`; tab targets open the href. Find = CEF `BrowserHost::find` (smart case), incremental from the cmdline. Clipboard = `wl-copy`/`wl-paste` subprocesses; reads happen on a thread, then the command runs on the UI thread. `devtools::call` = `send_dev_tools_message` + one observer per browser, forgotten in `on_before_close`.
@@ -89,6 +92,10 @@ Newest first. Settled — don't reopen without new evidence.
 ## Session log
 
 Newest first. One entry per session: date, what changed, evidence, what's next.
+
+### 2026-10-11 (session 2, Phase 5)
+- Phase 5 built and passed (see checklist); user config translated; user test 8/8 after hint colour + Wikipedia exclude changes. User wants a Zen-browser-like UI (floating URL bar) → item 5b.
+- Next: agree 5b scope vs Phase 6 order.
 
 ### 2026-10-11 (session 2, Phase 4)
 - Phase 4 built and passed (see checklist); user manual test of 20 steps passed. Found and fixed the tab/window close leak for pages with unload handlers.

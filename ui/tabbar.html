@@ -2,21 +2,38 @@
 <meta charset="utf-8">
 <title>tabbar</title>
 <style>
-  body { margin: 0; height: 24px; display: flex; overflow: hidden; background: #222; color: #bbb;
-         font: 12px sans-serif; user-select: none; cursor: default; }
-  .t { flex: 0 1 220px; min-width: 0; padding: 5px 8px; white-space: nowrap; overflow: hidden;
-       text-overflow: ellipsis; border-right: 1px solid #333; }
-  .t.a { background: #444; color: #fff; }
-  .t.l::before { content: "\27F3  "; }
+  /* Colours/fonts/sizes are CSS variables from config (theme.rs), set by nova.theme. */
+  html, body { margin: 0; height: 100%; }
+  body { display: flex; overflow: hidden; background: var(--colors-tabs-bar-bg, #555);
+         user-select: none; cursor: default; }
+  body.vertical { flex-direction: column; overflow-y: auto; }
+  .t { flex: 1 1 0; min-width: 0; max-width: var(--tabs-max-width, none); box-sizing: border-box;
+       padding: var(--tabs-padding, 0 5px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+       text-align: var(--tabs-title-alignment, left); font: var(--fonts-tabs-unselected, 10pt monospace);
+       color: var(--colors-tabs-odd-fg); background: var(--colors-tabs-odd-bg);
+       border-left: var(--tabs-indicator-width, 3px) solid transparent; }
+  body:not(.vertical) .t { min-width: min(var(--tabs-min-width, 0px), 100%); }
+  body.vertical .t { flex: 0 0 auto; max-width: none; }
+  .t:nth-child(even) { color: var(--colors-tabs-even-fg); background: var(--colors-tabs-even-bg); }
+  .t.a { font: var(--fonts-tabs-selected, 10pt monospace);
+         color: var(--colors-tabs-selected-odd-fg); background: var(--colors-tabs-selected-odd-bg); }
+  .t.a:nth-child(even) { color: var(--colors-tabs-selected-even-fg); background: var(--colors-tabs-selected-even-bg); }
+  .t.l { border-left-color: var(--colors-tabs-indicator-start); }
+  .t.d { border-left-color: var(--colors-tabs-indicator-stop); }
+  .t.e { border-left-color: var(--colors-tabs-indicator-error); }
 </style>
 <body>
 <script>
-  // Core → UI: nova.apply({tabs: [{t: title, a: active, l: loading}]}).
+  nova.theme = (t) => {
+    for (const [k, v] of Object.entries(t.vars)) document.documentElement.style.setProperty(k, v);
+    document.body.classList.toggle("vertical", t.vertical);
+  };
+  // Core → UI: nova.apply({tabs: [{t: label, a: active, l: loading, p: progress, e: crashed}]}).
   nova.apply = (s) => {
     document.body.replaceChildren(...s.tabs.map((tab, i) => {
       const d = document.createElement("div");
-      d.className = "t" + (tab.a ? " a" : "") + (tab.l ? " l" : "");
-      d.textContent = `${i + 1}: ${tab.t}`;
+      d.className = "t" + (tab.a ? " a" : "") + (tab.e ? " e" : tab.l ? " l" : " d");
+      d.textContent = tab.t;
       d.title = tab.t;
       d.onmousedown = (e) => {
         if (e.button === 0) nova.send("tab " + i);
@@ -24,6 +41,7 @@
       };
       return d;
     }));
+    document.querySelector(".t.a")?.scrollIntoView({ block: "nearest", inline: "nearest" });
   };
   nova.send("ready");
 </script>
