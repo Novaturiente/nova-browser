@@ -13,6 +13,7 @@ mod import;
 mod ipc;
 mod keys;
 mod modes;
+mod net;
 mod renderer;
 mod settings;
 mod spawn;
@@ -53,6 +54,11 @@ wrap_app! {
                     None => cmd.append_switch(Some(&name)),
                 }
             }
+            // Our HTTPS-only (net.rs) replaces Chromium's, which would re-upgrade https_excludes hosts.
+            let df = CefString::from("disable-features");
+            let old = CefString::from(&cmd.switch_value(Some(&df))).to_string();
+            let merged = if old.is_empty() { "HttpsUpgrades".to_string() } else { format!("{old},HttpsUpgrades") };
+            cmd.append_switch_with_value(Some(&df), Some(&CefString::from(merged.as_str())));
         }
         fn browser_process_handler(&self) -> Option<BrowserProcessHandler> {
             Some(NovaBrowserProcess::new(self.start_url.clone()))
@@ -208,6 +214,9 @@ fn main() {
     // Before CEF: config sets Chromium switches. Subprocesses don't need it (they
     // get switches on their command line); loading there would just cost startup.
     let config_error = if is_subprocess { None } else { config::load().err() };
+    if !is_subprocess {
+        net::load_https_excludes();
+    }
     let mut app = NovaApp::new(if is_subprocess { String::new() } else { start_url() });
     // Subprocesses exit here; they need the App too, or the renderer gets no handler.
     let code = execute_process(
@@ -228,6 +237,8 @@ fn main() {
         cache_path: profile, // empty would mean an in-memory (incognito) profile
         // shortcut: no rotation, rotate when Phase 8 daily driving makes it grow
         log_file: CefString::from(state.join("log").to_str().expect("utf-8 state dir")),
+        // navigator.languages; the header itself is set per request in net.rs
+        accept_language_list: CefString::from(net::language_list(&config::get().str("content.headers.accept_language")).as_str()),
         ..Default::default()
     };
     assert_eq!(

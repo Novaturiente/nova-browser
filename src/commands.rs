@@ -270,6 +270,45 @@ fn dark_toggle() -> Result<(), String> {
     Ok(())
 }
 
+/// `https-toggle`: add/remove this page's host (host:port if explicit) in
+/// https_excludes, then reload it over the other scheme.
+fn https_toggle() -> Result<(), String> {
+    // The frame's URL, not the tab's last committed one: after a failed https upgrade they differ.
+    let url = window::active_browser()
+        .and_then(|b| b.main_frame())
+        .map(|f| CefString::from(&f.url()).to_string())
+        .unwrap_or_default();
+    let (auth, _) = crate::net::authority(&url).ok_or("no host for this page")?;
+    let file = crate::net::excludes_file();
+    let mut lines: Vec<String> = std::fs::read_to_string(&file)
+        .unwrap_or_default()
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(str::to_string)
+        .collect();
+    let excluded = lines.iter().any(|l| l == auth);
+    if excluded {
+        lines.retain(|l| l != auth);
+    } else {
+        lines.push(auth.to_string());
+    }
+    let tmp = file.with_extension("tmp");
+    std::fs::write(&tmp, lines.join("\n") + "\n")
+        .and_then(|_| std::fs::rename(&tmp, &file))
+        .map_err(|e| format!("{}: {e}", file.display()))?;
+    crate::net::load_https_excludes();
+    let rest = url.split_once("://").map_or(url.as_str(), |(_, r)| r);
+    let target = if excluded { format!("https://{rest}") } else { format!("http://{rest}") };
+    window::message("info", &format!("HTTPS-only {} for {auth}", if excluded { "on" } else { "off" }));
+    run_one_line(&format!("open {target}"))
+}
+
+fn run_one_line(line: &str) -> Result<(), String> {
+    run(line, None);
+    Ok(())
+}
+
 /// Run a command line (`a ;; b`), reporting errors in the status bar.
 /// `/text` and `?text` (from the command line) search forward / backward.
 pub fn run(line: &str, count: Option<u32>) {
@@ -383,6 +422,7 @@ pub const NAMES: &[&str] = &[
     "config-source",
     "cmd-set-text",
     "dark-toggle",
+    "https-toggle",
     "fake-key",
     "forward",
     "fullscreen",
@@ -486,6 +526,7 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
         "back" => js(&need()?, &format!("history.go(-{n})")),
         "forward" => js(&need()?, &format!("history.go({n})")),
         "dark-toggle" => dark_toggle()?,
+        "https-toggle" => https_toggle()?,
         "reload" => {
             let b = need()?;
             if !window::reload_crashed(&b) {
@@ -603,6 +644,7 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
         "adblock-update" => crate::adblock::update_now(),
         "config-source" => {
             config::load().map_err(|e| format!("config unchanged: {e}"))?;
+            crate::net::load_https_excludes();
             window::config_changed();
             let pending = config::get().pending().len();
             window::message("info", &format!("config.ts loaded ({pending} settings not built yet)"));

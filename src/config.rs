@@ -23,6 +23,10 @@ const APPLIED: &[&str] = &[
     "content.blocking.whitelist",
     "content.autoplay",
     "content.canvas_reading",
+    "content.cookies.accept",
+    "content.headers.accept_language",
+    "content.headers.custom",
+    "content.headers.do_not_track",
     "content.webrtc_ip_handling_policy",
     "fonts.",
     "hints.border",
@@ -234,12 +238,19 @@ impl Config {
             .filter(|n| !applied(n))
             .cloned()
             .collect();
-        // per-site dark mode is applied (window.rs); other per-site values aren't yet
+        // settings read with get_for(); other per-site values aren't applied yet
+        const PER_SITE: &[&str] = &[
+            "colors.webpage.darkmode.enabled",
+            "content.blocking.enabled",
+            "content.cookies.accept",
+            "content.headers.custom",
+            "content.headers.do_not_track",
+        ];
         names.extend(
             self.patterns
                 .iter()
                 .flat_map(|(_, v)| v.keys())
-                .filter(|n| applied(n) && *n != "colors.webpage.darkmode.enabled")
+                .filter(|n| applied(n) && !PER_SITE.contains(&n.as_str()))
                 .map(|n| format!("{n} (per-site)")),
         );
         names.sort();
@@ -661,16 +672,12 @@ bind("<Alt-Backspace>", "mode-leave", "insert");
     #[test]
     fn pending_lists_unbuilt_settings() {
         let cfg = load_str(
-            "import { c, pattern } from \"nova\";\nc.content.blocking.enabled = true;\nc.hints.chars = \"ab\";\npattern(\"*://*.google.com/*\", (p) => { p.content.cookies.accept = \"all\"; p.zoom.default = \"90%\"; });\n",
+            "import { c, pattern } from \"nova\";\nc.content.pdfjs = true;\nc.hints.chars = \"ab\";\npattern(\"*://*.google.com/*\", (p) => { p.content.cookies.accept = \"all\"; p.content.webgl = false; p.zoom.default = \"90%\"; });\n",
         )
         .unwrap();
         assert_eq!(
             cfg.pending(),
-            [
-                "content.blocking.enabled",
-                "content.cookies.accept",
-                "zoom.default (per-site)"
-            ]
+            ["content.pdfjs", "content.webgl", "zoom.default (per-site)"]
         );
     }
 

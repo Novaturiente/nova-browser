@@ -1,6 +1,6 @@
 //! CEF clients: `TabClient` for web pages, `UiClient` for our bars.
 //! Only `UiClient` handles `nova.send`, so web pages can't drive the browser.
-use crate::{adblock, commands, completion, modes, window};
+use crate::{adblock, commands, completion, modes, net, window};
 use cef::*;
 use std::cell::Cell;
 
@@ -162,7 +162,38 @@ wrap_resource_request_handler! {
             let (Some(b), Some(r)) = (browser, request) else { return ReturnValue::CONTINUE };
             let url = CefString::from(&r.url()).to_string();
             let source = b.main_frame().map(|f| CefString::from(&f.url()).to_string()).unwrap_or_default();
-            if adblock::should_block(&url, &source, r.resource_type()) { ReturnValue::CANCEL } else { ReturnValue::CONTINUE }
+            if adblock::should_block(&url, &source, r.resource_type()) { return ReturnValue::CANCEL; }
+            let method = CefString::from(&r.method()).to_string();
+            if method == "GET" || method == "HEAD" { // other methods can't be redirected safely
+                if let Some(https) = net::https_upgrade(&url) {
+                    r.set_url(Some(&https.as_str().into())); // CEF turns this into an internal redirect
+                    return ReturnValue::CONTINUE;
+                }
+            }
+            net::set_headers(r, &url);
+            ReturnValue::CONTINUE
+        }
+        fn cookie_access_filter(&self, _browser: Option<&mut Browser>, _frame: Option<&mut Frame>, _request: Option<&mut Request>) -> Option<CookieAccessFilter> {
+            Some(TabCookies::new())
+        }
+    }
+}
+
+fn first_party(b: Option<&mut Browser>) -> String {
+    b.and_then(|b| b.main_frame()).map(|f| CefString::from(&f.url()).to_string()).unwrap_or_default()
+}
+
+wrap_cookie_access_filter! {
+    struct TabCookies {}
+    impl CookieAccessFilter {
+        // IO thread.
+        fn can_send_cookie(&self, browser: Option<&mut Browser>, _frame: Option<&mut Frame>, request: Option<&mut Request>, _cookie: Option<&Cookie>) -> ::std::os::raw::c_int {
+            let url = request.map(|r| CefString::from(&r.url()).to_string()).unwrap_or_default();
+            net::cookie_allowed(&url, &first_party(browser)) as i32
+        }
+        fn can_save_cookie(&self, browser: Option<&mut Browser>, _frame: Option<&mut Frame>, request: Option<&mut Request>, _response: Option<&mut Response>, _cookie: Option<&Cookie>) -> ::std::os::raw::c_int {
+            let url = request.map(|r| CefString::from(&r.url()).to_string()).unwrap_or_default();
+            net::cookie_allowed(&url, &first_party(browser)) as i32
         }
     }
 }
