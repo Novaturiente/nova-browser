@@ -1,0 +1,37 @@
+diff -ruN a/chrome/browser/component_updater/registration.cc b/chrome/browser/component_updater/registration.cc
+--- a/chrome/browser/component_updater/registration.cc	2026-10-11 23:29:15.814522129 +0530
++++ b/chrome/browser/component_updater/registration.cc	2026-10-11 23:29:15.830561169 +0530
+@@ -139,6 +139,21 @@
+ void RegisterComponentsForUpdate() {
+   auto* const cus = g_browser_process->component_updater();
+ 
++  // novabrowser: only components that keep the web working and safe; the rest
++  // (optimization hints, segmentation, privacy sandbox, safety tips, ...) are
++  // Chrome services that just phone home.
++#if BUILDFLAG(ENABLE_WIDEVINE_CDM_COMPONENT)
++  RegisterWidevineCdmComponent(cus);
++#endif
++  component_updater::RegisterCRLSetComponent(cus);
++  MaybeRegisterPKIMetadataComponent(cus);
++#if BUILDFLAG(USE_MINIKIN_HYPHENATION)
++  RegisterHyphenationComponent(cus);
++#endif
++  if (cus) {
++    return;
++  }
++
+ #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
+   RegisterRecoveryImprovedComponent(cus, g_browser_process->local_state());
+ #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
+diff -ruN a/components/signin/internal/identity_manager/gaia_cookie_manager_service.cc b/components/signin/internal/identity_manager/gaia_cookie_manager_service.cc
+--- a/components/signin/internal/identity_manager/gaia_cookie_manager_service.cc	2026-10-11 23:29:15.817045527 +0530
++++ b/components/signin/internal/identity_manager/gaia_cookie_manager_service.cc	2026-10-11 23:29:15.830646948 +0530
+@@ -525,6 +525,8 @@
+ }
+ 
+ void GaiaCookieManagerService::TriggerListAccounts() {
++  // novabrowser: no Google sign-in; never send the account cookies to Gaia.
++  return;
+   // Callers suspect that a check to Gaia needs to be done, don't rely on the
+   // in progress request, conditions might have changed while the request is
+   // in-flight.

@@ -39,6 +39,15 @@ wrap_browser_process_handler! {
             modes::init();
             net::apply_cookie_policy();
             apply_spellcheck();
+            if let Some(ctx) = request_context_get_global_context() {
+                // signin: no Google sign-in here, stops the accounts.google.com ListAccounts poll.
+                // safebrowsing: without a Google API key its list fetch only gets HTTP 400.
+                for name in ["signin.allowed", "safebrowsing.enabled"] {
+                    let off = value_create().expect("cef value");
+                    off.set_bool(0);
+                    set_pref(&ctx, name, off);
+                }
+            }
             history::start(xdg_dir("XDG_DATA_HOME", ".local/share").join("history.sqlite"));
             adblock::start();
             ipc::start(); // after CEF init: its requests post_task to the UI thread
@@ -67,11 +76,17 @@ wrap_app! {
                     None => cmd.append_switch(Some(&name)),
                 }
             }
-            // Our HTTPS-only (net.rs) replaces Chromium's, which would re-upgrade https_excludes hosts.
+            // HttpsUpgrades: our HTTPS-only (net.rs) replaces Chromium's, which would re-upgrade
+            // https_excludes hosts. The rest stop Google calls made with no page open (net-log
+            // check): network time, AI-mode eligibility, preconnect to the built-in Google search,
+            // and Topics.
+            const OFF: &str = "HttpsUpgrades,NetworkTimeServiceQuerying,AimEnabled,AimServerEligibilityEnabled,\
+                PreconnectToSearch,PreconnectFromKeyedService,BrowsingTopics";
             let df = CefString::from("disable-features");
             let old = CefString::from(&cmd.switch_value(Some(&df))).to_string();
-            let merged = if old.is_empty() { "HttpsUpgrades".to_string() } else { format!("{old},HttpsUpgrades") };
+            let merged = if old.is_empty() { OFF.to_string() } else { format!("{old},{OFF}") };
             cmd.append_switch_with_value(Some(&df), Some(&CefString::from(merged.as_str())));
+            cmd.append_switch(Some(&CefString::from("no-pings"))); // <a ping> hyperlink auditing
         }
         fn browser_process_handler(&self) -> Option<BrowserProcessHandler> {
             Some(NovaBrowserProcess::new(self.start_url.clone()))
