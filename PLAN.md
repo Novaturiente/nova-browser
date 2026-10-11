@@ -477,6 +477,15 @@ much as its CLI allows. The rest of this section describes the rbw adapter. Back
   cross-site frames get nothing, no autofill without a user action.
 - To verify first: `rbw list --raw` exposes entry URIs; how `rbw` spawns the
   editor (stdin inherited?) for the helper's secret channel.
+**Decisions (2026-10-11, user):** backends via setting `passwords.backend`
+= `rbw` (default) | `bw` | `pass` | `none`; adapters in one module, contract:
+list entries for a site, secret, TOTP, save, update. Password generation is
+ours (urandom), the same for every backend. Match = registrable domain (like
+Bitwarden's default "base domain"); `rbw list --raw` has `uris` (checked: 113 of
+126 entries). Fill = focus a login/OTP field → suggestion list under it
+(non-focusing overlay); Down/Up select, Enter fills, Escape hides; `<Space>pp`
+fills the best match without the list. Never on load. The editor helper gets
+the secret through its environment (same-uid only, like an fd; never argv).
 **Exit:** on a test page set (single-page login, split login, iframe login,
 TOTP, sign-up) suggestions appear, fill works, save and update land in the
 vault (checked with `rbw get`), and a cross-site iframe gets no suggestion.
