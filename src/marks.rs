@@ -26,7 +26,7 @@ fn book_file() -> PathBuf {
 }
 
 /// `name url` / `url title`: split at the first (quickmarks: last) space.
-fn parse(text: &str, name_first: bool) -> Vec<(String, String)> {
+pub fn parse(text: &str, name_first: bool) -> Vec<(String, String)> {
     text.lines()
         .map(str::trim)
         .filter(|l| !l.is_empty() && !l.starts_with('#'))

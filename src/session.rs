@@ -29,7 +29,7 @@ fn default_name() -> String {
     if n.is_empty() { "default".into() } else { n }
 }
 
-fn write(name: &str, v: &Value) -> Result<String, String> {
+pub fn write(name: &str, v: &Value) -> Result<String, String> {
     let p = path(name)?;
     let text = serde_json::to_string_pretty(v).unwrap();
     std::fs::create_dir_all(p.parent().unwrap())

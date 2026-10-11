@@ -32,7 +32,7 @@ pub fn main(arg: Option<&str>, history_db: &Path) -> Result<(), String> {
     };
     let file = history_file(Path::new(arg))
         .ok_or_else(|| format!("no History, places.sqlite or history.sqlite in {arg}"))?;
-    let (kind, rows) = read(&file).map_err(|e| format!("{}: {e}", file.display()))?;
+    let (kind, rows, book) = read(&file).map_err(|e| format!("{}: {e}", file.display()))?;
     let db = crate::history::open(history_db).map_err(|e| e.to_string())?;
     let total = crate::history::import(&db, &rows).map_err(|e| e.to_string())?;
     println!(
@@ -40,7 +40,93 @@ pub fn main(arg: Option<&str>, history_db: &Path) -> Result<(), String> {
         rows.len(),
         file.display()
     );
+    let dir = file.parent().unwrap_or(Path::new("."));
+    let (quick, book) = match kind {
+        "Chromium" => (vec![], chromium_bookmarks(&dir.join("Bookmarks"))),
+        "qutebrowser" => {
+            let cfg = qutebrowser_config();
+            let read = |f: &str| std::fs::read_to_string(cfg.join(f)).unwrap_or_default();
+            if let Some(n) = qutebrowser_session(&dir.join("sessions/default.yml"))? {
+                println!("imported qutebrowser session ({n} tabs) as session 'qutebrowser' (:session-load qutebrowser)");
+            }
+            (crate::marks::parse(&read("quickmarks"), true), crate::marks::parse(&read("bookmarks/urls"), false))
+        }
+        _ => (vec![], book),
+    };
+    let (nq, nb) = crate::marks::import(&quick, &book)?;
+    println!("imported {nq} new quickmarks and {nb} new bookmarks (of {} and {})", quick.len(), book.len());
     Ok(())
+}
+
+fn qutebrowser_config() -> PathBuf {
+    std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".config"))
+        .join("qutebrowser")
+}
+
+/// Chromium `Bookmarks` JSON: every `url` node under every root, as (url, title).
+fn chromium_bookmarks(file: &Path) -> Vec<(String, String)> {
+    fn walk(n: &serde_json::Value, out: &mut Vec<(String, String)>) {
+        if n["type"] == "url" {
+            if let (Some(u), Some(t)) = (n["url"].as_str(), n["name"].as_str()) {
+                out.push((u.to_string(), t.to_string()));
+            }
+        }
+        for c in n["children"].as_array().into_iter().flatten() {
+            walk(c, out);
+        }
+    }
+    let Ok(text) = std::fs::read_to_string(file) else { return vec![] };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else { return vec![] };
+    let mut out = vec![];
+    for root in v["roots"].as_object().into_iter().flat_map(|o| o.values()) {
+        walk(root, &mut out);
+    }
+    out.retain(|(u, _)| u.starts_with("http") || u.starts_with("file:"));
+    out
+}
+
+/// qutebrowser `default.yml` → session "qutebrowser": each tab's current history
+/// entry. shortcut: line-based reader for the layout qutebrowser writes (no YAML
+/// crate); all windows become one tab list; back history dropped (PLAN §5.4).
+fn qutebrowser_session(file: &Path) -> Result<Option<usize>, String> {
+    let Ok(text) = std::fs::read_to_string(file) else { return Ok(None) };
+    let tabs = parse_qb_session(&text);
+    if tabs.is_empty() {
+        return Ok(None);
+    }
+    let n = tabs.len();
+    let v = crate::session::shape(tabs, 0, &[]);
+    crate::session::write("qutebrowser", &v)?;
+    Ok(Some(n))
+}
+
+fn parse_qb_session(text: &str) -> Vec<(String, String)> {
+    let unquote = |v: &str| {
+        let v = v.trim();
+        match v.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')) {
+            Some(q) => q.replace("''", "'"),
+            None => v.trim_matches('"').to_string(),
+        }
+    };
+    let (mut tabs, mut cur, mut active) = (vec![], None::<(String, String)>, false);
+    for line in text.lines() {
+        if line.starts_with("  - ") {
+            tabs.extend(cur.take());
+        } else if let Some(e) = line.strip_prefix("    - ") {
+            active = e.trim() == "active: true";
+        } else if active {
+            if let Some(t) = line.strip_prefix("      title: ") {
+                cur.get_or_insert_default().1 = unquote(t);
+            } else if let Some(u) = line.strip_prefix("      url: ") {
+                cur.get_or_insert_default().0 = unquote(u);
+            }
+        }
+    }
+    tabs.extend(cur);
+    tabs.retain(|(u, _)| !u.is_empty());
+    tabs
 }
 
 fn found() -> Vec<PathBuf> {
@@ -81,7 +167,7 @@ pub type Row = (String, String, i64, i64);
 /// Chromium time: microseconds since 1601-01-01.
 const WEBKIT_EPOCH_OFFSET: i64 = 11_644_473_600;
 
-fn read(file: &Path) -> rusqlite::Result<(&'static str, Vec<Row>)> {
+fn read(file: &Path) -> rusqlite::Result<(&'static str, Vec<Row>, Vec<(String, String)>)> {
     // Copy db + WAL: the owning browser may hold a lock, and its newest rows may be in the WAL.
     let tmp = std::env::temp_dir().join(format!("novabrowser-import-{}", std::process::id()));
     std::fs::create_dir_all(&tmp).map_err(|e| rusqlite::Error::ToSqlConversionFailure(e.into()))?;
@@ -92,9 +178,20 @@ fn read(file: &Path) -> rusqlite::Result<(&'static str, Vec<Row>)> {
                 .map_err(|e| rusqlite::Error::ToSqlConversionFailure(e.into()))?;
         }
     }
-    let result = read_db(&Connection::open(&copy)?);
+    let db = Connection::open(&copy)?;
+    let result = read_db(&db).map(|(k, rows)| (k, rows, firefox_bookmarks(&db)));
     let _ = std::fs::remove_dir_all(&tmp);
     result
+}
+
+/// Firefox `moz_bookmarks` (type 1 = bookmark) joined to their places; empty elsewhere.
+fn firefox_bookmarks(db: &Connection) -> Vec<(String, String)> {
+    let sql = "SELECT p.url, coalesce(b.title, p.title, '') FROM moz_bookmarks b JOIN moz_places p ON b.fk = p.id
+               WHERE b.type = 1 AND (p.url LIKE 'http%' OR p.url LIKE 'file:%') ORDER BY b.dateAdded";
+    let Ok(mut st) = db.prepare(sql) else { return vec![] };
+    st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .map(|rows| rows.flatten().collect())
+        .unwrap_or_default()
 }
 
 fn wal(p: &Path) -> PathBuf {
@@ -148,6 +245,28 @@ fn read_db(db: &Connection) -> rusqlite::Result<(&'static str, Vec<Row>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_qutebrowser_session_current_entries() {
+        let y = "windows:\n- active: true\n  tabs:\n  - active: true\n    history:\n    - active: false\n      title: Old\n      url: https://old/\n    - active: true\n      title: 'It''s new'\n      url: https://new/?a=1\n  - history:\n    - active: true\n      title: B\n      url: https://b/\n";
+        assert_eq!(
+            parse_qb_session(y),
+            [("https://new/?a=1".into(), "It's new".into()), ("https://b/".into(), "B".into())] as [(String, String); 2]
+        );
+    }
+
+    #[test]
+    fn reads_firefox_bookmarks() {
+        let f = Connection::open_in_memory().unwrap();
+        f.execute_batch(
+            "CREATE TABLE moz_places(id, url, title);
+             CREATE TABLE moz_bookmarks(type, fk, title, dateAdded);
+             INSERT INTO moz_places VALUES (1, 'https://f.com/', 'F page'), (2, 'place:x', 'Q');
+             INSERT INTO moz_bookmarks VALUES (1, 1, NULL, 1), (2, NULL, 'Folder', 2), (1, 2, 'q', 3);",
+        )
+        .unwrap();
+        assert_eq!(firefox_bookmarks(&f), [("https://f.com/".into(), "F page".into())] as [(String, String); 1]);
+    }
 
     #[test]
     fn reads_chromium_firefox_qutebrowser() {
