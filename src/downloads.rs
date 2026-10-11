@@ -333,7 +333,7 @@ pub fn page() -> String {
     let data = serde_json::to_string(&rows)
         .unwrap()
         .replace('<', "\\u003c");
-    PAGE.replace("/*DATA*/[]", &data)
+    crate::theme::themed_page(PAGE.replace("/*DATA*/[]", &data))
 }
 
 const PAGE: &str = r#"<!doctype html><meta charset=utf-8><title>Downloads</title>

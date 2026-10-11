@@ -346,11 +346,21 @@ const PRESETS: &[(&str, [&str; 12])] = &[
     (
         "catppuccin",
         [
-            "#11111b", "#1e1e2e", "#313244", "#45475a", "#cdd6f4", "#a6adc8", "#313244", "#89b4fa",
+            "#181825", "#1e1e2e", "#313244", "#45475a", "#cdd6f4", "#a6adc8", "#45475a", "#cba6f7",
             "#f9e2af", "#a6e3a1", "#f38ba8", "#11111b",
         ],
     ),
 ];
+
+/// CSS `color-scheme` for our own pages (settings, downloads, bookmarks).
+pub fn scheme() -> &'static str {
+    if crate::config::get().str("theme") == "light" { "light" } else { "dark" }
+}
+
+/// Our own page's HTML with its colour scheme following the UI theme.
+pub fn themed_page(html: String) -> String {
+    html.replace("color-scheme:light dark", &format!("color-scheme:{}", scheme()))
+}
 
 /// The preset's value for colour setting `name` (None = not a themed colour).
 pub fn preset(theme: &str, name: &str) -> Option<&'static str> {

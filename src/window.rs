@@ -590,10 +590,12 @@ fn apply_dark(browser: &Browser) {
             .tabs
             .iter_mut()
             .find(|t| browser_id(&t.view) == Some(id))?;
-        let want = cfg
-            .get_for("colors.webpage.darkmode.enabled", &t.url)
-            .as_bool()
-            .unwrap_or(false);
+        // our own data: pages follow the UI theme, never force-dark
+        let want = !t.url.starts_with("data:")
+            && cfg
+                .get_for("colors.webpage.darkmode.enabled", &t.url)
+                .as_bool()
+                .unwrap_or(false);
         let over = (want != global).then_some(want);
         // Resend overrides every time: one sent before the renderer exists is lost
         // (first page of a new tab). Clear only once.
@@ -1383,7 +1385,10 @@ fn push_theme() {
     .to_string();
     let views = S.with_borrow(|s| [s.tabbar.clone(), s.palette.as_ref().map(|c| c.0.clone()), s.keyhint.as_ref().map(|c| c.0.clone()), s.tip.as_ref().map(|c| c.0.clone()), s.menu.as_ref().map(|c| c.0.clone())]);
     for v in views.into_iter().flatten() {
-        if let Some(f) = v.browser().and_then(|b| b.main_frame()) {
+        let Some(b) = v.browser() else { continue };
+        // force-dark (colors.webpage.darkmode) is for web pages; it would invert a light theme
+        devtools::send(&b, "Emulation.setAutoDarkModeOverride", serde_json::json!({ "enabled": false }));
+        if let Some(f) = b.main_frame() {
             let js = format!("window.nova && nova.theme && nova.theme({json})");
             f.execute_java_script(Some(&CefString::from(js.as_str())), None, 0);
         }

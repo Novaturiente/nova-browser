@@ -66,12 +66,12 @@ pub fn page() -> String {
         })
         .collect();
     let data = serde_json::json!({ "token": crate::page_token(), "rows": rows });
-    PAGE.replace(
+    crate::theme::themed_page(PAGE.replace(
         "/*DATA*/{}",
         &serde_json::to_string(&data)
             .unwrap()
             .replace('<', "\\u003c"),
-    )
+    ))
 }
 
 /// {"a": "set", "k": name, "v": value} | {"a": "reset", "k": name}

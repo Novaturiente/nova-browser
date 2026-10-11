@@ -249,7 +249,7 @@ pub fn on_page(msg: &serde_json::Value) -> Result<(), String> {
 /// filter, open. Actions go back over nova.send with the per-run page token.
 pub fn page() -> String {
     let data = serde_json::json!({ "token": crate::page_token(), "quick": quickmarks(), "book": bookmarks() });
-    PAGE.replace("/*DATA*/{}", &serde_json::to_string(&data).unwrap().replace('<', "\\u003c"))
+    crate::theme::themed_page(PAGE.replace("/*DATA*/{}", &serde_json::to_string(&data).unwrap().replace('<', "\\u003c")))
 }
 
 const PAGE: &str = r##"<!doctype html><meta charset=utf-8><title>Bookmarks</title>
