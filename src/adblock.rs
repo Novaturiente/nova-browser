@@ -303,13 +303,34 @@ pub fn on_load_start(browser: &Browser, url: &str) {
     }
     let b = browser.clone();
     devtools::call(browser, "Page.getFrameTree", json!({}), move |r| {
-        let Some(frame) = r.as_ref().and_then(|r| r["frameTree"]["frame"]["id"].as_str()).map(str::to_string) else { return };
+        let Some(frame) = r
+            .as_ref()
+            .and_then(|r| r["frameTree"]["frame"]["id"].as_str())
+            .map(str::to_string)
+        else {
+            return;
+        };
         let b2 = b.clone();
-        devtools::call(&b, "Page.createIsolatedWorld", json!({ "frameId": frame, "worldName": "novabrowser" }), move |r| {
-            let Some(ctx) = r.as_ref().and_then(|r| r["executionContextId"].as_i64()) else { return };
-            devtools::send(&b2, "Runtime.addBinding", json!({ "name": "__novaClassIds", "executionContextId": ctx }));
-            devtools::send(&b2, "Runtime.evaluate", json!({ "expression": include_str!("adblock-scan.js"), "contextId": ctx }));
-        });
+        devtools::call(
+            &b,
+            "Page.createIsolatedWorld",
+            json!({ "frameId": frame, "worldName": "novabrowser" }),
+            move |r| {
+                let Some(ctx) = r.as_ref().and_then(|r| r["executionContextId"].as_i64()) else {
+                    return;
+                };
+                devtools::send(
+                    &b2,
+                    "Runtime.addBinding",
+                    json!({ "name": "__novaClassIds", "executionContextId": ctx }),
+                );
+                devtools::send(
+                    &b2,
+                    "Runtime.evaluate",
+                    json!({ "expression": include_str!("adblock-scan.js"), "contextId": ctx }),
+                );
+            },
+        );
     });
 }
 
@@ -320,8 +341,15 @@ pub fn on_binding(browser: &Browser, params: &Value) {
     if params["name"] != "__novaClassIds" {
         return;
     }
-    let (Some(ctx), Some(payload)) = (params["executionContextId"].as_i64(), params["payload"].as_str()) else { return };
-    let Ok(p) = serde_json::from_str::<Value>(payload) else { return };
+    let (Some(ctx), Some(payload)) = (
+        params["executionContextId"].as_i64(),
+        params["payload"].as_str(),
+    ) else {
+        return;
+    };
+    let Ok(p) = serde_json::from_str::<Value>(payload) else {
+        return;
+    };
     let url = p["u"].as_str().unwrap_or("");
     let Some(e) = engine() else { return };
     if !url.starts_with("http") || !enabled(&config::get(), url) {
@@ -331,12 +359,24 @@ pub fn on_binding(browser: &Browser, params: &Value) {
     if r.generichide {
         return;
     }
-    let strs = |k: &str| p[k].as_array().map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect::<Vec<_>>()).unwrap_or_default();
+    let strs = |k: &str| {
+        p[k].as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default()
+    };
     let sels = e.hidden_class_id_selectors(strs("c"), strs("i"), &r.exceptions);
     if sels.is_empty() {
         return;
     }
-    let css: Vec<String> = sels.iter().map(|s| format!("{s}{{display:none!important}}")).collect();
+    let css: Vec<String> = sels
+        .iter()
+        .map(|s| format!("{s}{{display:none!important}}"))
+        .collect();
     devtools::send(
         browser,
         "Runtime.evaluate",

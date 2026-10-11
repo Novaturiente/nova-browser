@@ -520,7 +520,10 @@ thread_local! {
 pub fn active_browser() -> Option<Browser> {
     S.with_borrow(|s| {
         let i = match TARGET.get() {
-            Some(id) => s.tabs.iter().position(|t| browser_id(&t.view) == Some(id))?,
+            Some(id) => s
+                .tabs
+                .iter()
+                .position(|t| browser_id(&t.view) == Some(id))?,
             None => s.active,
         };
         s.tabs.get(i)?.view.browser()
@@ -555,7 +558,11 @@ pub fn state_json() -> String {
 pub fn active_url_title() -> (String, String) {
     S.with_borrow(|s| {
         let i = match TARGET.get() {
-            Some(id) => s.tabs.iter().position(|t| browser_id(&t.view) == Some(id)).unwrap_or(usize::MAX),
+            Some(id) => s
+                .tabs
+                .iter()
+                .position(|t| browser_id(&t.view) == Some(id))
+                .unwrap_or(usize::MAX),
             None => s.active,
         };
         s.tabs
@@ -703,9 +710,13 @@ pub fn open_cmdline(text: &str) {
     // A just-shown overlay ignores focus requests; focus on the next UI task.
     let _ = view;
     post_task(ThreadId::UI, Some(&mut FocusPalette::new()));
-    palette_js(&format!("nova.backdrop(null); nova.cmdline({}, {compact})", js_str(text)));
+    palette_js(&format!(
+        "nova.backdrop(null); nova.cmdline({}, {compact})",
+        js_str(text)
+    ));
     if let (false, Some(page)) = (compact, page) {
-        let params = serde_json::json!({ "format": "jpeg", "quality": 70, "optimizeForSpeed": true });
+        let params =
+            serde_json::json!({ "format": "jpeg", "quality": 70, "optimizeForSpeed": true });
         devtools::call(&page, "Page.captureScreenshot", params, |r| {
             let data = r.as_ref().and_then(|r| r["data"].as_str());
             if let (Some(data), Mode::Command) = (data, modes::mode()) {
@@ -752,20 +763,32 @@ pub fn show_completion(json: Option<&str>) {
 /// Full content area, or a top strip one input tall when compact.
 fn place_palette() {
     let Some((overlay, mid, content, compact)) = S.with_borrow(|s| {
-        Some((s.palette.as_ref()?.1.clone(), s.mid.clone()?, s.content.clone()?, s.compact))
+        Some((
+            s.palette.as_ref()?.1.clone(),
+            s.mid.clone()?,
+            s.content.clone()?,
+            s.compact,
+        ))
     }) else {
         return;
     };
     // Overlay bounds are window coordinates; content sits in mid, mid in the window.
     let (m, c) = (mid.bounds(), content.bounds());
-    let r = Rect { x: m.x + c.x, y: m.y + c.y, ..c };
+    let r = Rect {
+        x: m.x + c.x,
+        y: m.y + c.y,
+        ..c
+    };
     let cfg = config::get();
     let h = if compact {
         theme::bar_height(&cfg, "fonts.statusbar", "statusbar.padding") + 16
     } else {
         r.height
     };
-    overlay.set_bounds(Some(&Rect { height: h.clamp(1, r.height.max(1)), ..r }));
+    overlay.set_bounds(Some(&Rect {
+        height: h.clamp(1, r.height.max(1)),
+        ..r
+    }));
 }
 
 wrap_task! {

@@ -223,7 +223,6 @@ fn parse_value(name: &str, value: &str) -> Result<Value, String> {
 }
 
 impl Config {
-
     /// Does any `pattern()` block set `name` to `value`?
     pub fn any_pattern_value(&self, name: &str, value: &Value) -> bool {
         self.patterns

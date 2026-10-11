@@ -110,18 +110,29 @@ fn origin(url: &str) -> Option<String> {
 /// UI thread, at start and after any config change: map `content.cookies.accept`
 /// onto Chromium's cookie controls, and drop exceptions the config no longer wants.
 pub fn apply_cookie_policy() {
-    let Some(ctx) = request_context_get_global_context() else { return };
+    let Some(ctx) = request_context_get_global_context() else {
+        return;
+    };
     let cfg = config::get();
     let global = cfg.str("content.cookies.accept");
     let mut v = value_create().expect("cef value");
     v.set_int(matches!(global.as_str(), "no-3rdparty" | "no-unknown-3rdparty") as i32);
     // cef-rs passes an empty CefString out-param as NULL and CEF then fails the call: pre-fill it.
     let mut err = CefString::from("?");
-    if ctx.set_preference(Some(&"profile.cookie_controls_mode".into()), Some(&mut v), Some(&mut err)) == 0 {
+    if ctx.set_preference(
+        Some(&"profile.cookie_controls_mode".into()),
+        Some(&mut v),
+        Some(&mut err),
+    ) == 0
+    {
         eprintln!("novabrowser: cookie_controls_mode: {err}");
     }
     // shortcut: per-site overrides under a global `never` aren't mapped (they'd need allow pairs too).
-    let default = if global == "never" { ContentSettingValues::BLOCK } else { ContentSettingValues::DEFAULT };
+    let default = if global == "never" {
+        ContentSettingValues::BLOCK
+    } else {
+        ContentSettingValues::DEFAULT
+    };
     ctx.set_content_setting(None, None, ContentSettingTypes::COOKIES, default);
     let mut pairs = PAIRS.lock().unwrap();
     if pairs.is_empty() {
@@ -134,7 +145,12 @@ pub fn apply_cookie_policy() {
     pairs.retain(|(req, page)| {
         let keep = global_blocks_third_party(&cfg) && page_allows_all(&cfg, page);
         if !keep {
-            ctx.set_content_setting(Some(&req.as_str().into()), Some(&page.as_str().into()), ContentSettingTypes::COOKIES, ContentSettingValues::DEFAULT);
+            ctx.set_content_setting(
+                Some(&req.as_str().into()),
+                Some(&page.as_str().into()),
+                ContentSettingTypes::COOKIES,
+                ContentSettingValues::DEFAULT,
+            );
         }
         keep
     });
@@ -144,7 +160,10 @@ pub fn apply_cookie_policy() {
 }
 
 fn global_blocks_third_party(cfg: &config::Config) -> bool {
-    matches!(cfg.str("content.cookies.accept").as_str(), "no-3rdparty" | "no-unknown-3rdparty")
+    matches!(
+        cfg.str("content.cookies.accept").as_str(),
+        "no-3rdparty" | "no-unknown-3rdparty"
+    )
 }
 
 fn page_allows_all(cfg: &config::Config, page: &str) -> bool {
@@ -175,7 +194,9 @@ pub fn note_request(url: &str, page: &str) {
     if matches!((site(url), site(page)), (Some(a), Some(b)) if a == b) {
         return;
     }
-    let (Some(req), Some(pg)) = (origin(url), origin(page)) else { return };
+    let (Some(req), Some(pg)) = (origin(url), origin(page)) else {
+        return;
+    };
     if PAIRS.lock().unwrap().insert((req.clone(), pg.clone())) {
         post_task(ThreadId::UI, Some(&mut AllowPair::new(req, pg)));
     }

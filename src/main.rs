@@ -5,7 +5,6 @@ mod clipboard;
 mod commands;
 mod completion;
 mod config;
-mod theme;
 mod devtools;
 mod hints;
 mod history;
@@ -18,6 +17,7 @@ mod permissions;
 mod renderer;
 mod settings;
 mod spawn;
+mod theme;
 mod urlmatch;
 mod window;
 
@@ -85,7 +85,14 @@ fn switches(cfg: &config::Config) -> Vec<(String, Option<String>)> {
         })
         .collect();
     let mut add = |k: &str, v: Option<&str>| out.push((k.into(), v.map(Into::into)));
-    add(if cfg.bool("scrolling.smooth") { "enable-smooth-scrolling" } else { "disable-smooth-scrolling" }, None);
+    add(
+        if cfg.bool("scrolling.smooth") {
+            "enable-smooth-scrolling"
+        } else {
+            "disable-smooth-scrolling"
+        },
+        None,
+    );
     if !cfg.bool("content.autoplay") {
         add("autoplay-policy", Some("user-gesture-required"));
     }
@@ -94,7 +101,10 @@ fn switches(cfg: &config::Config) -> Vec<(String, Option<String>)> {
     }
     match cfg.str("content.webrtc_ip_handling_policy").as_str() {
         "all-interfaces" => {}
-        p => add("force-webrtc-ip-handling-policy", Some(&p.replace('-', "_"))),
+        p => add(
+            "force-webrtc-ip-handling-policy",
+            Some(&p.replace('-', "_")),
+        ),
     }
     match cfg.str("qt.chromium.low_end_device_mode").as_str() {
         "always" => add("enable-low-end-device-mode", None),
@@ -135,14 +145,21 @@ fn switches(cfg: &config::Config) -> Vec<(String, Option<String>)> {
 
 /// Dark mode off globally but on for some pattern: still start Chromium with it.
 fn cfg_any_dark_site(cfg: &config::Config) -> bool {
-    cfg.any_pattern_value("colors.webpage.darkmode.enabled", &serde_json::Value::Bool(true))
+    cfg.any_pattern_value(
+        "colors.webpage.darkmode.enabled",
+        &serde_json::Value::Bool(true),
+    )
 }
 
 /// `novabrowser [switches] [url]`: first non-switch argument; bare hosts get https://.
 /// Without one: the first of `url.start_pages`.
 fn start_url() -> String {
     let Some(arg) = std::env::args().skip(1).find(|a| !a.starts_with('-')) else {
-        return config::get().list("url.start_pages").into_iter().next().unwrap_or_else(|| "about:blank".into());
+        return config::get()
+            .list("url.start_pages")
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| "about:blank".into());
     };
     if arg.contains("://") || arg.starts_with("about:") || arg.starts_with("data:") {
         arg
@@ -175,7 +192,11 @@ fn main() {
     if argv.get(1).map(String::as_str) == Some("--check-config") {
         // load config.ts without starting the browser: errors and unbuilt settings
         match config::load() {
-            Ok(()) => println!("{}: ok; not built yet: {}", config::path().display(), config::get().pending().join(", ")),
+            Ok(()) => println!(
+                "{}: ok; not built yet: {}",
+                config::path().display(),
+                config::get().pending().join(", ")
+            ),
             Err(e) => {
                 eprintln!("{e}");
                 std::process::exit(1);
@@ -189,14 +210,20 @@ fn main() {
     if !is_subprocess {
         let req = match argv.get(1).map(String::as_str) {
             Some("--cmd") => Some(format!("cmd {}", argv[2..].join(" "))),
-            Some("--query") => Some(format!("query {}", argv.get(2).map_or("state", String::as_str))),
+            Some("--query") => Some(format!(
+                "query {}",
+                argv.get(2).map_or("state", String::as_str)
+            )),
             _ => None,
         };
         if let Some(req) = req {
             match ipc::request(&req) {
                 Some(reply) => println!("{reply}"),
                 None => {
-                    eprintln!("novabrowser: no running instance ({})", ipc::socket_path().display());
+                    eprintln!(
+                        "novabrowser: no running instance ({})",
+                        ipc::socket_path().display()
+                    );
                     std::process::exit(1);
                 }
             }
@@ -214,11 +241,19 @@ fn main() {
     let args = args::Args::new();
     // Before CEF: config sets Chromium switches. Subprocesses don't need it (they
     // get switches on their command line); loading there would just cost startup.
-    let config_error = if is_subprocess { None } else { config::load().err() };
+    let config_error = if is_subprocess {
+        None
+    } else {
+        config::load().err()
+    };
     if !is_subprocess {
         net::load_https_excludes();
     }
-    let mut app = NovaApp::new(if is_subprocess { String::new() } else { start_url() });
+    let mut app = NovaApp::new(if is_subprocess {
+        String::new()
+    } else {
+        start_url()
+    });
     // Subprocesses exit here; they need the App too, or the renderer gets no handler.
     let code = execute_process(
         Some(args.as_main_args()),
@@ -239,7 +274,9 @@ fn main() {
         // shortcut: no rotation, rotate when Phase 8 daily driving makes it grow
         log_file: CefString::from(state.join("log").to_str().expect("utf-8 state dir")),
         // navigator.languages; the header itself is set per request in net.rs
-        accept_language_list: CefString::from(net::language_list(&config::get().str("content.headers.accept_language")).as_str()),
+        accept_language_list: CefString::from(
+            net::language_list(&config::get().str("content.headers.accept_language")).as_str(),
+        ),
         ..Default::default()
     };
     assert_eq!(
@@ -257,11 +294,20 @@ fn main() {
     } else {
         let pending = config::get().pending();
         if !pending.is_empty() {
-            eprintln!("novabrowser: config settings not applied yet: {}", pending.join(", "));
-            window::startup_message("info", &format!("config: {} settings not built yet: {}", pending.len(), pending.join(", ")));
+            eprintln!(
+                "novabrowser: config settings not applied yet: {}",
+                pending.join(", ")
+            );
+            window::startup_message(
+                "info",
+                &format!(
+                    "config: {} settings not built yet: {}",
+                    pending.len(),
+                    pending.join(", ")
+                ),
+            );
         }
     }
     run_message_loop();
     shutdown();
 }
-

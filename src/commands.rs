@@ -66,7 +66,12 @@ pub fn parse_line(line: &str) -> Result<Vec<Cmd>, String> {
     out.iter().map(|p| parse_one(p)).collect()
 }
 
-fn split_expand(line: &str, aliases: &serde_json::Value, depth: u32, out: &mut Vec<String>) -> Result<(), String> {
+fn split_expand(
+    line: &str,
+    aliases: &serde_json::Value,
+    depth: u32,
+    out: &mut Vec<String>,
+) -> Result<(), String> {
     if depth > 8 {
         return Err("alias loop".into());
     }
@@ -118,7 +123,11 @@ pub fn url_or_search(text: &str) -> String {
 fn url_or_search_with(text: &str, engines: &serde_json::Value, auto_search: &str) -> String {
     let t = text.trim();
     if let Some((word, rest)) = t.split_once(' ') {
-        if let Some(tpl) = engines.get(word).and_then(|v| v.as_str()).filter(|_| word != "DEFAULT") {
+        if let Some(tpl) = engines
+            .get(word)
+            .and_then(|v| v.as_str())
+            .filter(|_| word != "DEFAULT")
+        {
             return search_url(tpl, rest.trim());
         }
     }
@@ -130,7 +139,8 @@ fn url_or_search_with(text: &str, engines: &serde_json::Value, auto_search: &str
         return t.to_string();
     }
     // shortcut: "dns" and "schemeless" behave like "naive" (no DNS lookups)
-    let looks_like_url = !t.contains(char::is_whitespace) && (t.starts_with("localhost") || t.contains('.'));
+    let looks_like_url =
+        !t.contains(char::is_whitespace) && (t.starts_with("localhost") || t.contains('.'));
     if auto_search == "never" || looks_like_url {
         let scheme = if t.starts_with("localhost") {
             "http"
@@ -139,7 +149,10 @@ fn url_or_search_with(text: &str, engines: &serde_json::Value, auto_search: &str
         };
         return format!("{scheme}://{t}");
     }
-    let tpl = engines.get("DEFAULT").and_then(|v| v.as_str()).unwrap_or("https://duckduckgo.com/?q={}");
+    let tpl = engines
+        .get("DEFAULT")
+        .and_then(|v| v.as_str())
+        .unwrap_or("https://duckduckgo.com/?q={}");
     search_url(tpl, t)
 }
 
@@ -155,7 +168,10 @@ fn search_url(tpl: &str, term: &str) -> String {
             _ => format!("%{b:02X}"),
         })
         .collect();
-    tpl.replace("{unquoted}", term).replace("{semiquoted}", &q).replace("{quoted}", &q).replace("{}", &q)
+    tpl.replace("{unquoted}", term)
+        .replace("{semiquoted}", &q)
+        .replace("{quoted}", &q)
+        .replace("{}", &q)
 }
 
 /// `zoom.levels` as numbers ("110%" → 110).
@@ -264,9 +280,22 @@ fn dark_toggle() -> Result<(), String> {
         .map_err(|e| format!("{}: {e}", file.display()))?;
     cfg.set_runtime_for(&format!("*://{host}/*"), D, &dark.to_string())?;
     window::config_changed();
-    let still = dark && lines.iter().any(|l| l.starts_with("*.") && host.ends_with(&l[1..]));
-    let note = if still { " (a wildcard in darkmode_excludes still excludes it after a restart)" } else { "" };
-    window::message("info", &format!("Dark mode {} for {host}{note}", if dark { "on" } else { "off" }));
+    let still = dark
+        && lines
+            .iter()
+            .any(|l| l.starts_with("*.") && host.ends_with(&l[1..]));
+    let note = if still {
+        " (a wildcard in darkmode_excludes still excludes it after a restart)"
+    } else {
+        ""
+    };
+    window::message(
+        "info",
+        &format!(
+            "Dark mode {} for {host}{note}",
+            if dark { "on" } else { "off" }
+        ),
+    );
     Ok(())
 }
 
@@ -299,8 +328,18 @@ fn https_toggle() -> Result<(), String> {
         .map_err(|e| format!("{}: {e}", file.display()))?;
     crate::net::load_https_excludes();
     let rest = url.split_once("://").map_or(url.as_str(), |(_, r)| r);
-    let target = if excluded { format!("https://{rest}") } else { format!("http://{rest}") };
-    window::message("info", &format!("HTTPS-only {} for {auth}", if excluded { "on" } else { "off" }));
+    let target = if excluded {
+        format!("https://{rest}")
+    } else {
+        format!("http://{rest}")
+    };
+    window::message(
+        "info",
+        &format!(
+            "HTTPS-only {} for {auth}",
+            if excluded { "on" } else { "off" }
+        ),
+    );
     run_one_line(&format!("open {target}"))
 }
 
@@ -611,7 +650,12 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
         "search-prev" => search_again(true, n)?,
         "hint" => hints::start(cmd)?,
         // -d/--detach: children never block us, so it is the default
-        "spawn" => crate::spawn::spawn(&cmd.args, cmd.flag("-u", "--userscript"), cmd.flag("-o", "--output"), count)?,
+        "spawn" => crate::spawn::spawn(
+            &cmd.args,
+            cmd.flag("-u", "--userscript"),
+            cmd.flag("-o", "--output"),
+            count,
+        )?,
         // shortcut: -g (keys to the browser UI) not supported
         "fake-key" => crate::spawn::fake_key(&cmd.rest())?,
         "insert-text" => crate::spawn::insert_text(&cmd.rest())?,
@@ -647,18 +691,26 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
             crate::net::load_https_excludes();
             window::config_changed();
             let pending = config::get().pending().len();
-            window::message("info", &format!("config.ts loaded ({pending} settings not built yet)"));
+            window::message(
+                "info",
+                &format!("config.ts loaded ({pending} settings not built yet)"),
+            );
         }
         "set" => {
             // `set name value`; `set name` shows the value
             // -t (don't save) is the only behaviour: :set never writes a file yet
-            let pattern = cmd.flag("-u", "--pattern").then(|| cmd.args.first().cloned()).flatten();
+            let pattern = cmd
+                .flag("-u", "--pattern")
+                .then(|| cmd.args.first().cloned())
+                .flatten();
             let args = &cmd.args[pattern.is_some() as usize..];
             let (name, value) = match args {
-                [n] => return {
-                    window::message("info", &format!("{n} = {}", config::get().get(n)));
-                    Ok(())
-                },
+                [n] => {
+                    return {
+                        window::message("info", &format!("{n} = {}", config::get().get(n)));
+                        Ok(())
+                    }
+                }
                 [n, rest @ ..] if !rest.is_empty() => (n, rest.join(" ")),
                 _ => return Err("usage: set <setting> [value]".into()),
             };
@@ -670,14 +722,22 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
         }
         "config-cycle" => {
             // `config-cycle name v1 v2 …`: next value after the current one
-            let [name, values @ ..] = cmd.args.as_slice() else { return Err("usage: config-cycle <setting> <values…>".into()) };
+            let [name, values @ ..] = cmd.args.as_slice() else {
+                return Err("usage: config-cycle <setting> <values…>".into());
+            };
             if values.len() < 2 {
                 return Err("config-cycle needs at least two values".into());
             }
             let cfg = config::get();
             let cur = cfg.get(name);
-            let cur = cur.as_str().map(str::to_string).unwrap_or_else(|| cur.to_string());
-            let i = values.iter().position(|v| *v == cur).map_or(0, |i| (i + 1) % values.len());
+            let cur = cur
+                .as_str()
+                .map(str::to_string)
+                .unwrap_or_else(|| cur.to_string());
+            let i = values
+                .iter()
+                .position(|v| *v == cur)
+                .map_or(0, |i| (i + 1) % values.len());
             cfg.set_runtime(name, &values[i])?;
             window::config_changed();
         }
@@ -741,7 +801,14 @@ mod tests {
         let a = serde_json::json!({"t": "config-cycle tabs.position left top ;; message-info 'x'", "loop": "loop", "q": "close"});
         let mut out = Vec::new();
         split_expand("t ;; q", &a, 0, &mut out).unwrap();
-        assert_eq!(out, ["config-cycle tabs.position left top", "message-info 'x'", "close"]);
+        assert_eq!(
+            out,
+            [
+                "config-cycle tabs.position left top",
+                "message-info 'x'",
+                "close"
+            ]
+        );
         assert!(split_expand("loop", &a, 0, &mut Vec::new()).is_err());
     }
 
@@ -764,7 +831,10 @@ mod tests {
         );
         assert_eq!(tokenize("  x  ").unwrap(), ["x"]);
         assert_eq!(tokenize("''").unwrap(), [""]);
-        assert_eq!(tokenize(r#"fake-key \< \a " ""#).unwrap(), ["fake-key", "<", "a", " "]);
+        assert_eq!(
+            tokenize(r#"fake-key \< \a " ""#).unwrap(),
+            ["fake-key", "<", "a", " "]
+        );
         assert_eq!(tokenize(r"'\x'").unwrap(), [r"\x"]);
         assert!(tokenize("'open").is_err());
     }
@@ -813,11 +883,26 @@ mod tests {
         );
         assert_eq!(url_or_search("a&b"), "https://duckduckgo.com/?q=a%26b");
         let e = serde_json::json!({"DEFAULT": "https://s.x/?q={}", "g": "https://g.x/search?q={}", "raw": "https://r.x/{unquoted}"});
-        assert_eq!(url_or_search_with("g rust lang", &e, "naive"), "https://g.x/search?q=rust+lang");
-        assert_eq!(url_or_search_with("raw a/b", &e, "naive"), "https://r.x/a/b");
-        assert_eq!(url_or_search_with("hello world", &e, "naive"), "https://s.x/?q=hello+world");
-        assert_eq!(url_or_search_with("DEFAULT x", &e, "naive"), "https://s.x/?q=DEFAULT+x");
-        assert_eq!(url_or_search_with("intranet", &e, "never"), "https://intranet");
+        assert_eq!(
+            url_or_search_with("g rust lang", &e, "naive"),
+            "https://g.x/search?q=rust+lang"
+        );
+        assert_eq!(
+            url_or_search_with("raw a/b", &e, "naive"),
+            "https://r.x/a/b"
+        );
+        assert_eq!(
+            url_or_search_with("hello world", &e, "naive"),
+            "https://s.x/?q=hello+world"
+        );
+        assert_eq!(
+            url_or_search_with("DEFAULT x", &e, "naive"),
+            "https://s.x/?q=DEFAULT+x"
+        );
+        assert_eq!(
+            url_or_search_with("intranet", &e, "never"),
+            "https://intranet"
+        );
     }
 
     #[test]

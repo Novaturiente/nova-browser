@@ -196,7 +196,9 @@ wrap_resource_request_handler! {
 }
 
 fn first_party(b: Option<&mut Browser>) -> String {
-    b.and_then(|b| b.main_frame()).map(|f| CefString::from(&f.url()).to_string()).unwrap_or_default()
+    b.and_then(|b| b.main_frame())
+        .map(|f| CefString::from(&f.url()).to_string())
+        .unwrap_or_default()
 }
 
 wrap_cookie_access_filter! {
