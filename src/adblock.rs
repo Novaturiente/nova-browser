@@ -292,6 +292,58 @@ pub fn forget(browser: &Browser) {
     SCRIPTS.with_borrow_mut(|s| s.remove(&browser.identifier()));
 }
 
+/// UI thread, main frame committed (on_load_start): start the generic-hiding scanner in
+/// a fresh "novabrowser" isolated world with its binding. Bound by context id: binding by
+/// world name only reaches new contexts while Runtime is enabled, and Runtime.enable is
+/// visible to anti-bot scripts (spike 2026-10-11).
+/// shortcut: main frame only, and it starts after commit, so a generic ad can flash briefly.
+pub fn on_load_start(browser: &Browser, url: &str) {
+    if engine().is_none() || !url.starts_with("http") || !enabled(&config::get(), url) {
+        return;
+    }
+    let b = browser.clone();
+    devtools::call(browser, "Page.getFrameTree", json!({}), move |r| {
+        let Some(frame) = r.as_ref().and_then(|r| r["frameTree"]["frame"]["id"].as_str()).map(str::to_string) else { return };
+        let b2 = b.clone();
+        devtools::call(&b, "Page.createIsolatedWorld", json!({ "frameId": frame, "worldName": "novabrowser" }), move |r| {
+            let Some(ctx) = r.as_ref().and_then(|r| r["executionContextId"].as_i64()) else { return };
+            devtools::send(&b2, "Runtime.addBinding", json!({ "name": "__novaClassIds", "executionContextId": ctx }));
+            devtools::send(&b2, "Runtime.evaluate", json!({ "expression": include_str!("adblock-scan.js"), "contextId": ctx }));
+        });
+    });
+}
+
+/// `Runtime.bindingCalled` from adblock-scan.js: new class names / ids on a page.
+/// Answers with the generic hide rules that match them (adblock-rust's
+/// hidden_class_id_selectors, as Brave does).
+pub fn on_binding(browser: &Browser, params: &Value) {
+    if params["name"] != "__novaClassIds" {
+        return;
+    }
+    let (Some(ctx), Some(payload)) = (params["executionContextId"].as_i64(), params["payload"].as_str()) else { return };
+    let Ok(p) = serde_json::from_str::<Value>(payload) else { return };
+    let url = p["u"].as_str().unwrap_or("");
+    let Some(e) = engine() else { return };
+    if !url.starts_with("http") || !enabled(&config::get(), url) {
+        return;
+    }
+    let r = e.url_cosmetic_resources(url);
+    if r.generichide {
+        return;
+    }
+    let strs = |k: &str| p[k].as_array().map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect::<Vec<_>>()).unwrap_or_default();
+    let sels = e.hidden_class_id_selectors(strs("c"), strs("i"), &r.exceptions);
+    if sels.is_empty() {
+        return;
+    }
+    let css: Vec<String> = sels.iter().map(|s| format!("{s}{{display:none!important}}")).collect();
+    devtools::send(
+        browser,
+        "Runtime.evaluate",
+        json!({ "expression": format!("globalThis.__novaHide({})", serde_json::to_string(&css.join("\n")).unwrap()), "contextId": ctx }),
+    );
+}
+
 /// shortcut: no generic class/id hiding (needs a DOM scan round trip) and no
 /// procedural filters (:has-text etc.); specific hides + scriptlets only.
 fn page_script(e: &Engine, url: &str) -> Option<String> {

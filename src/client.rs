@@ -122,6 +122,11 @@ wrap_display_handler! {
 wrap_load_handler! {
     struct TabLoad {}
     impl LoadHandler {
+        fn on_load_start(&self, browser: Option<&mut Browser>, frame: Option<&mut Frame>, _transition_type: TransitionType) {
+            if let (Some(b), Some(f)) = (browser, frame) {
+                if f.is_main() != 0 { adblock::on_load_start(b, &CefString::from(&f.url()).to_string()); }
+            }
+        }
         fn on_loading_state_change(&self, browser: Option<&mut Browser>, is_loading: ::std::os::raw::c_int, back: ::std::os::raw::c_int, fwd: ::std::os::raw::c_int) {
             if let Some(b) = browser { window::set_loading(b, is_loading != 0, back != 0, fwd != 0); }
         }

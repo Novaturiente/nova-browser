@@ -25,6 +25,14 @@ wrap_dev_tools_message_observer! {
             let value = result.and_then(|r| serde_json::from_slice(r).ok());
             cb(if success != 0 { value } else { None });
         }
+        fn on_dev_tools_event(&self, browser: Option<&mut Browser>, method: Option<&CefString>, params: Option<&[u8]>) {
+            let (Some(b), Some(m)) = (browser, method) else { return };
+            if m.to_string() == "Runtime.bindingCalled" {
+                if let Some(p) = params.and_then(|p| serde_json::from_slice::<Value>(p).ok()) {
+                    crate::adblock::on_binding(b, &p);
+                }
+            }
+        }
     }
 }
 
