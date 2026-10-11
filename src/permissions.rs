@@ -28,6 +28,8 @@ const MEDIA_BITS: &[(u32, &str, &str)] = &[
 enum Callback {
     Prompt(u64, PermissionPromptCallback),
     Media(u32, MediaAccessCallback),
+    /// alert / confirm / prompt() / leave-page; the String is what "yes" returns to prompt().
+    Dialog(JsdialogCallback, String),
 }
 
 struct Pending {
@@ -110,6 +112,7 @@ fn answer(cb: &Callback, allow: bool) {
         }
         Callback::Media(bits, c) if allow => c.cont(*bits),
         Callback::Media(_, c) => c.cancel(),
+        Callback::Dialog(c, input) => c.cont(allow as i32, Some(&input.as_str().into())),
     }
 }
 
@@ -147,9 +150,59 @@ fn handle(browser: &Browser, origin: &str, settings: Vec<&'static str>, what: &[
             QUEUE.with_borrow_mut(|q| {
                 q.push_back(Pending { browser: browser.identifier(), origin: origin.to_string(), settings, text, cb })
             });
-            show();
+            show_later();
         }
     }
+}
+
+/// JS dialogs share the prompt queue: without a handler the page would hang (S7).
+/// shortcut: prompt() can't take typed text; `y` returns its default value.
+pub fn dialog(browser: &Browser, origin: &str, kind: JsdialogType, message: &str, default: &str, cb: &JsdialogCallback) {
+    let host = crate::commands::host(origin).to_string();
+    let (keys, input) = if kind == JsdialogType::ALERT {
+        ("[y]/[n] to close", String::new())
+    } else if kind == JsdialogType::PROMPT {
+        ("[y]es (answer \"{default}\") [n]o", default.to_string())
+    } else {
+        ("[y]es [n]o", String::new())
+    };
+    let keys = keys.replace("{default}", default);
+    let text = format!("{host} says: {message} {keys}");
+    let cb = Callback::Dialog(cb.clone(), input);
+    QUEUE.with_borrow_mut(|q| {
+        q.push_back(Pending { browser: browser.identifier(), origin: origin.to_string(), settings: Vec::new(), text, cb })
+    });
+    show_later();
+}
+
+/// Navigating away from a page with a beforeunload handler.
+pub fn leave_page(browser: &Browser, is_reload: bool, cb: &JsdialogCallback) {
+    let text = format!("{} this page? Changes you made may not be saved. [y]es [n]o", if is_reload { "Reload" } else { "Leave" });
+    let cb = Callback::Dialog(cb.clone(), String::new());
+    QUEUE.with_borrow_mut(|q| {
+        q.push_back(Pending { browser: browser.identifier(), origin: String::new(), settings: Vec::new(), text, cb })
+    });
+    show_later();
+}
+
+/// CEF closed this tab's dialogs itself (navigation, reload).
+pub fn reset_dialogs(browser: &Browser) {
+    let id = browser.identifier();
+    QUEUE.with_borrow_mut(|q| q.retain(|p| !(p.browser == id && matches!(p.cb, Callback::Dialog(..)))));
+    show_later();
+}
+
+wrap_task! {
+    struct Show {}
+    impl Task {
+        fn execute(&self) { show(); }
+    }
+}
+
+/// `show()` from a CEF callback: CEF may call us synchronously from inside
+/// window code that holds its state (e.g. leave-page dialog during load_url).
+fn show_later() {
+    post_task(ThreadId::UI, Some(&mut Show::new()));
 }
 
 /// Show the oldest open prompt, or leave prompt mode when there is none.
@@ -163,8 +216,12 @@ fn show() {
                 window::close_cmdline();
             }
             modes::enter(modes::Mode::Prompt);
+            window::focus_active();
         }
-        (false, true) => modes::enter(modes::Mode::Normal),
+        (false, true) => {
+            modes::enter(modes::Mode::Normal);
+            window::focus_active();
+        }
         _ => {}
     }
 }
@@ -179,7 +236,7 @@ pub fn on_key(name: &str) {
         _ => return,
     };
     let Some(p) = QUEUE.with_borrow_mut(|q| q.pop_front()) else { return show() };
-    if keep {
+    if keep && !p.settings.is_empty() {
         save(&p.origin, &p.settings, allow);
     }
     answer(&p.cb, allow);
@@ -189,14 +246,14 @@ pub fn on_key(name: &str) {
 /// CEF dropped a prompt (navigation, tab closed): forget it without answering.
 pub fn dismissed(prompt_id: u64) {
     QUEUE.with_borrow_mut(|q| q.retain(|p| !matches!(p.cb, Callback::Prompt(id, _) if id == prompt_id)));
-    show();
+    show_later();
 }
 
 /// Tab closed: drop its open prompts (media requests have no dismiss callback).
 pub fn forget(browser: &Browser) {
     let id = browser.identifier();
     QUEUE.with_borrow_mut(|q| q.retain(|p| p.browser != id));
-    show();
+    show_later();
 }
 
 #[cfg(test)]

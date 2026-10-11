@@ -779,7 +779,8 @@ wrap_task! {
     struct FocusActive {}
     impl Task {
         fn execute(&self) {
-            let v = S.with_borrow(|s| s.tabs.get(s.active).map(|t| t.view.clone()));
+            // A page with an open JS dialog ignores input, so prompts take keys in the tab bar.
+            let v = S.with_borrow(|s| if modes::mode() == Mode::Prompt { s.tabbar.clone() } else { s.tabs.get(s.active).map(|t| t.view.clone()) });
             // CEF's focus task derefs the view's widget unchecked: only focus attached views.
             if let Some(v) = v.filter(|v| v.window().is_some()) {
                 if modes::mode() != Mode::Command { v.request_focus(); }
@@ -790,7 +791,7 @@ wrap_task! {
 
 /// Focus whichever tab is active once the current command finishes; focusing a
 /// view that gets detached before CEF's async focus runs is a SIGSEGV in CEF.
-fn focus_active() {
+pub fn focus_active() {
     post_task(ThreadId::UI, Some(&mut FocusActive::new()));
 }
 

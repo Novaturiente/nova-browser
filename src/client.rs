@@ -49,6 +49,7 @@ wrap_client! {
         fn load_handler(&self) -> Option<LoadHandler> { Some(TabLoad::new()) }
         fn life_span_handler(&self) -> Option<LifeSpanHandler> { Some(NovaLifeSpan::new()) }
         fn permission_handler(&self) -> Option<PermissionHandler> { Some(TabPermission::new()) }
+        fn jsdialog_handler(&self) -> Option<JsdialogHandler> { Some(TabDialogs::new()) }
         fn request_handler(&self) -> Option<RequestHandler> { Some(TabRequest::new()) }
         fn keyboard_handler(&self) -> Option<KeyboardHandler> { Some(TabKeys::new()) }
         fn on_process_message_received(
@@ -74,6 +75,7 @@ wrap_client! {
     pub struct UiClient {}
     impl Client {
         fn life_span_handler(&self) -> Option<LifeSpanHandler> { Some(NovaLifeSpan::new()) }
+        fn keyboard_handler(&self) -> Option<KeyboardHandler> { Some(UiKeys::new()) }
         fn on_process_message_received(
             &self,
             _browser: Option<&mut Browser>,
@@ -214,6 +216,38 @@ wrap_permission_handler! {
         }
         fn on_dismiss_permission_prompt(&self, _browser: Option<&mut Browser>, prompt_id: u64, _result: PermissionRequestResult) {
             crate::permissions::dismissed(prompt_id);
+        }
+    }
+}
+
+wrap_jsdialog_handler! {
+    struct TabDialogs {}
+    impl JsdialogHandler {
+        fn on_jsdialog(&self, browser: Option<&mut Browser>, origin_url: Option<&CefString>, dialog_type: JsdialogType, message_text: Option<&CefString>, default_prompt_text: Option<&CefString>, callback: Option<&mut JsdialogCallback>, _suppress_message: Option<&mut ::std::os::raw::c_int>) -> ::std::os::raw::c_int {
+            let (Some(b), Some(cb)) = (browser, callback) else { return 0 };
+            let s = |x: Option<&CefString>| x.map(|x| x.to_string()).unwrap_or_default();
+            crate::permissions::dialog(b, &s(origin_url), dialog_type, &s(message_text), &s(default_prompt_text), cb);
+            1
+        }
+        fn on_before_unload_dialog(&self, browser: Option<&mut Browser>, _message_text: Option<&CefString>, is_reload: ::std::os::raw::c_int, callback: Option<&mut JsdialogCallback>) -> ::std::os::raw::c_int {
+            let (Some(b), Some(cb)) = (browser, callback) else { return 0 };
+            crate::permissions::leave_page(b, is_reload != 0, cb);
+            1
+        }
+        fn on_reset_dialog_state(&self, browser: Option<&mut Browser>) {
+            if let Some(b) = browser { crate::permissions::reset_dialogs(b); }
+        }
+    }
+}
+
+wrap_keyboard_handler! {
+    struct UiKeys {}
+    impl KeyboardHandler {
+        fn on_pre_key_event(&self, _browser: Option<&mut Browser>, event: Option<&KeyEvent>, _os_event: Option<&mut sys::_XEvent>, _is_shortcut: Option<&mut ::std::os::raw::c_int>) -> ::std::os::raw::c_int {
+            // Only prompts focus the tab bar (window::focus_active); the palette handles its own keys.
+            let Some(e) = event else { return 0 };
+            if e.type_ != KeyEventType::RAWKEYDOWN || modes::mode() != modes::Mode::Prompt { return 0; }
+            modes::on_key(e.windows_key_code, e.character, e.modifiers) as i32
         }
     }
 }
