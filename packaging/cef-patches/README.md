@@ -18,7 +18,7 @@ Configure and build:
     export PATH=$HOME/cef-build/depot_tools:$PATH TMPDIR=$HOME/cef-build/tmp GN_OUT_CONFIGS=Release_GN_x64
     export GN_DEFINES="is_official_build=true use_sysroot=true proprietary_codecs=true ffmpeg_branding=Chrome symbol_level=0 blink_symbol_level=0 v8_symbol_level=0 chrome_pgo_phase=2"
     cd chromium/src/cef && ./cef_create_projects.sh && cd ..
-    autoninja -j6 -C out/Release_GN_x64 cefsimple
+    autoninja -j6 -C out/Release_GN_x64 cefsimple chrome_sandbox
     cd cef/tools && ./make_distrib.sh --ninja-build --minimal --x64-build --no-docs --no-symbols --no-archive
 
 `concurrent_links` can't be set with ThinLTO (one link at a time already).

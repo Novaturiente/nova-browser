@@ -242,7 +242,9 @@ fn locked(b: Backend) -> bool {
 fn unlock(b: Backend) -> Result<(), String> {
     match b {
         Backend::Rbw => run("rbw", &["unlock"], None, &[]).map(|_| ()),
-        Backend::Bw => Err("bw is locked: run `bw unlock`, export BW_SESSION and restart novabrowser".into()),
+        Backend::Bw => {
+            Err("bw is locked: run `bw unlock`, export BW_SESSION and restart novabrowser".into())
+        }
         Backend::Pass => Ok(()),
     }
 }
@@ -534,7 +536,11 @@ pub fn on_focus(browser: &Browser, frame: &Frame, kind: &str, rect: Rect) {
         return show(seq, Some(Vec::new()));
     }
     std::thread::spawn(move || {
-        let r = if locked(b) { Ok(None) } else { matching(b, &url).map(Some) };
+        let r = if locked(b) {
+            Ok(None)
+        } else {
+            matching(b, &url).map(Some)
+        };
         crate::on_ui(move || match r {
             Ok(v) => show(seq, v),
             Err(e) => window::message("error", &e),
@@ -675,7 +681,10 @@ fn pick_item(i: usize) {
                         if any {
                             select_first(seq);
                         } else {
-                            window::message("info", &format!("unlocked; no {} login for this site", label(b)));
+                            window::message(
+                                "info",
+                                &format!("unlocked; no {} login for this site", label(b)),
+                            );
                         }
                     }
                     Err(e) => window::message("error", &e),
@@ -699,7 +708,8 @@ fn pick_item(i: usize) {
 }
 
 fn url_of(seq: u64) -> String {
-    FIELD.with_borrow(|f| f.as_ref().filter(|f| f.seq == seq).map(|f| f.url.clone()))
+    FIELD
+        .with_borrow(|f| f.as_ref().filter(|f| f.seq == seq).map(|f| f.url.clone()))
         .unwrap_or_default()
 }
 
@@ -874,7 +884,10 @@ pub fn on_submit(browser: &Browser, frame: &Frame, json: &str) {
 /// (update); Some(None) = new login (save).
 fn known(b: Backend, url: &str, user: &str, pass: &str) -> Result<Option<Option<Entry>>, String> {
     let mut same_user = None;
-    for e in matching(b, url)?.iter().filter(|e| user.is_empty() || e.user == user) {
+    for e in matching(b, url)?
+        .iter()
+        .filter(|e| user.is_empty() || e.user == user)
+    {
         if secret(b, e)?.1 == pass {
             return Ok(None);
         }
@@ -886,8 +899,16 @@ fn known(b: Backend, url: &str, user: &str, pass: &str) -> Result<Option<Option<
 /// Locked vault after a submit: we can't tell save from update without unlocking,
 /// and we don't pop the unlock dialog unasked. One question; yes = unlock, then do it.
 fn ask_locked(browser: &Browser, b: Backend, url: &str, user: String, pass: String) {
-    let who = if user.is_empty() { String::new() } else { format!(" for {user}") };
-    let text = format!("Save this login{who} on {} to {}? (unlocks the vault) [y]es [n]o", host(url), label(b));
+    let who = if user.is_empty() {
+        String::new()
+    } else {
+        format!(" for {user}")
+    };
+    let text = format!(
+        "Save this login{who} on {} to {}? (unlocks the vault) [y]es [n]o",
+        host(url),
+        label(b)
+    );
     let url = url.to_string();
     crate::permissions::ask(browser, text, move |yes| {
         if !yes {
