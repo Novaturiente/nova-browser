@@ -1,4 +1,5 @@
-//! Window layout (S2), the tab list and the HTML tab/status bars.
+//! Window layout (S2), the tab list, the HTML tab bar (also shows mode, keys,
+//! messages, progress) and the floating command palette overlay.
 //!
 //! All state lives on the CEF UI thread. CEF calls that can call back into our
 //! handlers (attach, focus, close) run after the state borrow is dropped.
@@ -9,8 +10,7 @@ use crate::{config, devtools, history};
 use cef::*;
 use std::cell::{Cell, RefCell};
 const TABBAR_HTML: &str = include_str!("../ui/tabbar.html");
-const STATUS_HTML: &str = include_str!("../ui/statusbar.html");
-const COMPLETION_HTML: &str = include_str!("../ui/completion.html");
+const PALETTE_HTML: &str = include_str!("../ui/palette.html");
 
 struct Tab {
     view: BrowserView,
@@ -34,8 +34,10 @@ struct State {
     mid: Option<Panel>,
     content: Option<Panel>,
     tabbar: Option<BrowserView>,
-    status: Option<BrowserView>,
-    completion: Option<(BrowserView, OverlayController)>,
+    /// Command line + completion, floating over the content (hidden outside command mode).
+    palette: Option<(BrowserView, OverlayController)>,
+    /// Palette shown as a thin strip (search: the page must stay visible).
+    compact: bool,
     tabs: Vec<Tab>,
     active: usize,
     /// Previously active tab, for `tab-focus last`.
@@ -57,14 +59,12 @@ struct State {
 
 thread_local! {
     static S: RefCell<State> = RefCell::new(State::default());
-    /// Preferred sizes the bar views report (S2: must be non-zero): tab bar (w, h), status h.
+    /// Preferred size the tab bar view reports (S2: must be non-zero).
     static TABBAR_SIZE: Cell<(i32, i32)> = const { Cell::new((1, 24)) };
-    static STATUS_H: Cell<i32> = const { Cell::new(24) };
 }
 
 const KIND_FIXED: u8 = 0;
 const KIND_TABBAR: u8 = 1;
-const KIND_STATUS: u8 = 2;
 
 /// JS string literal; everything but ASCII alphanumerics and space as \uXXXX,
 /// so page titles/URLs can't break out of the script we inject them into.
@@ -449,7 +449,7 @@ fn fields(i: usize, t: &Tab) -> TitleFields<'_> {
 pub fn refresh() {
     let cfg = config::get();
     let tab_fmt = cfg.str("tabs.title.format");
-    let Some((tabbar, status, window, bar_json, status_json, title)) = S.with_borrow(|s| {
+    let Some((tabbar, window, bar_json, title)) = S.with_borrow(|s| {
         let tabs: Vec<String> = s
             .tabs
             .iter()
@@ -491,20 +491,16 @@ pub fn refresh() {
         let title = theme::format_title(&cfg.str("window.title_format"), &fields(s.active, t));
         Some((
             s.tabbar.clone()?,
-            s.status.clone()?,
             s.window.clone()?,
-            format!("{{\"tabs\":[{}]}}", tabs.join(",")),
-            status,
+            format!("{{\"tabs\":[{}],\"status\":{status}}}", tabs.join(",")),
             title,
         ))
     }) else {
         return;
     };
-    for (view, json) in [(tabbar, bar_json), (status, status_json)] {
-        if let Some(f) = view.browser().and_then(|b| b.main_frame()) {
-            let js = format!("window.nova && nova.apply && nova.apply({json})");
-            f.execute_java_script(Some(&CefString::from(js.as_str())), None, 0);
-        }
+    if let Some(f) = tabbar.browser().and_then(|b| b.main_frame()) {
+        let js = format!("window.nova && nova.apply && nova.apply({bar_json})");
+        f.execute_java_script(Some(&CefString::from(js.as_str())), None, 0);
     }
     window.set_title(Some(&CefString::from(title.as_str())));
 }
@@ -632,16 +628,52 @@ pub fn startup_message(level: &str, text: &str) {
     S.with_borrow_mut(|s| s.startup = Some((level.to_string(), text.to_string())));
 }
 
-/// `cmd-set-text`: focus the status bar input with `text`.
+fn palette_js(js: &str) {
+    let view = S.with_borrow(|s| s.palette.as_ref().map(|p| p.0.clone()));
+    if let Some(f) = view.and_then(|v| v.browser()).and_then(|b| b.main_frame()) {
+        f.execute_java_script(Some(&CefString::from(js)), None, 0);
+    }
+}
+
+/// `cmd-set-text`: open the floating palette with `text`. Search (`/`, `?`) gets a
+/// thin strip so the matches stay visible; everything else floats over a blurred
+/// screenshot of the page (CEF views can't be transparent).
 pub fn open_cmdline(text: &str) {
     modes::enter(Mode::Command);
-    let Some(status) = S.with_borrow(|s| s.status.clone()) else {
+    let compact = text.starts_with('/') || text.starts_with('?');
+    let Some((view, overlay, page)) = S.with_borrow_mut(|s| {
+        s.compact = compact;
+        let (v, o) = s.palette.clone()?;
+        Some((v, o, s.tabs.get(s.active).and_then(|t| t.view.browser())))
+    }) else {
         return;
     };
-    status.request_focus();
-    if let Some(f) = status.browser().and_then(|b| b.main_frame()) {
-        let js = format!("nova.cmdline({})", js_str(text));
-        f.execute_java_script(Some(&CefString::from(js.as_str())), None, 0);
+    place_palette();
+    overlay.set_visible(1);
+    // A just-shown overlay ignores focus requests; focus on the next UI task.
+    let _ = view;
+    post_task(ThreadId::UI, Some(&mut FocusPalette::new()));
+    palette_js(&format!("nova.backdrop(null); nova.cmdline({}, {compact})", js_str(text)));
+    if let (false, Some(page)) = (compact, page) {
+        let params = serde_json::json!({ "format": "jpeg", "quality": 70, "optimizeForSpeed": true });
+        devtools::call(&page, "Page.captureScreenshot", params, |r| {
+            let data = r.as_ref().and_then(|r| r["data"].as_str());
+            if let (Some(data), Mode::Command) = (data, modes::mode()) {
+                palette_js(&format!("nova.backdrop(\"data:image/jpeg;base64,{data}\")"));
+            }
+        });
+    }
+}
+
+wrap_task! {
+    struct FocusPalette {}
+    impl Task {
+        fn execute(&self) {
+            let view = S.with_borrow(|s| s.palette.as_ref().map(|p| p.0.clone()));
+            if let (Some(v), Mode::Command) = (view, modes::mode()) {
+                v.request_focus();
+            }
+        }
     }
 }
 
@@ -649,63 +681,41 @@ pub fn open_cmdline(text: &str) {
 pub fn close_cmdline() {
     modes::enter(Mode::Normal);
     crate::completion::reset();
+    if let Some((_, o)) = S.with_borrow(|s| s.palette.clone()) {
+        o.set_visible(0);
+    }
+    palette_js("nova.backdrop(null)");
     focus_active();
     refresh();
 }
 
 /// Replace the command line text (completion, history) without leaving it.
 pub fn set_cmdline_text(text: &str) {
-    let status = S.with_borrow(|s| s.status.clone());
-    if let Some(f) = status
-        .and_then(|v| v.browser())
-        .and_then(|b| b.main_frame())
-    {
-        let js = format!("nova.setText({})", js_str(text));
-        f.execute_java_script(Some(&CefString::from(js.as_str())), None, 0);
-    }
+    palette_js(&format!("nova.setText({})", js_str(text)));
 }
 
-/// Show the completion overlay with `json` (see ui/completion.html), or hide it.
+/// Show completion rows `json` (see ui/palette.html) under the input, or clear them.
 pub fn show_completion(json: Option<&str>) {
-    let Some((view, overlay)) = S.with_borrow(|s| s.completion.clone()) else {
-        return;
-    };
-    let Some(json) = json else {
-        overlay.set_visible(0);
-        return;
-    };
-    if let Some(f) = view.browser().and_then(|b| b.main_frame()) {
-        let js = format!("nova.apply({json})");
-        f.execute_java_script(Some(&CefString::from(js.as_str())), None, 0);
-    }
-    place_completion();
-    overlay.set_visible(1);
+    palette_js(&format!("nova.complete({})", json.unwrap_or("null")));
 }
 
-/// Bottom of the content area, `completion.height` tall (percent or px).
-fn place_completion() {
-    let Some((overlay, r)) = S.with_borrow(|s| {
-        Some((
-            s.completion.as_ref()?.1.clone(),
-            s.content.as_ref()?.bounds(),
-        ))
+/// Full content area, or a top strip one input tall when compact.
+fn place_palette() {
+    let Some((overlay, mid, content, compact)) = S.with_borrow(|s| {
+        Some((s.palette.as_ref()?.1.clone(), s.mid.clone()?, s.content.clone()?, s.compact))
     }) else {
         return;
     };
-    let h = match config::get().get("completion.height") {
-        serde_json::Value::String(p) => p
-            .trim_end_matches('%')
-            .parse::<f64>()
-            .map_or(r.height / 2, |p| (r.height as f64 * p / 100.0) as i32),
-        v => v.as_i64().unwrap_or(0) as i32,
-    }
-    .clamp(1, r.height.max(1));
-    overlay.set_bounds(Some(&Rect {
-        x: r.x,
-        y: r.y + r.height - h,
-        width: r.width,
-        height: h,
-    }));
+    // Overlay bounds are window coordinates; content sits in mid, mid in the window.
+    let (m, c) = (mid.bounds(), content.bounds());
+    let r = Rect { x: m.x + c.x, y: m.y + c.y, ..c };
+    let cfg = config::get();
+    let h = if compact {
+        theme::bar_height(&cfg, "fonts.statusbar", "statusbar.padding") + 16
+    } else {
+        r.height
+    };
+    overlay.set_bounds(Some(&Rect { height: h.clamp(1, r.height.max(1)), ..r }));
 }
 
 wrap_task! {
@@ -748,11 +758,10 @@ fn adopt_popup(view: BrowserView) {
 // ---- layout and theme from config
 
 /// Tab bar side and size from `tabs.position` / `tabs.width` / fonts + paddings.
-fn bar_sizes(window_width: i32) -> (String, (i32, i32), i32) {
+fn bar_sizes(window_width: i32) -> (String, (i32, i32)) {
     let cfg = config::get();
     let pos = cfg.str("tabs.position");
     let tab_h = theme::bar_height(&cfg, "fonts.tabs.selected", "tabs.padding");
-    let status_h = theme::bar_height(&cfg, "fonts.statusbar", "statusbar.padding");
     let size = if pos == "left" || pos == "right" {
         let w = match cfg.get("tabs.width") {
             serde_json::Value::String(p) => p
@@ -765,28 +774,26 @@ fn bar_sizes(window_width: i32) -> (String, (i32, i32), i32) {
     } else {
         (1, tab_h)
     };
-    (pos, size, status_h)
+    (pos, size)
 }
 
 /// Put the tab bar where `tabs.position` says and size the bars; called at window
 /// creation and when the config changes. Views are re-parented, not recreated.
 fn apply_layout() {
-    let Some((window, mid, content, tabbar, status)) = S.with_borrow(|s| {
+    let Some((window, mid, content, tabbar)) = S.with_borrow(|s| {
         Some((
             s.window.clone()?,
             s.mid.clone()?,
             s.content.clone()?,
             s.tabbar.clone()?,
-            s.status.clone()?,
         ))
     }) else {
         return;
     };
-    let (pos, size, status_h) = bar_sizes(window.bounds().width);
+    let (pos, size) = bar_sizes(window.bounds().width);
     TABBAR_SIZE.set(size);
-    STATUS_H.set(status_h);
-    let (tb, m, st) = (View::from(&tabbar), View::from(&mid), View::from(&status));
-    for v in [&tb, &m, &st] {
+    let (tb, m) = (View::from(&tabbar), View::from(&mid));
+    for v in [&tb, &m] {
         if let Some(p) = v.parent_view() {
             if let Some(p) = p.as_panel() {
                 p.remove_child_view(Some(&mut v.clone()))
@@ -794,9 +801,9 @@ fn apply_layout() {
         }
     }
     let order: Vec<&View> = match pos.as_str() {
-        "bottom" => vec![&m, &tb, &st],
-        "left" | "right" => vec![&m, &st],
-        _ => vec![&tb, &m, &st],
+        "bottom" => vec![&m, &tb],
+        "left" | "right" => vec![&m],
+        _ => vec![&tb, &m],
     };
     for v in order {
         window.add_child_view(Some(&mut v.clone()));
@@ -825,12 +832,11 @@ fn apply_layout() {
         _ => true,
     };
     tabbar.set_visible(show as i32);
-    for v in [&tb, &st] {
-        v.invalidate_layout();
-    }
+    tb.invalidate_layout();
     window.layout();
-    place_completion();
+    place_palette();
     push_theme();
+    focus_active(); // re-parenting moves focus off the page
 }
 
 /// Send the CSS variables and layout facts to every UI page.
@@ -840,16 +846,13 @@ fn push_theme() {
     let json = serde_json::json!({
         "vars": theme::vars(&cfg),
         "vertical": vertical,
-        "widgets": cfg.list("statusbar.widgets"),
+        "listHeight": match cfg.get("completion.height") {
+            serde_json::Value::String(p) if p.ends_with('%') => format!("{}vh", p.trim_end_matches('%')),
+            v => format!("{}px", v.as_i64().unwrap_or(300)),
+        },
     })
     .to_string();
-    let views = S.with_borrow(|s| {
-        [
-            s.tabbar.clone(),
-            s.status.clone(),
-            s.completion.as_ref().map(|c| c.0.clone()),
-        ]
-    });
+    let views = S.with_borrow(|s| [s.tabbar.clone(), s.palette.as_ref().map(|c| c.0.clone())]);
     for v in views.into_iter().flatten() {
         if let Some(f) = v.browser().and_then(|b| b.main_frame()) {
             let js = format!("window.nova && nova.theme && nova.theme({json})");
@@ -883,7 +886,6 @@ wrap_browser_view_delegate! {
             // Width and height must be non-zero, else CEF uses the whole window (S2).
             let (width, height) = match self.kind {
                 KIND_TABBAR => TABBAR_SIZE.get(),
-                KIND_STATUS => (1, STATUS_H.get()),
                 _ => (1, 1),
             };
             Size { width, height }
@@ -907,10 +909,10 @@ wrap_window_delegate! {
     impl ViewDelegate {
         fn preferred_size(&self, _view: Option<&mut View>) -> Size { Size { width: 1200, height: 800 } }
         fn on_layout_changed(&self, _view: Option<&mut View>, bounds: Option<&Rect>) {
-            place_completion();
+            place_palette();
             // vertical tab bar width is a percentage of the window: re-layout on resize
             let w = bounds.map_or(0, |b| b.width);
-            let (_, size, _) = bar_sizes(w);
+            let (_, size) = bar_sizes(w);
             if size.1 == 1 && size != TABBAR_SIZE.get() {
                 post_task(ThreadId::UI, Some(&mut Relayout::new()));
             }
@@ -938,19 +940,17 @@ wrap_window_delegate! {
             }));
             let content = panel_create(None).expect("panel");
             content.set_to_fill_layout();
-            let status = browser_view(&mut UiClient::new(), &data_url(STATUS_HTML).to_string(), KIND_STATUS, &ui);
-            // Added last so it stays on top (cef_window.h); positioned by place_completion.
-            let completion = browser_view(&mut UiClient::new(), &data_url(COMPLETION_HTML).to_string(), KIND_FIXED, &ui);
+            // Added last so it stays on top (cef_window.h); positioned by place_palette.
+            let palette = browser_view(&mut UiClient::new(), &data_url(PALETTE_HTML).to_string(), KIND_FIXED, &ui);
             let overlay = window
-                .add_overlay_view(Some(&mut View::from(&completion)), DockingMode::CUSTOM, 0)
-                .expect("completion overlay");
+                .add_overlay_view(Some(&mut View::from(&palette)), DockingMode::CUSTOM, 1) // can_activate: takes keys
+                .expect("palette overlay");
             let (start, startup) = S.with_borrow_mut(|s| {
-                s.completion = Some((completion, overlay));
+                s.palette = Some((palette, overlay));
                 s.window = Some(window.clone());
                 s.mid = Some(mid);
                 s.content = Some(content);
                 s.tabbar = Some(tabbar);
-                s.status = Some(status);
                 (s.start_url.clone(), s.startup.take())
             });
             apply_layout();

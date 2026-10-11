@@ -21,16 +21,45 @@
   .t.l { border-left-color: var(--colors-tabs-indicator-start); }
   .t.d { border-left-color: var(--colors-tabs-indicator-stop); }
   .t.e { border-left-color: var(--colors-tabs-indicator-error); }
+  /* Status (no status bar): mode, pending keys, message at the end; load progress as a line. */
+  #tabs { display: contents; }
+  #info { margin-left: auto; display: flex; align-items: center; gap: 6px; padding: 0 8px; flex: 0 1 auto;
+          min-width: 0; font: var(--fonts-statusbar, 10pt monospace); white-space: nowrap; }
+  body.vertical #info { margin: auto 0 0; padding: 6px 8px; flex-wrap: wrap; white-space: normal; }
+  #info span:empty { display: none; }
+  #info span { padding: 1px 9px; border-radius: 999px; overflow: hidden; text-overflow: ellipsis; }
+  #mode { color: var(--colors-statusbar-normal-fg); background: var(--colors-statusbar-normal-bg); }
+  #mode.insert { color: var(--colors-statusbar-insert-fg); background: var(--colors-statusbar-insert-bg); }
+  #mode.passthrough { color: var(--colors-statusbar-passthrough-fg); background: var(--colors-statusbar-passthrough-bg); }
+  #mode.command { color: var(--colors-statusbar-command-fg); background: var(--colors-statusbar-command-bg); }
+  #keys { color: var(--colors-statusbar-normal-fg); background: var(--colors-statusbar-normal-bg); }
+  #msg { min-width: 0; }
+  #msg.error { color: var(--colors-messages-error-fg); background: var(--colors-messages-error-bg); }
+  #msg.warning { color: var(--colors-messages-warning-fg); background: var(--colors-messages-warning-bg); }
+  #msg.info { color: var(--colors-messages-info-fg); background: var(--colors-messages-info-bg); }
+  #progress { position: fixed; left: 0; bottom: 0; height: 2px; width: 0; transition: width 120ms;
+              background: var(--colors-statusbar-progress-bg); }
+  body.vertical #progress { top: 0; bottom: auto; }
 </style>
 <body>
+<div id="tabs"></div><div id="info"><span id="msg"></span><span id="keys"></span><span id="mode"></span></div><div id="progress"></div>
 <script>
+  const $ = (id) => document.getElementById(id);
   nova.theme = (t) => {
     for (const [k, v] of Object.entries(t.vars)) document.documentElement.style.setProperty(k, v);
     document.body.classList.toggle("vertical", t.vertical);
   };
-  // Core → UI: nova.apply({tabs: [{t: label, a: active, l: loading, p: progress, e: crashed}]}).
+  // Core → UI: nova.apply({tabs: [{t: label, a: active, l: loading, p: progress, e: crashed}],
+  //   status: {mode, modename, cmd, keys, level, msg, loading, p, crashed}}).
   nova.apply = (s) => {
-    document.body.replaceChildren(...s.tabs.map((tab, i) => {
+    const st = s.status;
+    $("mode").textContent = st.cmd ? "" : st.mode.replace(/^-- | --$/g, "");
+    $("mode").className = st.modename;
+    $("keys").textContent = st.keys;
+    $("msg").textContent = st.msg;
+    $("msg").className = st.level;
+    $("progress").style.width = st.loading ? Math.max(3, Math.round(st.p * 100)) + "%" : "0";
+    $("tabs").replaceChildren(...s.tabs.map((tab, i) => {
       const d = document.createElement("div");
       d.className = "t" + (tab.a ? " a" : "") + (tab.e ? " e" : tab.l ? " l" : " d");
       d.textContent = tab.t;

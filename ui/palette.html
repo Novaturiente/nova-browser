@@ -1,0 +1,127 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>palette</title>
+<style>
+  /* Floating command line + completion (Zen-style). Colours/fonts are CSS variables
+     from config (theme.rs), set by nova.theme. CEF views can't be transparent, so the
+     page behind is a blurred screenshot (nova.backdrop). */
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body { background: var(--colors-tabs-bar-bg, #111); font: var(--fonts-completion-entry, 10pt monospace);
+         color: var(--colors-completion-fg, #fff); }
+  #bg { position: fixed; inset: -24px; width: calc(100% + 48px); height: calc(100% + 48px);
+        object-fit: cover; filter: blur(10px) brightness(.45); opacity: 0; transition: opacity 90ms; }
+  #bg.on { opacity: 1; }
+  #card { position: relative; margin: 10vh auto 0; width: min(760px, 86vw); box-sizing: border-box;
+          border-radius: 14px; overflow: hidden; background: var(--colors-completion-even-bg, #222);
+          border: 1px solid var(--colors-completion-category-border-top, #444);
+          box-shadow: 0 18px 50px rgba(0, 0, 0, .55); }
+  body.compact { background: var(--colors-completion-even-bg, #222); }
+  body.compact #card { margin: 0; width: 100%; height: 100%; border-radius: 0; border: 0; box-shadow: none;
+                       display: flex; align-items: center; }
+  body.compact #list, body.compact #title { display: none; }
+  #cmd { display: block; width: 100%; box-sizing: border-box; padding: 12px 16px; border: 0; outline: 0;
+         background: transparent; color: var(--colors-statusbar-command-fg, inherit);
+         font: var(--fonts-statusbar, 11pt monospace); font-size: 1.15em; }
+  #title { padding: 6px 16px 3px; font: var(--fonts-completion-category, bold 10pt monospace);
+           color: var(--colors-completion-category-fg); border-top: 1px solid var(--colors-completion-category-border-top, #333); }
+  #title:empty, #list:empty { display: none; }
+  #list { max-height: var(--palette-list-height, 40vh); overflow: hidden; padding: 0 6px 6px; }
+  .row { display: flex; padding: 5px 10px; white-space: nowrap; border-radius: 8px; }
+  .row.sel { color: var(--colors-completion-item-selected-fg); background: var(--colors-completion-item-selected-bg); }
+  .a { flex: 0 1 60%; overflow: hidden; text-overflow: ellipsis; padding-right: 12px; }
+  .b { flex: 1; overflow: hidden; text-overflow: ellipsis; opacity: .65; }
+</style>
+<body>
+<img id="bg" alt="">
+<div id="card"><input id="cmd" spellcheck="false"><div id="title"></div><div id="list"></div></div>
+<script>
+  const $ = (id) => document.getElementById(id);
+  nova.theme = (t) => {
+    for (const [k, v] of Object.entries(t.vars)) document.documentElement.style.setProperty(k, v);
+    document.documentElement.style.setProperty("--palette-list-height", t.listHeight);
+  };
+  // Page screenshot (data: URL) shown blurred behind the card; null clears it.
+  nova.backdrop = (url) => {
+    const bg = $("bg");
+    if (!url) { bg.className = ""; bg.removeAttribute("src"); return; }
+    bg.onload = () => { bg.className = "on"; };
+    bg.src = url;
+  };
+  // Completion: nova.complete({title, items: [[text, description]], sel}) or null.
+  const list = $("list");
+  nova.complete = (s) => {
+    $("title").textContent = s ? s.title : "";
+    list.replaceChildren(...(s ? s.items : []).map(([a, b], i) => {
+      const row = document.createElement("div");
+      row.className = i === s.sel ? "row sel" : "row";
+      for (const [cls, text] of [["a", a], ["b", b]]) {
+        const d = document.createElement("div");
+        d.className = cls;
+        d.textContent = text;
+        row.append(d);
+      }
+      return row;
+    }));
+    if (s) list.children[s.sel]?.scrollIntoView({ block: "nearest" });
+  };
+  // cmd-set-text: show the input with text, cursor at the end. compact = search (no backdrop).
+  nova.cmdline = (text, compact) => {
+    document.body.className = compact ? "compact" : "";
+    nova.complete(null);
+    const c = $("cmd");
+    c.value = text;
+    c.focus();
+    c.setSelectionRange(text.length, text.length);
+    nova.send("text " + text);
+  };
+  // Completion / history: replace the text, keep the cursor at the end, don't report it as typed.
+  nova.setText = (text) => { const c = $("cmd"); c.value = text; c.setSelectionRange(text.length, text.length); };
+
+  const c = $("cmd");
+  // Deleting the leading ":" leaves command mode (qutebrowser).
+  c.addEventListener("input", () => nova.send(c.value === "" ? "cmdleave" : "text " + c.value));
+  let killed = "";
+  // Readline edits (qutebrowser command-mode defaults). Word = run of non-space.
+  // Kills stop at the leading ":".
+  const edit = (from, to, newCursor, kill) => {
+    const lo = c.value.startsWith(":") ? 1 : 0;
+    from = Math.max(from, lo);
+    newCursor = Math.max(newCursor, lo);
+    if (from >= to) return;
+    if (kill) killed = c.value.slice(from, to);
+    c.setRangeText("", from, to);
+    c.setSelectionRange(newCursor, newCursor);
+    nova.send("text " + c.value);
+  };
+  const wordBack = (p) => { while (p > 0 && c.value[p - 1] === " ") p--; while (p > 0 && c.value[p - 1] !== " ") p--; return p; };
+  const wordFwd = (p) => { const n = c.value.length; while (p < n && c.value[p] === " ") p++; while (p < n && c.value[p] !== " ") p++; return p; };
+  const move = (p) => c.setSelectionRange(p, p);
+  c.addEventListener("keydown", (e) => {
+    const p = c.selectionStart, k = e.key, ctrl = e.ctrlKey && !e.altKey, alt = e.altKey && !e.ctrlKey;
+    const act = (
+      k === "Enter" ? () => nova.send("run " + c.value) :
+      k === "Escape" || (ctrl && k === "[") ? () => nova.send("cmdleave") :
+      k === "Backspace" && !ctrl && !alt && c.value === "" ? () => nova.send("cmdleave") :
+      k === "Tab" && !ctrl && !alt ? () => nova.send(e.shiftKey ? "complete -1" : "complete 1") :
+      k === "ArrowUp" || (ctrl && k === "p") ? () => nova.send("hist -1") :
+      k === "ArrowDown" || (ctrl && k === "n") ? () => nova.send("hist 1") :
+      ctrl && k === "a" ? () => move(c.value.startsWith(":") ? 1 : 0) :
+      ctrl && k === "e" ? () => move(c.value.length) :
+      ctrl && k === "b" ? () => move(Math.max(0, p - 1)) :
+      ctrl && k === "f" ? () => move(p + 1) :
+      alt && k === "b" ? () => move(wordBack(p)) :
+      alt && k === "f" ? () => move(wordFwd(p)) :
+      ctrl && k === "u" ? () => edit(0, p, 0, true) :
+      ctrl && k === "k" ? () => edit(p, c.value.length, p, true) :
+      ctrl && k === "w" ? () => edit(wordBack(p), p, wordBack(p), true) :
+      alt && k === "d" ? () => edit(p, wordFwd(p), p, true) :
+      ctrl && k === "h" ? () => p > 0 && edit(p - 1, p, p - 1, false) :
+      ctrl && k === "y" ? () => { c.setRangeText(killed, p, p, "end"); nova.send("text " + c.value); } :
+      null);
+    if (act) { e.preventDefault(); act(); }
+  });
+  // Clicking the blurred page closes the palette.
+  document.body.addEventListener("mousedown", (e) => { if (!$("card").contains(e.target)) nova.send("cmdleave"); });
+  nova.send("ready");
+</script>
+</body>
