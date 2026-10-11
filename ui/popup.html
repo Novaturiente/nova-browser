@@ -1,0 +1,50 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>popup</title>
+<style>
+  /* Tab tooltip (title + URL) and the tab right-click menu. Theme vars from nova.theme. */
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body { box-sizing: border-box; padding: 6px; font: var(--fonts-tooltip, var(--fonts-statusbar, 10pt sans-serif));
+         background: var(--colors-tooltip-bg, #222); color: var(--colors-tooltip-fg, #eee);
+         border: 1px solid var(--colors-completion-category-border-top, #444); }
+  body.menu { background: var(--colors-contextmenu-menu-bg, #222); color: var(--colors-contextmenu-menu-fg, #eee);
+              font: var(--fonts-contextmenu, var(--fonts-statusbar, 10pt sans-serif)); }
+  .t { font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 2px 4px; }
+  .u { opacity: .7; word-break: break-all; padding: 2px 4px; }
+  .i { padding: 0 10px; height: 28px; line-height: 28px; border-radius: 6px; cursor: default; display: flex; }
+  .i span { flex: 1; } .i kbd { opacity: .5; font: inherit; }
+  .i.sel { background: var(--colors-contextmenu-selected-bg, #444); color: var(--colors-contextmenu-selected-fg, #fff); }
+</style>
+<body><div id="c"></div>
+<script>
+  const c = document.getElementById("c");
+  let items = [], sel = 0, tab = -1;
+  nova.theme = (t) => { for (const [k, v] of Object.entries(t.vars)) document.documentElement.style.setProperty(k, v); };
+  const el = (cls, text) => Object.assign(document.createElement("div"), { className: cls, textContent: text });
+  nova.tip = (title, url) => { document.body.className = ""; c.replaceChildren(el("t", title), el("u", url)); };
+  // nova.menu(tab, [[action, label, key], ...])
+  nova.menu = (t, list) => {
+    tab = t; items = list; sel = 0; document.body.className = "menu"; draw();
+  };
+  const draw = () => c.replaceChildren(...items.map(([a, label, key], i) => {
+    const d = el("i" + (i === sel ? " sel" : ""), "");
+    d.append(Object.assign(document.createElement("span"), { textContent: label }), Object.assign(document.createElement("kbd"), { textContent: key || "" }));
+    d.onmouseenter = () => { sel = i; draw(); };
+    d.onmousedown = (e) => { e.preventDefault(); pick(i); };
+    return d;
+  }));
+  const pick = (i) => nova.send("menuact " + tab + " " + items[i][0]);
+  addEventListener("keydown", (e) => {
+    if (!items.length) return;
+    const k = e.key;
+    if (k === "Escape") nova.send("menuclose");
+    else if (k === "j" || k === "ArrowDown" || k === "Tab") { sel = (sel + 1) % items.length; draw(); }
+    else if (k === "k" || k === "ArrowUp") { sel = (sel + items.length - 1) % items.length; draw(); }
+    else if (k === "Enter") pick(sel);
+    else return;
+    e.preventDefault();
+  });
+  addEventListener("blur", () => items.length && nova.send("menuclose"));
+  nova.send("ready");
+</script>
+</body>

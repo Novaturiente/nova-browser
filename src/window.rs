@@ -12,6 +12,7 @@ use std::cell::{Cell, RefCell};
 const TABBAR_HTML: &str = include_str!("../ui/tabbar.html");
 const PALETTE_HTML: &str = include_str!("../ui/palette.html");
 const KEYHINT_HTML: &str = include_str!("../ui/keyhint.html");
+const POPUP_HTML: &str = include_str!("../ui/popup.html");
 
 struct Tab {
     view: BrowserView,
@@ -38,6 +39,9 @@ struct State {
     /// Command line + completion, floating over the content (hidden outside command mode).
     palette: Option<(BrowserView, OverlayController)>,
     keyhint: Option<(BrowserView, OverlayController)>,
+    /// tab tooltip (can't take focus) and tab right-click menu (can)
+    tip: Option<(BrowserView, OverlayController)>,
+    menu: Option<(BrowserView, OverlayController)>,
     /// bumped on every keyhint change; a delayed show only applies if still current
     keyhint_gen: u64,
     /// Palette shown as a thin strip (search: the page must stay visible).
@@ -701,8 +705,14 @@ pub fn close_active() {
 }
 
 pub fn close_others() {
+    close_others_than(S.with_borrow(|s| s.active));
+}
+
+/// Close every tab but `keep`.
+fn close_others_than(keep: usize) {
+    let Some(id) = S.with_borrow(|s| s.tabs.get(keep).and_then(|t| browser_id(&t.view))) else { return };
     loop {
-        let n = S.with_borrow(|s| (s.tabs.len() > 1).then_some(if s.active == 0 { 1 } else { 0 }));
+        let n = S.with_borrow(|s| s.tabs.iter().position(|t| browser_id(&t.view) != Some(id) && s.tabs.len() > 1));
         let Some(n) = n else { break };
         remove(n);
     }
@@ -906,6 +916,115 @@ pub fn set_cmdline_text(text: &str) {
 /// Show completion rows `json` (see ui/palette.html) under the input, or clear them.
 pub fn show_completion(json: Option<&str>) {
     palette_js(&format!("nova.complete({})", json.unwrap_or("null")));
+}
+
+/// Show `overlay` at `r` (window coords, kept inside the window) and run `js` in it.
+fn popup_at(view: &BrowserView, overlay: &OverlayController, mut r: Rect, js: &str) {
+    if let Some(w) = S.with_borrow(|s| s.window.clone()) {
+        let b = w.bounds();
+        r.x = r.x.min(b.width - r.width - 4).max(4);
+        r.y = r.y.min(b.height - r.height - 4).max(0);
+    }
+    overlay.set_bounds(Some(&r));
+    overlay.set_visible(1);
+    if let Some(f) = view.browser().and_then(|b| b.main_frame()) {
+        f.execute_java_script(Some(&CefString::from(js)), None, 0);
+    }
+}
+
+/// Tab bar's origin in window coordinates (it may sit inside `mid` when vertical).
+fn tabbar_origin() -> (i32, i32) {
+    S.with_borrow(|s| {
+        let tb = s.tabbar.as_ref()?;
+        let mut p = Point { x: 0, y: 0 };
+        View::from(tb).convert_point_to_window(Some(&mut p));
+        Some((p.x, p.y))
+    })
+    .unwrap_or((0, 0))
+}
+
+/// Parse "i left bottom right" (tab-bar CSS px) from the tab bar page.
+fn tab_rect(arg: &str) -> Option<(usize, i32, i32, i32)> {
+    let v: Vec<i64> = arg.split(' ').filter_map(|x| x.parse().ok()).collect();
+    match v[..] {
+        [i, l, b, r] if i >= 0 => Some((i as usize, l as i32, b as i32, r as i32)),
+        _ => None,
+    }
+}
+
+/// "tip i left bottom right" from the tab bar: show title + URL under (or beside) tab i.
+pub fn tab_tip(arg: &str) {
+    let Some((view, overlay)) = S.with_borrow(|s| s.tip.clone()) else { return };
+    let Some((i, left, bottom, right)) = tab_rect(arg) else { return overlay.set_visible(0) };
+    let Some((title, url)) = S.with_borrow(|s| s.tabs.get(i).map(|t| (t.title.clone(), t.url.clone()))) else { return };
+    let (ox, oy) = tabbar_origin();
+    let vertical = matches!(config::get().str("tabs.position").as_str(), "left" | "right");
+    let (w, h) = (480, 30 + 20 * (url.len() as i32 / 60 + 1).min(4));
+    let (x, y) = if vertical { (ox + right + 6, oy + bottom - 24) } else { (ox + left, oy + bottom + 4) };
+    popup_at(&view, &overlay, Rect { x, y, width: w, height: h }, &format!("nova.tip({}, {})", js_str(&title), js_str(&url)));
+}
+
+const MENU: &[(&str, &str, &str)] = &[
+    ("reload", "Reload", "r"),
+    ("clone", "Duplicate", "gC"),
+    ("yank", "Copy URL", "yy"),
+    ("mute", "Mute / unmute", "Alt-m"),
+    ("bookmark", "Bookmark", "M"),
+    ("close", "Close", "d"),
+    ("others", "Close other tabs", "co"),
+];
+
+/// "menu i x bottom right": the tab's right-click menu at the mouse.
+pub fn tab_menu(arg: &str) {
+    let Some((view, overlay)) = S.with_borrow(|s| s.menu.clone()) else { return };
+    let Some((i, x, bottom, _)) = tab_rect(arg) else { return };
+    if let Some((_, o)) = S.with_borrow(|s| s.tip.clone()) {
+        o.set_visible(0);
+    }
+    let (ox, oy) = tabbar_origin();
+    let items: Vec<_> = MENU.iter().map(|(a, l, k)| [a, l, k]).collect();
+    let r = Rect { x: ox + x, y: oy + bottom + 2, width: 230, height: MENU.len() as i32 * 28 + 14 };
+    popup_at(&view, &overlay, r, &format!("nova.menu({i}, {})", serde_json::json!(items)));
+    // a just-shown overlay ignores request_focus (same as the palette)
+    post_task(ThreadId::UI, Some(&mut FocusMenu::new()));
+}
+
+wrap_task! {
+    struct FocusMenu {}
+    impl Task {
+        fn execute(&self) {
+            if let Some((v, o)) = S.with_borrow(|s| s.menu.clone()) {
+                if o.is_visible() != 0 {
+                    v.request_focus();
+                }
+            }
+        }
+    }
+}
+
+pub fn close_popup() {
+    if let Some((_, o)) = S.with_borrow(|s| s.menu.clone()) {
+        o.set_visible(0);
+    }
+    focus_active();
+}
+
+/// "i action" from the menu: run it on tab i (not necessarily the active one).
+pub fn tab_menu_action(arg: &str) {
+    close_popup();
+    let Some((i, action)) = arg.split_once(' ').and_then(|(i, a)| Some((i.parse::<usize>().ok()?, a))) else { return };
+    let Some(id) = S.with_borrow(|s| s.tabs.get(i).and_then(|t| browser_id(&t.view))) else { return };
+    let cmd = match action {
+        "close" => return close(i),
+        "others" => return close_others_than(i),
+        "reload" => "reload",
+        "clone" => "tab-clone -b",
+        "yank" => "yank",
+        "mute" => "tab-mute",
+        "bookmark" => "bookmark-add",
+        _ => return,
+    };
+    run_in_tab(id, || crate::commands::run(cmd, None));
 }
 
 wrap_task! {
@@ -1125,7 +1244,7 @@ fn push_theme() {
         },
     })
     .to_string();
-    let views = S.with_borrow(|s| [s.tabbar.clone(), s.palette.as_ref().map(|c| c.0.clone()), s.keyhint.as_ref().map(|c| c.0.clone())]);
+    let views = S.with_borrow(|s| [s.tabbar.clone(), s.palette.as_ref().map(|c| c.0.clone()), s.keyhint.as_ref().map(|c| c.0.clone()), s.tip.as_ref().map(|c| c.0.clone()), s.menu.as_ref().map(|c| c.0.clone())]);
     for v in views.into_iter().flatten() {
         if let Some(f) = v.browser().and_then(|b| b.main_frame()) {
             let js = format!("window.nova && nova.theme && nova.theme({json})");
@@ -1220,6 +1339,10 @@ wrap_window_delegate! {
             let kh_overlay = window
                 .add_overlay_view(Some(&mut View::from(&keyhint)), DockingMode::CUSTOM, 0)
                 .expect("keyhint overlay");
+            let tip = browser_view(&mut UiClient::new(), &data_url(POPUP_HTML).to_string(), KIND_FIXED, &ui);
+            let tip_overlay = window.add_overlay_view(Some(&mut View::from(&tip)), DockingMode::CUSTOM, 0).expect("tip overlay");
+            let menu = browser_view(&mut UiClient::new(), &data_url(POPUP_HTML).to_string(), KIND_FIXED, &ui);
+            let menu_overlay = window.add_overlay_view(Some(&mut View::from(&menu)), DockingMode::CUSTOM, 1).expect("menu overlay");
             // Added last so it stays on top (cef_window.h); positioned by place_palette.
             let palette = browser_view(&mut UiClient::new(), &data_url(PALETTE_HTML).to_string(), KIND_FIXED, &ui);
             let overlay = window
@@ -1228,6 +1351,8 @@ wrap_window_delegate! {
             let (start, startup) = S.with_borrow_mut(|s| {
                 s.palette = Some((palette, overlay));
                 s.keyhint = Some((keyhint, kh_overlay));
+                s.tip = Some((tip, tip_overlay));
+                s.menu = Some((menu, menu_overlay));
                 s.window = Some(window.clone());
                 s.mid = Some(mid);
                 s.content = Some(content);

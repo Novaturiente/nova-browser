@@ -131,6 +131,10 @@ wrap_client! {
                 ("complete", Ok(by)) => completion::select(by),
                 ("hist", Ok(by)) => completion::history_step(by),
                 ("cmdleave", _) => window::close_cmdline(),
+                ("tip", _) => window::tab_tip(arg),
+                ("menu", _) => window::tab_menu(arg),
+                ("menuact", _) => window::tab_menu_action(arg),
+                ("menuclose", _) => window::close_popup(),
                 _ => eprintln!("novabrowser: unknown UI message {text:?}"),
             }
             1

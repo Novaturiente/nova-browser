@@ -57,6 +57,7 @@
   };
   // Core → UI: nova.apply({tabs: [{t: label, a: active, l: loading, p: progress, e: crashed}],
   //   status: {mode, modename, cmd, keys, level, msg, loading, p, crashed}}).
+  let tipTimer;
   nova.apply = (s) => {
     const st = s.status;
     $("mode").textContent = st.cmd ? "" : st.mode.replace(/^-- | --$/g, "");
@@ -71,11 +72,19 @@
       const d = document.createElement("div");
       d.className = "t" + (tab.a ? " a" : "") + (tab.e ? " e" : tab.l ? " l" : " d");
       d.textContent = tab.t;
-      d.title = tab.t;
       d.onmousedown = (e) => {
+        clearTimeout(tipTimer);
         if (e.button === 0) nova.send("tab " + i);
         if (e.button === 1) { e.preventDefault(); nova.send("close " + i); }
+        if (e.button === 2) { const r = d.getBoundingClientRect(); nova.send(`menu ${i} ${Math.round(e.clientX)} ${Math.round(r.bottom)} ${Math.round(r.right)}`); }
       };
+      d.oncontextmenu = (e) => e.preventDefault();
+      // hover: full title + URL after a short wait
+      d.onmouseenter = () => {
+        clearTimeout(tipTimer);
+        tipTimer = setTimeout(() => { const r = d.getBoundingClientRect(); nova.send(`tip ${i} ${Math.round(r.left)} ${Math.round(r.bottom)} ${Math.round(r.right)}`); }, 450);
+      };
+      d.onmouseleave = () => { clearTimeout(tipTimer); nova.send("tip -1"); };
       return d;
     }));
     document.querySelector(".t.a")?.scrollIntoView({ block: "nearest", inline: "nearest" });
