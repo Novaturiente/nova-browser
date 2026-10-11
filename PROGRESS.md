@@ -6,7 +6,7 @@ session; update before ending one (rules in `AGENTS.md`).
 ## Now
 
 - **Phase:** 8 week running + 8b hands-on + 9 (AUR) built
-- **Next action:** own CEF build on the laptop. Source download running in `~/cef-build` (branch 8037 @ 14c5a08). Source downloaded (29 GB), patches applied and `gn gen` verified (PA-E, BRP, PGO 2, ThinLTO, CFI, codecs). Tonight: `autoninja -j6 cefsimple` + `make_distrib` per `packaging/cef-patches/README.md`. Check: novabrowser tests + smoke against it, no `__libc_malloc` import, H.264 plays, Speedometer 3 ×3 vs prebuilt and Chrome. User-only: `rbw login` + save/update test, package install, Phase 8 week.
+- **Next action:** own CEF built (`~/.local/share/cef-own`, novabrowser built against it in `target-own/`). Passed: 88 tests, smoke, PartitionAlloc exports its own `malloc` (prebuilt imports `__libc_malloc`), H.264+AAC file plays (150/150 frames), idle net-log has no ListAccounts and only the 4 allowlisted components. Left: Speedometer 3 ×3 (own vs prebuilt vs Chrome) on AC with the laptop untouched; then decide whether the daily binary switches to the own CEF. User-only: `rbw login` + save/update test, package install, Phase 8 week.
 - **Blockers:** none
 
 ## Checklist
@@ -114,6 +114,8 @@ Newest first. Settled — don't reopen without new evidence.
 ## Session log
 
 Newest first. One entry per session: date, what changed, evidence, what's next.
+
+- 2026-10-12 (IST, 05:30) — Own CEF compiled on the laptop (~4.6 h incl. one restart: privacy.patch tripped `-Werror,-Wunreachable-code`, fixed by emptying the function; `make_distrib` needs the `chrome_sandbox` target too). Package laid out like `export-cef-dir` in `~/.local/share/cef-own`; build novabrowser with `CEF_PATH=$HOME/.local/share/cef-own CARGO_TARGET_DIR=target-own`. Checks above passed. Next: Speedometer on AC.
 
 - 2026-10-11 (IST) — Locked vault: unlock row / `<Space>pp` / save prompt unlock on demand (b7fce8b, pushed). X11 check skipped by user (unverified). Next: user-only checks, then own CEF build.
 
