@@ -1,0 +1,62 @@
+# Maintainer: Novaturiente
+pkgname=novabrowser-git
+pkgver=r0
+pkgrel=1
+pkgdesc="Keyboard-driven browser on Chromium (CEF), configured in TypeScript"
+arch=(x86_64)
+url="https://github.com/Novaturiente/nova-browser"
+license=(GPL-3.0-or-later)
+# libcef.so's runtime deps (same set Arch's cef/electron packages pull in)
+depends=(sqlite gtk3 nss alsa-lib libxss libxkbcommon libdrm mesa libcups at-spi2-core)
+makedepends=(git cargo cmake ninja)
+optdepends=('wl-clipboard: primary selection and paste on Wayland'
+            'xclip: primary selection and paste on X11'
+            'xdg-utils: download-open and default-browser setup')
+provides=(novabrowser)
+conflicts=(novabrowser)
+# libcef.so ships with debug info (~1.4 GB); strip keeps ~280 MB
+options=(strip !lto !debug)
+source=("$pkgname::git+$url.git")
+sha256sums=(SKIP)
+
+pkgver() {
+  cd "$pkgname"
+  printf "r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+}
+
+prepare() {
+  cd "$pkgname"
+  export CARGO_HOME="$srcdir/cargo-home"
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "$pkgname"
+  export CARGO_HOME="$srcdir/cargo-home"
+  # cef-dll-sys downloads the matching CEF minimal build (sha1-checked) into here
+  export CEF_PATH="$srcdir/cef"
+  cargo build --release --frozen
+}
+
+check() {
+  cd "$pkgname"
+  export CARGO_HOME="$srcdir/cargo-home" CEF_PATH="$srcdir/cef"
+  cargo test --release --frozen
+}
+
+package() {
+  cd "$pkgname"
+  local lib="$pkgdir/usr/lib/novabrowser" r=target/release
+  install -Dm755 $r/novabrowser "$lib/novabrowser"
+  install -m755 $r/libcef.so $r/libvk_swiftshader.so $r/libvulkan.so.1 "$lib/"
+  install -m644 $r/{icudtl.dat,v8_context_snapshot.bin,resources.pak,chrome_100_percent.pak,chrome_200_percent.pak,vk_swiftshader_icd.json} "$lib/"
+  cp -r $r/locales "$lib/"
+  chmod 644 "$lib"/locales/*
+  # binary has RUNPATH $ORIGIN, so a symlink is the whole launcher
+  install -d "$pkgdir/usr/bin"
+  ln -s /usr/lib/novabrowser/novabrowser "$pkgdir/usr/bin/novabrowser"
+  install -Dm644 packaging/novabrowser.desktop "$pkgdir/usr/share/applications/novabrowser.desktop"
+  install -Dm644 packaging/novabrowser.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/novabrowser.svg"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/novabrowser/README.md"
+  install -Dm644 $r/CREDITS.html "$pkgdir/usr/share/licenses/$pkgname/CEF-CREDITS.html"
+}
