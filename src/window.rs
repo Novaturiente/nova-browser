@@ -1401,13 +1401,19 @@ pub fn config_changed() {
     modes::init();
     crate::net::apply_cookie_policy();
     crate::apply_spellcheck();
-    apply_layout();
-    let browsers: Vec<Browser> =
-        S.with_borrow(|s| s.tabs.iter().filter_map(|t| t.view.browser()).collect());
-    for b in &browsers {
-        apply_dark(b);
+    // every window, not just the one that ran :set
+    let slots: Vec<usize> = WINS.with_borrow(|w| (0..w.len()).filter(|&i| w[i].window.is_some()).collect());
+    for i in slots {
+        in_slot(i, || {
+            apply_layout();
+            let browsers: Vec<Browser> =
+                S.with_borrow(|s| s.tabs.iter().filter_map(|t| t.view.browser()).collect());
+            for b in &browsers {
+                apply_dark(b);
+            }
+            refresh();
+        });
     }
-    refresh();
 }
 
 wrap_browser_view_delegate! {
