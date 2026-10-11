@@ -176,6 +176,13 @@ wrap_resource_request_handler! {
             net::set_headers(r, &url);
             ReturnValue::CONTINUE
         }
+        fn on_resource_redirect(&self, _browser: Option<&mut Browser>, _frame: Option<&mut Frame>, _request: Option<&mut Request>, _response: Option<&mut Response>, new_url: Option<&mut CefString>) {
+            // Redirects skip on_before_resource_load: without this an https server could
+            // send us back to http. A site that only works on http then loops
+            // (ERR_TOO_MANY_REDIRECTS) until https-toggle excludes it.
+            let Some(u) = new_url else { return };
+            if let Some(https) = net::https_upgrade(&u.to_string()) { *u = https.as_str().into(); }
+        }
         fn cookie_access_filter(&self, _browser: Option<&mut Browser>, _frame: Option<&mut Frame>, _request: Option<&mut Request>) -> Option<CookieAccessFilter> {
             Some(TabCookies::new())
         }

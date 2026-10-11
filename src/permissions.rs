@@ -14,7 +14,11 @@ const PROMPT_BITS: &[(u32, &str, &str)] = &[
     (256, "content.geolocation", "see your location"),
     (32768, "content.notifications.enabled", "show notifications"),
     (131072, "content.mouse_lock", "lock your mouse pointer"),
-    (524288, "content.register_protocol_handler", "open links of a protocol"),
+    (
+        524288,
+        "content.register_protocol_handler",
+        "open links of a protocol",
+    ),
 ];
 const MULTIPLE_DOWNLOADS: u32 = 16384;
 /// CEF_MEDIA_PERMISSION_* bit -> setting.
@@ -52,7 +56,10 @@ fn file() -> PathBuf {
 fn saved(origin: &str, setting: &str) -> Option<bool> {
     SAVED.with_borrow_mut(|s| {
         let s = s.get_or_insert_with(|| {
-            std::fs::read_to_string(file()).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+            std::fs::read_to_string(file())
+                .ok()
+                .and_then(|t| serde_json::from_str(&t).ok())
+                .unwrap_or_default()
         });
         s.get(origin)?.get(setting)?.as_bool()
     })
@@ -88,7 +95,9 @@ fn decide(origin: &str, setting: &str) -> Decision {
     }
     let v = config::get().get_for(setting, origin);
     match (setting, v.as_str(), v.as_bool()) {
-        (_, _, Some(true)) | ("content.javascript.clipboard", Some("access-paste"), _) => Decision::Allow,
+        (_, _, Some(true)) | ("content.javascript.clipboard", Some("access-paste"), _) => {
+            Decision::Allow
+        }
         (_, Some("ask"), _) => Decision::Ask,
         _ => Decision::Deny, // false, and clipboard none/access (write-only)
     }
@@ -107,9 +116,11 @@ fn combine(ds: &[Decision]) -> Decision {
 
 fn answer(cb: &Callback, allow: bool) {
     match cb {
-        Callback::Prompt(_, c) => {
-            c.cont(if allow { PermissionRequestResult::ACCEPT } else { PermissionRequestResult::DENY })
-        }
+        Callback::Prompt(_, c) => c.cont(if allow {
+            PermissionRequestResult::ACCEPT
+        } else {
+            PermissionRequestResult::DENY
+        }),
         Callback::Media(bits, c) if allow => c.cont(*bits),
         Callback::Media(_, c) => c.cancel(),
         Callback::Dialog(c, input) => c.cont(allow as i32, Some(&input.as_str().into())),
@@ -118,9 +129,17 @@ fn answer(cb: &Callback, allow: bool) {
 
 /// `on_show_permission_prompt`. Always answers (now or after the prompt): a
 /// returned 0 would leave the page's request hanging (S7).
-pub fn request(browser: &Browser, prompt_id: u64, origin: &str, bits: u32, cb: &PermissionPromptCallback) {
+pub fn request(
+    browser: &Browser,
+    prompt_id: u64,
+    origin: &str,
+    bits: u32,
+    cb: &PermissionPromptCallback,
+) {
     let wanted: Vec<_> = PROMPT_BITS.iter().filter(|(b, ..)| bits & b != 0).collect();
-    let known = wanted.iter().fold(MULTIPLE_DOWNLOADS, |acc, (b, ..)| acc | b);
+    let known = wanted
+        .iter()
+        .fold(MULTIPLE_DOWNLOADS, |acc, (b, ..)| acc | b);
     let ds: Vec<_> = if bits & !known != 0 {
         vec![Decision::Deny]
     } else {
@@ -128,7 +147,14 @@ pub fn request(browser: &Browser, prompt_id: u64, origin: &str, bits: u32, cb: &
     };
     let what: Vec<_> = wanted.iter().map(|(.., w)| *w).collect();
     let settings = wanted.iter().map(|(_, s, _)| *s).collect();
-    handle(browser, origin, settings, &what, combine(&ds), Callback::Prompt(prompt_id, cb.clone()));
+    handle(
+        browser,
+        origin,
+        settings,
+        &what,
+        combine(&ds),
+        Callback::Prompt(prompt_id, cb.clone()),
+    );
 }
 
 /// `on_request_media_access_permission`.
@@ -138,17 +164,40 @@ pub fn request_media(browser: &Browser, origin: &str, bits: u32, cb: &MediaAcces
     let what: Vec<_> = wanted.iter().map(|(.., w)| *w).collect();
     let mut settings: Vec<&'static str> = wanted.iter().map(|(_, s, _)| *s).collect();
     settings.dedup();
-    handle(browser, origin, settings, &what, combine(&ds), Callback::Media(bits, cb.clone()));
+    handle(
+        browser,
+        origin,
+        settings,
+        &what,
+        combine(&ds),
+        Callback::Media(bits, cb.clone()),
+    );
 }
 
-fn handle(browser: &Browser, origin: &str, settings: Vec<&'static str>, what: &[&str], d: Decision, cb: Callback) {
+fn handle(
+    browser: &Browser,
+    origin: &str,
+    settings: Vec<&'static str>,
+    what: &[&str],
+    d: Decision,
+    cb: Callback,
+) {
     match d {
         Decision::Allow => answer(&cb, true),
         Decision::Deny => answer(&cb, false),
         Decision::Ask => {
-            let text = format!("Allow {origin} to {}? [y]es [n]o [A]lways [N]ever", what.join(" and "));
+            let text = format!(
+                "Allow {origin} to {}? [y]es [n]o [A]lways [N]ever",
+                what.join(" and ")
+            );
             QUEUE.with_borrow_mut(|q| {
-                q.push_back(Pending { browser: browser.identifier(), origin: origin.to_string(), settings, text, cb })
+                q.push_back(Pending {
+                    browser: browser.identifier(),
+                    origin: origin.to_string(),
+                    settings,
+                    text,
+                    cb,
+                })
             });
             show_later();
         }
@@ -157,7 +206,14 @@ fn handle(browser: &Browser, origin: &str, settings: Vec<&'static str>, what: &[
 
 /// JS dialogs share the prompt queue: without a handler the page would hang (S7).
 /// shortcut: prompt() can't take typed text; `y` returns its default value.
-pub fn dialog(browser: &Browser, origin: &str, kind: JsdialogType, message: &str, default: &str, cb: &JsdialogCallback) {
+pub fn dialog(
+    browser: &Browser,
+    origin: &str,
+    kind: JsdialogType,
+    message: &str,
+    default: &str,
+    cb: &JsdialogCallback,
+) {
     let host = crate::commands::host(origin).to_string();
     let (keys, input) = if kind == JsdialogType::ALERT {
         ("[y]/[n] to close", String::new())
@@ -170,17 +226,32 @@ pub fn dialog(browser: &Browser, origin: &str, kind: JsdialogType, message: &str
     let text = format!("{host} says: {message} {keys}");
     let cb = Callback::Dialog(cb.clone(), input);
     QUEUE.with_borrow_mut(|q| {
-        q.push_back(Pending { browser: browser.identifier(), origin: origin.to_string(), settings: Vec::new(), text, cb })
+        q.push_back(Pending {
+            browser: browser.identifier(),
+            origin: origin.to_string(),
+            settings: Vec::new(),
+            text,
+            cb,
+        })
     });
     show_later();
 }
 
 /// Navigating away from a page with a beforeunload handler.
 pub fn leave_page(browser: &Browser, is_reload: bool, cb: &JsdialogCallback) {
-    let text = format!("{} this page? Changes you made may not be saved. [y]es [n]o", if is_reload { "Reload" } else { "Leave" });
+    let text = format!(
+        "{} this page? Changes you made may not be saved. [y]es [n]o",
+        if is_reload { "Reload" } else { "Leave" }
+    );
     let cb = Callback::Dialog(cb.clone(), String::new());
     QUEUE.with_borrow_mut(|q| {
-        q.push_back(Pending { browser: browser.identifier(), origin: String::new(), settings: Vec::new(), text, cb })
+        q.push_back(Pending {
+            browser: browser.identifier(),
+            origin: String::new(),
+            settings: Vec::new(),
+            text,
+            cb,
+        })
     });
     show_later();
 }
@@ -188,7 +259,9 @@ pub fn leave_page(browser: &Browser, is_reload: bool, cb: &JsdialogCallback) {
 /// CEF closed this tab's dialogs itself (navigation, reload).
 pub fn reset_dialogs(browser: &Browser) {
     let id = browser.identifier();
-    QUEUE.with_borrow_mut(|q| q.retain(|p| !(p.browser == id && matches!(p.cb, Callback::Dialog(..)))));
+    QUEUE.with_borrow_mut(|q| {
+        q.retain(|p| !(p.browser == id && matches!(p.cb, Callback::Dialog(..))))
+    });
     show_later();
 }
 
@@ -235,7 +308,9 @@ pub fn on_key(name: &str) {
         "N" => (false, true),
         _ => return,
     };
-    let Some(p) = QUEUE.with_borrow_mut(|q| q.pop_front()) else { return show() };
+    let Some(p) = QUEUE.with_borrow_mut(|q| q.pop_front()) else {
+        return show();
+    };
     if keep && !p.settings.is_empty() {
         save(&p.origin, &p.settings, allow);
     }
@@ -245,7 +320,9 @@ pub fn on_key(name: &str) {
 
 /// CEF dropped a prompt (navigation, tab closed): forget it without answering.
 pub fn dismissed(prompt_id: u64) {
-    QUEUE.with_borrow_mut(|q| q.retain(|p| !matches!(p.cb, Callback::Prompt(id, _) if id == prompt_id)));
+    QUEUE.with_borrow_mut(|q| {
+        q.retain(|p| !matches!(p.cb, Callback::Prompt(id, _) if id == prompt_id))
+    });
     show_later();
 }
 
