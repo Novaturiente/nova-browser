@@ -95,9 +95,8 @@ fn pairs_file() -> std::path::PathBuf {
 
 fn save_pairs(p: &BTreeSet<(String, String)>) {
     let f = pairs_file();
-    let tmp = f.with_extension("tmp");
     let text = serde_json::to_string(p).unwrap();
-    if let Err(e) = std::fs::write(&tmp, text).and_then(|_| std::fs::rename(&tmp, &f)) {
+    if let Err(e) = crate::write_atomic(&f, text.as_bytes()) {
         eprintln!("novabrowser: {}: {e}", f.display());
     }
 }

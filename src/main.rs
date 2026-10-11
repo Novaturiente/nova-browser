@@ -15,6 +15,7 @@ mod modes;
 mod net;
 mod permissions;
 mod renderer;
+mod session;
 mod settings;
 mod spawn;
 mod theme;
@@ -25,7 +26,7 @@ use cef::*;
 use std::path::PathBuf;
 
 wrap_browser_process_handler! {
-    struct NovaBrowserProcess { start_url: String }
+    struct NovaBrowserProcess { start_url: Option<String> }
     impl BrowserProcessHandler {
         fn on_context_initialized(&self) {
             modes::init();
@@ -39,7 +40,7 @@ wrap_browser_process_handler! {
 }
 
 wrap_app! {
-    struct NovaApp { start_url: String }
+    struct NovaApp { start_url: Option<String> }
     impl App {
         fn on_before_command_line_processing(&self, process_type: Option<&CefString>, command_line: Option<&mut CommandLine>) {
             let (Some(cmd), true) = (command_line, process_type.is_none_or(|t| t.to_string().is_empty())) else { return };
@@ -152,20 +153,23 @@ fn cfg_any_dark_site(cfg: &config::Config) -> bool {
 }
 
 /// `novabrowser [switches] [url]`: first non-switch argument; bare hosts get https://.
-/// Without one: the first of `url.start_pages`.
-fn start_url() -> String {
-    let Some(arg) = std::env::args().skip(1).find(|a| !a.starts_with('-')) else {
-        return config::get()
-            .list("url.start_pages")
-            .into_iter()
-            .next()
-            .unwrap_or_else(|| "about:blank".into());
-    };
-    if arg.contains("://") || arg.starts_with("about:") || arg.starts_with("data:") {
+fn start_url() -> Option<String> {
+    let arg = std::env::args().skip(1).find(|a| !a.starts_with('-'))?;
+    Some(if arg.contains("://") || arg.starts_with("about:") || arg.starts_with("data:") {
         arg
     } else {
         format!("https://{arg}")
-    }
+    })
+}
+
+/// Temp file, fsync, rename: a crash leaves the old or the new file, never half of one.
+pub(crate) fn write_atomic(path: &std::path::Path, data: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let tmp = path.with_extension("tmp");
+    let mut f = std::fs::File::create(&tmp)?;
+    f.write_all(data)?;
+    f.sync_all()?;
+    std::fs::rename(tmp, path)
 }
 
 pub(crate) fn xdg_dir(var: &str, fallback: &str) -> PathBuf {
@@ -249,11 +253,7 @@ fn main() {
     if !is_subprocess {
         net::load_https_excludes();
     }
-    let mut app = NovaApp::new(if is_subprocess {
-        String::new()
-    } else {
-        start_url()
-    });
+    let mut app = NovaApp::new(if is_subprocess { None } else { start_url() });
     // Subprocesses exit here; they need the App too, or the renderer gets no handler.
     let code = execute_process(
         Some(args.as_main_args()),

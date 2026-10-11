@@ -10,6 +10,7 @@ use adblock::{
     Engine,
 };
 use cef::*;
+use crate::write_atomic;
 use serde_json::{json, Value};
 use std::{
     cell::RefCell,
@@ -199,12 +200,6 @@ fn update(verbose: bool) {
     } else {
         eprintln!("novabrowser: {msg}");
     }
-}
-
-fn write_atomic(path: &std::path::Path, data: &[u8]) -> std::io::Result<()> {
-    let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, data)?;
-    std::fs::rename(tmp, path)
 }
 
 fn fnv(s: &str) -> u64 {

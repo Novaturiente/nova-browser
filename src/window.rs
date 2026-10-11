@@ -49,7 +49,8 @@ struct State {
     /// Open permission prompt (permissions.rs); shown instead of the message until answered.
     prompt: Option<String>,
     message_id: u64,
-    start_url: String,
+    /// URL given on the command line (opened after the restored session).
+    start_url: Option<String>,
     /// Closed tabs kept alive until CEF's DoClose: dropping the view earlier leaves
     /// a page with unload handlers running forever (no OnBeforeClose).
     closing: Vec<BrowserView>,
@@ -147,7 +148,7 @@ fn browser_id(view: &BrowserView) -> Option<i32> {
     view.browser().map(|b| b.identifier())
 }
 
-pub fn create(start_url: String) {
+pub fn create(start_url: Option<String>) {
     let cfg = config::get();
     let dark = cfg.bool("colors.webpage.darkmode.enabled")
         || cfg.any_pattern_value(
@@ -161,12 +162,12 @@ pub fn create(start_url: String) {
     window_create_top_level(Some(&mut NovaWindowDelegate::new()));
 }
 
-fn add_tab(view: BrowserView, url: String, foreground: bool) {
+fn add_tab(view: BrowserView, url: String, title: String, foreground: bool) {
     let n = S.with_borrow_mut(|s| {
         s.tabs.push(Tab {
             view,
             url,
-            title: String::new(),
+            title,
             progress: 0.0,
             loading: false,
             crashed: None,
@@ -184,11 +185,51 @@ fn add_tab(view: BrowserView, url: String, foreground: bool) {
     }
 }
 
-/// shortcut: a background tab created here loads only when first shown (CEF
-/// creates the browser on attach); fine for mouse use, revisit for session restore.
+/// A background tab loads only when first shown (CEF creates the browser on
+/// attach), which is also what makes session restore lazy.
 pub fn open(url: &str, foreground: bool) {
+    open_titled(url, String::new(), foreground);
+}
+
+fn open_titled(url: &str, title: String, foreground: bool) {
     let view = browser_view(&mut TabClient::new(), url, KIND_FIXED, &page_settings());
-    add_tab(view, url.to_string(), foreground);
+    add_tab(view, url.to_string(), title, foreground);
+}
+
+/// Current tabs in session.rs's shape; None before the window exists.
+pub fn session_json() -> Option<serde_json::Value> {
+    S.with_borrow(|s| {
+        s.window.as_ref()?;
+        let tabs = s.tabs.iter().map(|t| (t.crashed.clone().unwrap_or_else(|| t.url.clone()), t.title.clone())).collect();
+        // shortcut: last 100 closed tabs survive a restart, enough for undo
+        let closed = &s.closed[s.closed.len().saturating_sub(100)..];
+        Some(crate::session::shape(tabs, s.active, closed))
+    })
+}
+
+/// Open a saved session's tabs (lazily) and focus its active one; `clear` closes
+/// the tabs that were open before.
+pub fn restore(v: &serde_json::Value, clear: bool) {
+    let before = S.with_borrow(|s| s.tabs.len());
+    let tabs = v["tabs"].as_array().cloned().unwrap_or_default();
+    for t in &tabs {
+        let url = t["url"].as_str().unwrap_or("about:blank");
+        open_titled(url, t["title"].as_str().unwrap_or("").to_string(), false);
+    }
+    let closed: Vec<String> = v["closed"].as_array().into_iter().flatten().filter_map(|u| u.as_str().map(str::to_string)).collect();
+    S.with_borrow_mut(|s| {
+        let mut c = closed;
+        c.append(&mut s.closed);
+        s.closed = c;
+    });
+    if !tabs.is_empty() {
+        show(before + (v["active"].as_u64().unwrap_or(0) as usize).min(tabs.len() - 1));
+    }
+    if clear {
+        for _ in 0..before {
+            close(0);
+        }
+    }
 }
 
 /// Swap the active tab into the content panel (S2: state survives, old tab
@@ -503,6 +544,7 @@ pub fn refresh() {
     }) else {
         return;
     };
+    crate::session::dirty();
     if let Some(f) = tabbar.browser().and_then(|b| b.main_frame()) {
         let js = format!("window.nova && nova.apply && nova.apply({bar_json})");
         f.execute_java_script(Some(&CefString::from(js.as_str())), None, 0);
@@ -593,6 +635,11 @@ pub fn close_others() {
         let Some(n) = n else { break };
         close(n);
     }
+}
+
+/// First of `url.start_pages`.
+pub fn start_page() -> String {
+    config::get().list("url.start_pages").into_iter().next().unwrap_or_else(|| "about:blank".into())
 }
 
 pub fn close_window() {
@@ -826,7 +873,7 @@ fn adopt_popup(view: BrowserView) {
         .map(|f| CefString::from(&f.url()).to_string())
         .unwrap_or_default();
     let foreground = !crate::client::take_background_popup();
-    add_tab(view, url, foreground);
+    add_tab(view, url, String::new(), foreground);
 }
 
 // ---- layout and theme from config
@@ -1030,7 +1077,13 @@ wrap_window_delegate! {
             });
             apply_layout();
             window.show();
-            open(&start, true);
+            match (crate::session::startup(), start) {
+                (Some(v), url) => {
+                    restore(&v, false);
+                    if let Some(u) = url { open(&u, true) }
+                }
+                (None, url) => open(&url.unwrap_or_else(start_page), true),
+            }
             apply_layout(); // tabs.show = multiple depends on the tab count
             if let Some((level, text)) = startup {
                 message(&level, &text);
@@ -1038,6 +1091,7 @@ wrap_window_delegate! {
         }
 
         fn on_window_destroyed(&self, _window: Option<&mut Window>) {
+            crate::session::save_now();
             // Detached tabs aren't destroyed with the window; close them by hand (S2).
             // Their views stay in `closing` until DoClose (see close()).
             let hosts = S.with_borrow_mut(|s| {

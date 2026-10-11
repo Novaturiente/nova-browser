@@ -15,6 +15,8 @@ use std::sync::{Arc, LazyLock, RwLock};
 /// shortcut: hand-kept list; mark a setting here when its feature lands.
 const APPLIED: &[&str] = &[
     "aliases",
+    "auto_save.session",
+    "session.default_name",
     "colors.",
     "completion.height",
     "content.blocking.adblock.lists",

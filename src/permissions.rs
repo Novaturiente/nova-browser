@@ -75,8 +75,7 @@ fn save(origin: &str, settings: &[&str], allow: bool) {
         serde_json::to_string_pretty(s).unwrap()
     });
     let f = file();
-    let tmp = f.with_extension("tmp");
-    if let Err(e) = std::fs::write(&tmp, text).and_then(|_| std::fs::rename(&tmp, &f)) {
+    if let Err(e) = crate::write_atomic(&f, text.as_bytes()) {
         window::message("error", &format!("{}: {e}", f.display()));
     }
 }

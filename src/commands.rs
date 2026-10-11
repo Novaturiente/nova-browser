@@ -274,9 +274,7 @@ fn dark_toggle() -> Result<(), String> {
     } else if !lines.contains(&host) {
         lines.push(host.clone());
     }
-    let tmp = file.with_extension("tmp");
-    std::fs::write(&tmp, lines.join("\n") + "\n")
-        .and_then(|_| std::fs::rename(&tmp, &file))
+    crate::write_atomic(&file, (lines.join("\n") + "\n").as_bytes())
         .map_err(|e| format!("{}: {e}", file.display()))?;
     cfg.set_runtime_for(&format!("*://{host}/*"), D, &dark.to_string())?;
     window::config_changed();
@@ -322,9 +320,7 @@ fn https_toggle() -> Result<(), String> {
     } else {
         lines.push(auth.to_string());
     }
-    let tmp = file.with_extension("tmp");
-    std::fs::write(&tmp, lines.join("\n") + "\n")
-        .and_then(|_| std::fs::rename(&tmp, &file))
+    crate::write_atomic(&file, (lines.join("\n") + "\n").as_bytes())
         .map_err(|e| format!("{}: {e}", file.display()))?;
     crate::net::load_https_excludes();
     let rest = url.split_once("://").map_or(url.as_str(), |(_, r)| r);
@@ -483,6 +479,9 @@ pub const NAMES: &[&str] = &[
     "search-next",
     "set",
     "search-prev",
+    "session-delete",
+    "session-load",
+    "session-save",
     "spawn",
     "stop",
     "tab-clone",
@@ -684,7 +683,18 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
         "message-info" | "message-warning" | "message-error" => {
             window::message(cmd.name.trim_start_matches("message-"), &cmd.rest());
         }
-        "close" | "quit" => window::close_window(),
+        "close" | "quit" => {
+            if cmd.flag("-s", "--save") {
+                crate::session::save(None)?;
+            }
+            window::close_window()
+        }
+        "session-save" => crate::session::save(cmd.args.first().map(String::as_str))?,
+        "session-load" => crate::session::load(
+            cmd.args.first().ok_or("session-load: name required")?,
+            cmd.flag("-c", "--clear"),
+        )?,
+        "session-delete" => crate::session::delete(cmd.args.first().ok_or("session-delete: name required")?)?,
         "adblock-update" => crate::adblock::update_now(),
         "config-source" => {
             config::load().map_err(|e| format!("config unchanged: {e}"))?;
