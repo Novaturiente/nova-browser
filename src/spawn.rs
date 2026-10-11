@@ -25,6 +25,7 @@ pub fn spawn(
     }
     let path = find_userscript(prog)?;
     let browser = window::active_browser();
+    let tab = browser.as_ref().map(|b| b.identifier()).unwrap_or(-1);
     let (url, title) = window::active_url_title();
     let (prog, args) = (prog.clone(), args.to_vec());
     let start = move |page: Option<(String, String, String)>| {
@@ -71,7 +72,7 @@ pub fn spawn(
         if let Err(e) = mkfifo(&fifo) {
             return window::message("error", &format!("spawn: {e}"));
         }
-        read_fifo(fifo.clone());
+        read_fifo(fifo.clone(), tab);
         if let Err(e) = run_child(cmd, prog.clone(), output, Some(dir)) {
             window::message("error", &format!("spawn: {e}"));
         }
@@ -155,7 +156,11 @@ fn run_child(
                 ))
             }
             Err(e) => Some(("error", format!("{name}: {e}"))),
-            _ if output && !out.trim().is_empty() => Some(("info", out.trim().to_string())),
+            _ if output => {
+                // qutebrowser shows the output in a new tab as plain text
+                post_task(ThreadId::UI, Some(&mut ShowOutput::new(out)));
+                None
+            }
             _ => None,
         };
         if let Some((level, text)) = msg {
@@ -170,7 +175,7 @@ fn run_child(
 
 /// Each line written to the FIFO runs as a command on the UI thread. Opened
 /// read+write so writers closing it don't end the loop; `\0` from the waiter does.
-fn read_fifo(fifo: PathBuf) {
+fn read_fifo(fifo: PathBuf, tab: i32) {
     std::thread::spawn(move || {
         let Ok(f) = std::fs::OpenOptions::new()
             .read(true)
@@ -185,7 +190,7 @@ fn read_fifo(fifo: PathBuf) {
                 break;
             }
             if !line.trim().is_empty() {
-                post_task(ThreadId::UI, Some(&mut RunLine::new(line)));
+                post_task(ThreadId::UI, Some(&mut RunLine::new(line, tab)));
             }
         }
         if let Some(dir) = fifo.parent() {
@@ -195,9 +200,24 @@ fn read_fifo(fifo: PathBuf) {
 }
 
 wrap_task! {
-    struct RunLine { line: String }
+    struct RunLine { line: String, tab: i32 }
     impl Task {
-        fn execute(&self) { commands::run(&self.line, None); }
+        fn execute(&self) {
+            // In the tab that started the script, never whatever is in front now.
+            if !window::run_in_tab(self.tab, || commands::run(&self.line, None)) {
+                window::message("warning", &format!("userscript tab closed, dropped: {}", self.line));
+            }
+        }
+    }
+}
+
+wrap_task! {
+    struct ShowOutput { text: String }
+    impl Task {
+        fn execute(&self) {
+            let b64 = CefString::from(&base64_encode(Some(self.text.as_bytes()))).to_string();
+            window::open(&format!("data:text/plain;charset=utf-8;base64,{b64}"), true);
+        }
     }
 }
 

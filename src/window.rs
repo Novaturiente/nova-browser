@@ -507,8 +507,31 @@ pub fn refresh() {
 
 // ---- queries and actions for commands.rs
 
+thread_local! {
+    /// Tab a userscript's FIFO line runs in (see run_in_tab); None = the active tab.
+    static TARGET: Cell<Option<i32>> = const { Cell::new(None) };
+}
+
 pub fn active_browser() -> Option<Browser> {
-    S.with_borrow(|s| s.tabs.get(s.active)?.view.browser())
+    S.with_borrow(|s| {
+        let i = match TARGET.get() {
+            Some(id) => s.tabs.iter().position(|t| browser_id(&t.view) == Some(id))?,
+            None => s.active,
+        };
+        s.tabs.get(i)?.view.browser()
+    })
+}
+
+/// Run `f` with commands aimed at the tab whose browser id is `id` instead of the
+/// active one (userscripts act on the tab that started them). False if it's gone.
+pub fn run_in_tab(id: i32, f: impl FnOnce()) -> bool {
+    if !S.with_borrow(|s| s.tabs.iter().any(|t| browser_id(&t.view) == Some(id))) {
+        return false;
+    }
+    TARGET.set(Some(id));
+    f();
+    TARGET.set(None);
+    true
 }
 
 /// `--query state`: tabs, active index, mode (for scripts and the smoke test).
@@ -526,8 +549,12 @@ pub fn state_json() -> String {
 
 pub fn active_url_title() -> (String, String) {
     S.with_borrow(|s| {
+        let i = match TARGET.get() {
+            Some(id) => s.tabs.iter().position(|t| browser_id(&t.view) == Some(id)).unwrap_or(usize::MAX),
+            None => s.active,
+        };
         s.tabs
-            .get(s.active)
+            .get(i)
             .map(|t| (t.url.clone(), t.title.clone()))
             .unwrap_or_default()
     })
