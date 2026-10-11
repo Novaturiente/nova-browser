@@ -451,7 +451,9 @@ pub fn spawn(argv: &[String]) -> Result<(), String> {
 fn open_in(url: &str, cmd: &Cmd) -> Result<(), String> {
     if cmd.flag("-b", "--bg") {
         window::open(url, false);
-    } else if cmd.flag("-t", "--tab") || cmd.flag("-w", "--window") {
+    } else if cmd.flag("-w", "--window") {
+        window::open_window(Some(url.to_string()));
+    } else if cmd.flag("-t", "--tab") {
         window::open(url, true);
     } else {
         let b = window::active_browser().ok_or("no active tab")?;
@@ -557,13 +559,12 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
             } else {
                 url_or_search(&cmd.rest())
             };
-            // shortcut: -w (window) and -p (private) open a tab until multi-window/private exist
+            // shortcut: -p (private) opens a tab until private windows exist
             if cmd.flag("-b", "--bg") {
                 window::open(&url, false);
-            } else if cmd.flag("-t", "--tab")
-                || cmd.flag("-w", "--window")
-                || cmd.flag("-p", "--private")
-            {
+            } else if cmd.flag("-w", "--window") {
+                window::open_window(Some(url));
+            } else if cmd.flag("-t", "--tab") || cmd.flag("-p", "--private") {
                 window::open(&url, true);
             } else if let Some(f) = need()?.main_frame() {
                 f.load_url(Some(&CefString::from(url.as_str())));
@@ -743,7 +744,11 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
             if cmd.flag("-s", "--save") {
                 crate::session::save(None)?;
             }
-            window::close_window()
+            if cmd.name == "quit" {
+                window::quit()
+            } else {
+                window::close_window()
+            }
         }
         "quickmark-save" => {
             let (url, _) = window::active_url_title();

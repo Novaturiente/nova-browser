@@ -110,7 +110,8 @@ pub fn startup() -> Option<Value> {
         return None;
     }
     let v = read(&default_name()).ok()?;
-    let has_tabs = v["tabs"].as_array().is_some_and(|t| !t.is_empty());
+    let has_tabs = v["tabs"].as_array().is_some_and(|t| !t.is_empty())
+        || v["windows"][0]["tabs"].as_array().is_some_and(|t| !t.is_empty());
     has_tabs.then(|| {
         LAST.set(serde_json::to_string_pretty(&v).unwrap());
         v
@@ -118,11 +119,15 @@ pub fn startup() -> Option<Value> {
 }
 
 /// The JSON shape window.rs writes; kept here so both sides agree.
-pub fn shape(tabs: Vec<(String, String)>, active: usize, closed: &[String]) -> Value {
+/// {windows: [{tabs: [{url, title}], active}], closed}
+pub fn shape(windows: Vec<Value>, closed: &[String]) -> Value {
+    json!({ "windows": windows, "closed": closed })
+}
+
+pub fn window(tabs: Vec<(String, String)>, active: usize) -> Value {
     json!({
         "tabs": tabs.into_iter().map(|(url, title)| json!({ "url": url, "title": title })).collect::<Vec<_>>(),
         "active": active,
-        "closed": closed,
     })
 }
 

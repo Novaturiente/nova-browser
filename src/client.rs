@@ -29,9 +29,9 @@ fn new_tab_disposition(d: WindowOpenDisposition) -> Option<bool> {
 }
 
 wrap_task! {
-    struct OpenTab { url: String, foreground: bool }
+    struct OpenTab { url: String, foreground: bool, opener: Browser }
     impl Task {
-        fn execute(&self) { window::open(&self.url, self.foreground); }
+        fn execute(&self) { window::in_owner(&self.opener, || window::open(&self.url, self.foreground)); }
     }
 }
 
@@ -97,10 +97,12 @@ wrap_client! {
             }
             // Focus reports from renderer.rs; worst a page can do is toggle insert mode.
             if name != "nova.focus" { return 0; }
-            let active = window::active_browser().is_some_and(|a| a.identifier() == b.identifier());
-            if active {
-                modes::on_focus(m.argument_list().is_some_and(|l| l.bool(0) != 0));
-            }
+            window::in_owner(b, || {
+                let active = window::active_browser().is_some_and(|a| a.identifier() == b.identifier());
+                if active {
+                    modes::on_focus(m.argument_list().is_some_and(|l| l.bool(0) != 0));
+                }
+            });
             1
         }
     }
@@ -113,16 +115,16 @@ wrap_client! {
         fn keyboard_handler(&self) -> Option<KeyboardHandler> { Some(UiKeys::new()) }
         fn on_process_message_received(
             &self,
-            _browser: Option<&mut Browser>,
+            browser: Option<&mut Browser>,
             _frame: Option<&mut Frame>,
             _source: ProcessId,
             message: Option<&mut ProcessMessage>,
         ) -> ::std::os::raw::c_int {
-            let Some(message) = message else { return 0 };
+            let (Some(b), Some(message)) = (browser, message) else { return 0 };
             if CefString::from(&message.name()).to_string() != "nova.send" { return 0; }
             let text = message.argument_list().map(|l| CefString::from(&l.string(0)).to_string()).unwrap_or_default();
             let (cmd, arg) = text.split_once(' ').unwrap_or((&text, ""));
-            match (cmd, arg.parse::<i64>()) {
+            window::in_owner(b, || match (cmd, arg.parse::<i64>()) {
                 ("ready", _) => window::ui_ready(),
                 ("tab", Ok(n)) if n >= 0 => window::show(n as usize),
                 ("close", Ok(n)) if n >= 0 => window::close(n as usize),
@@ -136,7 +138,7 @@ wrap_client! {
                 ("menuact", _) => window::tab_menu_action(arg),
                 ("menuclose", _) => window::close_popup(),
                 _ => eprintln!("novabrowser: unknown UI message {text:?}"),
-            }
+            });
             1
         }
     }
@@ -145,8 +147,9 @@ wrap_client! {
 wrap_display_handler! {
     struct TabDisplay {}
     impl DisplayHandler {
-        fn on_fullscreen_mode_change(&self, _browser: Option<&mut Browser>, fullscreen: ::std::os::raw::c_int) {
-            window::page_fullscreen(fullscreen != 0);
+        fn on_fullscreen_mode_change(&self, browser: Option<&mut Browser>, fullscreen: ::std::os::raw::c_int) {
+            let Some(b) = browser else { return };
+            window::in_owner(b, || window::page_fullscreen(fullscreen != 0));
         }
         fn on_address_change(&self, browser: Option<&mut Browser>, frame: Option<&mut Frame>, url: Option<&CefString>) {
             let (Some(b), Some(f), Some(url)) = (browser, frame, url) else { return };
@@ -178,11 +181,11 @@ wrap_load_handler! {
 wrap_request_handler! {
     struct TabRequest {}
     impl RequestHandler {
-        fn on_open_urlfrom_tab(&self, _browser: Option<&mut Browser>, _frame: Option<&mut Frame>, target_url: Option<&CefString>, target_disposition: WindowOpenDisposition, _user_gesture: ::std::os::raw::c_int) -> ::std::os::raw::c_int {
+        fn on_open_urlfrom_tab(&self, browser: Option<&mut Browser>, _frame: Option<&mut Frame>, target_url: Option<&CefString>, target_disposition: WindowOpenDisposition, _user_gesture: ::std::os::raw::c_int) -> ::std::os::raw::c_int {
             // Middle-click / ctrl+click: CEF would otherwise navigate the source tab.
-            let (Some(url), Some(foreground)) = (target_url, new_tab_disposition(target_disposition)) else { return 0 };
+            let (Some(b), Some(url), Some(foreground)) = (browser, target_url, new_tab_disposition(target_disposition)) else { return 0 };
             // Don't create browsers from inside a navigation callback; do it next on the UI loop.
-            post_task(ThreadId::UI, Some(&mut OpenTab::new(url.to_string(), foreground)));
+            post_task(ThreadId::UI, Some(&mut OpenTab::new(url.to_string(), foreground, b.clone())));
             1
         }
         fn on_before_browse(&self, browser: Option<&mut Browser>, frame: Option<&mut Frame>, request: Option<&mut Request>, _user_gesture: ::std::os::raw::c_int, _is_redirect: ::std::os::raw::c_int) -> ::std::os::raw::c_int {
@@ -300,11 +303,11 @@ wrap_jsdialog_handler! {
 wrap_keyboard_handler! {
     struct UiKeys {}
     impl KeyboardHandler {
-        fn on_pre_key_event(&self, _browser: Option<&mut Browser>, event: Option<&KeyEvent>, _os_event: Option<&mut sys::_XEvent>, _is_shortcut: Option<&mut ::std::os::raw::c_int>) -> ::std::os::raw::c_int {
+        fn on_pre_key_event(&self, browser: Option<&mut Browser>, event: Option<&KeyEvent>, _os_event: Option<&mut sys::_XEvent>, _is_shortcut: Option<&mut ::std::os::raw::c_int>) -> ::std::os::raw::c_int {
             // Only prompts focus the tab bar (window::focus_active); the palette handles its own keys.
-            let Some(e) = event else { return 0 };
+            let (Some(b), Some(e)) = (browser, event) else { return 0 };
             if e.type_ != KeyEventType::RAWKEYDOWN || modes::mode() != modes::Mode::Prompt { return 0; }
-            modes::on_key(e.windows_key_code, e.character, e.modifiers) as i32
+            window::in_owner(b, || modes::on_key(e.windows_key_code, e.character, e.modifiers)) as i32
         }
     }
 }
@@ -314,9 +317,9 @@ wrap_keyboard_handler! {
     impl KeyboardHandler {
         fn on_pre_key_event(&self, browser: Option<&mut Browser>, event: Option<&KeyEvent>, _os_event: Option<&mut sys::_XEvent>, _is_shortcut: Option<&mut ::std::os::raw::c_int>) -> ::std::os::raw::c_int {
             // Decide on RAWKEYDOWN only; consuming it makes Chromium drop the CHAR/KEYUP (S3).
-            let (Some(_), Some(e)) = (browser, event) else { return 0 };
+            let (Some(b), Some(e)) = (browser, event) else { return 0 };
             if e.type_ != KeyEventType::RAWKEYDOWN { return 0; }
-            modes::on_key(e.windows_key_code, e.character, e.modifiers) as i32
+            window::in_owner(b, || modes::on_key(e.windows_key_code, e.character, e.modifiers)) as i32
         }
     }
 }

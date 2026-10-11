@@ -88,6 +88,7 @@ pub const CORE: &[(&str, &str, &str)] = &[
     ("normal", "<F1>", "bindings"),
     ("normal", "<F11>", "fullscreen"),
     ("normal", "<F12>", "devtools"),
+    ("normal", "<Ctrl-n>", "open -w"),
     ("normal", "<Ctrl-q>", "quit"),
     ("insert", "<Escape>", "mode-leave"),
     ("passthrough", "<Shift-Escape>", "mode-leave"),

@@ -130,7 +130,7 @@ fn qutebrowser_session(file: &Path) -> Result<Option<usize>, String> {
         return Ok(None);
     }
     let n = tabs.len();
-    let v = crate::session::shape(tabs, 0, &[]);
+    let v = crate::session::shape(vec![crate::session::window(tabs, 0)], &[]);
     crate::session::write("qutebrowser", &v)?;
     Ok(Some(n))
 }

@@ -66,12 +66,81 @@ struct State {
     startup: Option<(String, String)>,
     /// Chromium was started with force-dark on (switches are fixed at startup).
     dark_global: bool,
+    /// Slot taken by a window (created or being created); slots are never reused.
+    claimed: bool,
+    /// Preferred size the tab bar view reports (S2: must be non-zero).
+    tabbar_size: (i32, i32),
+    /// Session part (one window's tabs) to open when this window is created.
+    restore: Option<serde_json::Value>,
 }
 
 thread_local! {
-    static S: RefCell<State> = RefCell::new(State::default());
-    /// Preferred size the tab bar view reports (S2: must be non-zero).
-    static TABBAR_SIZE: Cell<(i32, i32)> = const { Cell::new((1, 24)) };
+    /// One slot per window ever opened (index = slot id, fixed for its lifetime).
+    static WINS: RefCell<Vec<State>> = const { RefCell::new(Vec::new()) };
+    /// Window the code below acts on: the focused one, or the one owning the
+    /// browser an event came from (see in_owner).
+    static CUR: Cell<usize> = const { Cell::new(0) };
+    /// The first window was created (it restores the saved session).
+    static STARTED: Cell<bool> = const { Cell::new(false) };
+    /// `quit` is closing every window: don't autosave the shrinking session.
+    static QUITTING: Cell<bool> = const { Cell::new(false) };
+}
+
+/// `S.with_borrow(..)`: the current window's state.
+struct Cur;
+static S: Cur = Cur;
+impl Cur {
+    fn with_borrow<R>(&self, f: impl FnOnce(&State) -> R) -> R {
+        WINS.with_borrow_mut(|w| {
+            if w.is_empty() {
+                w.push(State::default());
+            }
+        });
+        WINS.with_borrow(|w| f(&w[CUR.get()]))
+    }
+    fn with_borrow_mut<R>(&self, f: impl FnOnce(&mut State) -> R) -> R {
+        WINS.with_borrow_mut(|w| {
+            if w.is_empty() {
+                w.push(State::default());
+            }
+            f(&mut w[CUR.get()])
+        })
+    }
+}
+
+/// Slot of the window owning browser `id` (a tab, a closing tab or one of its UI pages).
+fn owner(id: i32) -> Option<usize> {
+    let has = |v: &Option<BrowserView>| v.as_ref().and_then(browser_id) == Some(id);
+    let has2 = |v: &Option<(BrowserView, OverlayController)>| v.as_ref().and_then(|p| browser_id(&p.0)) == Some(id);
+    WINS.with_borrow(|w| {
+        w.iter().position(|s| {
+            s.tabs.iter().any(|t| browser_id(&t.view) == Some(id))
+                || s.closing.iter().any(|v| browser_id(v) == Some(id))
+                || has(&s.tabbar)
+                || has2(&s.palette)
+                || has2(&s.keyhint)
+                || has2(&s.tip)
+                || has2(&s.menu)
+        })
+    })
+}
+
+/// Run `f` acting on `slot`'s window, then go back to the previous one.
+fn in_slot<R>(slot: usize, f: impl FnOnce() -> R) -> R {
+    let prev = CUR.replace(slot);
+    let r = f();
+    if WINS.with_borrow(|w| w.get(prev).is_some_and(|s| s.window.is_some())) {
+        CUR.set(prev);
+    }
+    r
+}
+
+/// Run `f` acting on the window that owns `browser` (events from background windows).
+pub fn in_owner<R>(browser: &Browser, f: impl FnOnce() -> R) -> R {
+    match owner(browser.identifier()) {
+        Some(slot) => in_slot(slot, f),
+        None => f(),
+    }
 }
 
 const KIND_FIXED: u8 = 0;
@@ -157,17 +226,40 @@ fn browser_id(view: &BrowserView) -> Option<i32> {
 }
 
 pub fn create(start_url: Option<String>) {
+    create_window(start_url, None);
+}
+
+/// Open a new window (`open -w`, session restore); it opens `start_url` or `restore`'s tabs.
+fn create_window(start_url: Option<String>, restore: Option<serde_json::Value>) {
     let cfg = config::get();
     let dark = cfg.bool("colors.webpage.darkmode.enabled")
         || cfg.any_pattern_value(
             "colors.webpage.darkmode.enabled",
             &serde_json::Value::Bool(true),
         );
-    S.with_borrow_mut(|s| {
+    // the first window takes the slot startup messages were queued in
+    let slot = WINS.with_borrow_mut(|w| {
+        let slot = match w.iter().position(|s| !s.claimed) {
+            Some(i) => i,
+            None => {
+                w.push(State::default());
+                w.len() - 1
+            }
+        };
+        let s = &mut w[slot];
+        s.claimed = true;
         s.start_url = start_url;
+        s.restore = restore;
         s.dark_global = dark;
+        s.tabbar_size = (1, 24);
+        slot
     });
-    window_create_top_level(Some(&mut NovaWindowDelegate::new()));
+    window_create_top_level(Some(&mut NovaWindowDelegate::new(slot)));
+}
+
+/// `open -w [url]`.
+pub fn open_window(url: Option<String>) {
+    create_window(Some(url.unwrap_or_else(|| config::get().str("url.default_page"))), None);
 }
 
 fn add_tab(view: BrowserView, url: String, title: String, foreground: bool) {
@@ -210,7 +302,18 @@ pub fn tabbar_browser() -> Option<Browser> {
     S.with_borrow(|s| s.tabbar.as_ref()?.browser())
 }
 
+/// Every open window, in session.rs's shape.
 pub fn session_json() -> Option<serde_json::Value> {
+    let slots: Vec<usize> = WINS.with_borrow(|w| (0..w.len()).filter(|i| w[*i].window.is_some()).collect());
+    let wins: Vec<serde_json::Value> = slots.iter().filter_map(|i| in_slot(*i, window_json)).collect();
+    if wins.is_empty() {
+        return None;
+    }
+    let closed = S.with_borrow(|s| s.closed[s.closed.len().saturating_sub(100)..].to_vec());
+    Some(crate::session::shape(wins, &closed))
+}
+
+fn window_json() -> Option<serde_json::Value> {
     S.with_borrow(|s| {
         s.window.as_ref()?;
         // data: tabs are our snapshot pages (downloads, bookmarks): stale after a restart
@@ -225,21 +328,15 @@ pub fn session_json() -> Option<serde_json::Value> {
                 )
             })
             .collect();
-        // shortcut: last 100 closed tabs survive a restart, enough for undo
-        let closed = &s.closed[s.closed.len().saturating_sub(100)..];
-        Some(crate::session::shape(tabs, s.active, closed))
+        Some(crate::session::window(tabs, s.active))
     })
 }
 
-/// Open a saved session's tabs (lazily) and focus its active one; `clear` closes
-/// the tabs that were open before.
+/// Open a saved session: its first window's tabs go into this window (`clear`
+/// closes the tabs that were there), every other window opens as a new window.
 pub fn restore(v: &serde_json::Value, clear: bool) {
-    let before = S.with_borrow(|s| s.tabs.len());
-    let tabs = v["tabs"].as_array().cloned().unwrap_or_default();
-    for t in &tabs {
-        let url = t["url"].as_str().unwrap_or("about:blank");
-        open_titled(url, t["title"].as_str().unwrap_or("").to_string(), false);
-    }
+    // sessions before multi-window: {tabs, active, closed} at the top level
+    let wins = v["windows"].as_array().cloned().unwrap_or_else(|| vec![v.clone()]);
     let closed: Vec<String> = v["closed"]
         .as_array()
         .into_iter()
@@ -251,6 +348,23 @@ pub fn restore(v: &serde_json::Value, clear: bool) {
         c.append(&mut s.closed);
         s.closed = c;
     });
+    for (i, w) in wins.iter().enumerate() {
+        if i == 0 {
+            restore_tabs(w, clear);
+        } else {
+            create_window(None, Some(w.clone()));
+        }
+    }
+}
+
+/// One window's tabs (lazily), focusing its active one.
+fn restore_tabs(v: &serde_json::Value, clear: bool) {
+    let before = S.with_borrow(|s| s.tabs.len());
+    let tabs = v["tabs"].as_array().cloned().unwrap_or_default();
+    for t in &tabs {
+        let url = t["url"].as_str().unwrap_or("about:blank");
+        open_titled(url, t["title"].as_str().unwrap_or("").to_string(), false);
+    }
     if !tabs.is_empty() {
         show(before + (v["active"].as_u64().unwrap_or(0) as usize).min(tabs.len() - 1));
     }
@@ -324,6 +438,10 @@ thread_local! {
 /// CEF reached DoClose for `browser` (client.rs posts this): drop a tab that asked
 /// via `close`, or release a view `remove` already took out.
 pub fn did_close(browser: &Browser) {
+    in_owner(browser, || did_close_here(browser));
+}
+
+fn did_close_here(browser: &Browser) {
     let id = browser.identifier();
     let n = S.with_borrow(|s| s.tabs.iter().position(|t| browser_id(&t.view) == Some(id)));
     match n {
@@ -437,16 +555,18 @@ fn release_closing(browser: &Browser) {
 /// Apply `f` to the tab owning `browser`, then redraw the bars.
 fn update(browser: &Browser, f: impl FnOnce(&mut Tab)) {
     let id = browser.identifier();
-    let found = S.with_borrow_mut(|s| {
-        s.tabs
-            .iter_mut()
-            .find(|t| browser_id(&t.view) == Some(id))
-            .map(f)
-            .is_some()
+    in_owner(browser, || {
+        let found = S.with_borrow_mut(|s| {
+            s.tabs
+                .iter_mut()
+                .find(|t| browser_id(&t.view) == Some(id))
+                .map(f)
+                .is_some()
+        });
+        if found {
+            refresh();
+        }
     });
-    if found {
-        refresh();
-    }
 }
 
 pub fn set_url(browser: &Browser, url: String) {
@@ -464,7 +584,7 @@ pub fn set_url(browser: &Browser, url: String) {
 fn apply_dark(browser: &Browser) {
     let id = browser.identifier();
     let cfg = config::get();
-    let send = S.with_borrow_mut(|s| {
+    let send = in_owner(browser, || S.with_borrow_mut(|s| {
         let global = s.dark_global;
         let t = s
             .tabs
@@ -479,7 +599,7 @@ fn apply_dark(browser: &Browser) {
         // (first page of a new tab). Clear only once.
         let prev = t.dark.replace(over);
         (over.is_some() || matches!(prev, Some(Some(_)))).then_some(over)
-    });
+    }));
     match send {
         Some(Some(on)) => devtools::send(
             browser,
@@ -650,12 +770,15 @@ pub fn active_browser() -> Option<Browser> {
 /// Run `f` with commands aimed at the tab whose browser id is `id` instead of the
 /// active one (userscripts act on the tab that started them). False if it's gone.
 pub fn run_in_tab(id: i32, f: impl FnOnce()) -> bool {
-    if !S.with_borrow(|s| s.tabs.iter().any(|t| browser_id(&t.view) == Some(id))) {
+    let Some(slot) = owner(id) else { return false };
+    if !in_slot(slot, || S.with_borrow(|s| s.tabs.iter().any(|t| browser_id(&t.view) == Some(id)))) {
         return false;
     }
-    TARGET.set(Some(id));
-    f();
-    TARGET.set(None);
+    in_slot(slot, || {
+        TARGET.set(Some(id));
+        f();
+        TARGET.set(None);
+    });
     true
 }
 
@@ -755,6 +878,16 @@ pub fn toggle_fullscreen() {
 
 pub fn close_window() {
     if let Some(w) = S.with_borrow(|s| s.window.clone()) {
+        w.close();
+    }
+}
+
+/// `quit`: save the session once, then close every window.
+pub fn quit() {
+    crate::session::save_now();
+    QUITTING.set(true);
+    let wins: Vec<Window> = WINS.with_borrow(|w| w.iter().filter_map(|s| s.window.clone()).collect());
+    for w in wins {
         w.close();
     }
 }
@@ -1110,9 +1243,9 @@ fn place_palette() {
 }
 
 wrap_task! {
-    struct Relayout {}
+    struct Relayout { slot: usize }
     impl Task {
-        fn execute(&self) { apply_layout(); }
+        fn execute(&self) { in_slot(self.slot, apply_layout); }
     }
 }
 
@@ -1183,7 +1316,7 @@ fn apply_layout() {
         return;
     };
     let (pos, size) = bar_sizes(window.bounds().width);
-    TABBAR_SIZE.set(size);
+    S.with_borrow_mut(|s| s.tabbar_size = size);
     let (tb, m) = (View::from(&tabbar), View::from(&mid));
     for v in [&tb, &m] {
         if let Some(p) = v.parent_view() {
@@ -1276,10 +1409,15 @@ pub fn config_changed() {
 wrap_browser_view_delegate! {
     struct NovaBrowserViewDelegate { kind: u8 }
     impl ViewDelegate {
-        fn preferred_size(&self, _view: Option<&mut View>) -> Size {
+        fn preferred_size(&self, view: Option<&mut View>) -> Size {
             // Width and height must be non-zero, else CEF uses the whole window (S2).
+            let tabbar = || {
+                let w = view?.window()?;
+                // try_borrow: CEF may ask during layout we started with state borrowed
+                WINS.with(|ws| ws.try_borrow().ok()?.iter().find(|s| s.window.as_ref().is_some_and(|x| View::from(x).is_same(Some(&mut View::from(&w))) == 1)).map(|s| s.tabbar_size))
+            };
             let (width, height) = match self.kind {
-                KIND_TABBAR => TABBAR_SIZE.get(),
+                KIND_TABBAR => tabbar().unwrap_or((1, 24)),
                 _ => (1, 1),
             };
             Size { width, height }
@@ -1289,10 +1427,15 @@ wrap_browser_view_delegate! {
         fn delegate_for_popup_browser_view(&self, _view: Option<&mut BrowserView>, _settings: Option<&BrowserSettings>, _client: Option<&mut Client>, _is_devtools: ::std::os::raw::c_int) -> Option<BrowserViewDelegate> {
             Some(NovaBrowserViewDelegate::new(KIND_FIXED))
         }
-        fn on_popup_browser_view_created(&self, _view: Option<&mut BrowserView>, popup: Option<&mut BrowserView>, is_devtools: ::std::os::raw::c_int) -> ::std::os::raw::c_int {
-            // DevTools get their own window (0 = CEF creates one); everything else becomes a tab.
+        fn on_popup_browser_view_created(&self, view: Option<&mut BrowserView>, popup: Option<&mut BrowserView>, is_devtools: ::std::os::raw::c_int) -> ::std::os::raw::c_int {
+            // DevTools get their own window (0 = CEF creates one); everything else becomes a tab
+            // in the opener's window.
             let Some(popup) = popup.filter(|_| is_devtools == 0) else { return 0 };
-            adopt_popup(popup.clone());
+            let slot = view.and_then(|v| browser_id(v)).and_then(owner);
+            match slot {
+                Some(slot) => in_slot(slot, || adopt_popup(popup.clone())),
+                None => adopt_popup(popup.clone()),
+            }
             1
         }
         fn browser_runtime_style(&self) -> RuntimeStyle { RuntimeStyle::ALLOY }
@@ -1300,22 +1443,30 @@ wrap_browser_view_delegate! {
 }
 
 wrap_window_delegate! {
-    struct NovaWindowDelegate {}
+    struct NovaWindowDelegate { slot: usize }
     impl ViewDelegate {
         fn preferred_size(&self, _view: Option<&mut View>) -> Size { Size { width: 1200, height: 800 } }
         fn on_layout_changed(&self, _view: Option<&mut View>, bounds: Option<&Rect>) {
-            place_palette();
+            in_slot(self.slot, place_palette);
             // vertical tab bar width is a percentage of the window: re-layout on resize
             let w = bounds.map_or(0, |b| b.width);
             let (_, size) = bar_sizes(w);
-            if size.1 == 1 && size != TABBAR_SIZE.get() {
-                post_task(ThreadId::UI, Some(&mut Relayout::new()));
+            let cur = WINS.with(|ws| ws.try_borrow().ok().and_then(|ws| ws.get(self.slot).map(|s| s.tabbar_size)));
+            if size.1 == 1 && Some(size) != cur {
+                post_task(ThreadId::UI, Some(&mut Relayout::new(self.slot)));
             }
         }
     }
     impl PanelDelegate {}
     impl WindowDelegate {
+        fn on_window_activation_changed(&self, _window: Option<&mut Window>, active: ::std::os::raw::c_int) {
+            if active != 0 {
+                CUR.set(self.slot);
+            }
+        }
+
         fn on_window_created(&self, window: Option<&mut Window>) {
+            CUR.set(self.slot);
             let window = window.unwrap().clone();
             let layout = window
                 .set_to_box_layout(Some(&BoxLayoutSettings {
@@ -1361,12 +1512,14 @@ wrap_window_delegate! {
             });
             apply_layout();
             window.show();
-            match (crate::session::startup(), start) {
-                (Some(v), url) => {
+            let session = if STARTED.replace(true) { None } else { crate::session::startup() };
+            match (session, S.with_borrow_mut(|s| s.restore.take()), start) {
+                (Some(v), _, url) => {
                     restore(&v, false);
                     if let Some(u) = url { open(&u, true) }
                 }
-                (None, url) => open(&url.unwrap_or_else(start_page), true),
+                (None, Some(w), _) => restore_tabs(&w, false),
+                (None, None, url) => open(&url.unwrap_or_else(start_page), true),
             }
             apply_layout(); // tabs.show = multiple depends on the tab count
             if let Some((level, text)) = startup {
@@ -1375,7 +1528,12 @@ wrap_window_delegate! {
         }
 
         fn on_window_destroyed(&self, _window: Option<&mut Window>) {
-            crate::session::save_now();
+            CUR.set(self.slot);
+            // The last window's tabs are the session to restore; closing one of several drops it.
+            let last = WINS.with_borrow(|w| w.iter().filter(|s| s.window.is_some()).count() <= 1);
+            if last && !QUITTING.get() {
+                crate::session::save_now();
+            }
             // Detached tabs aren't destroyed with the window; close them by hand (S2).
             // Their views stay in `closing` until DoClose (see remove()).
             let hosts = S.with_borrow_mut(|s| {
@@ -1385,10 +1543,17 @@ wrap_window_delegate! {
                 // not at thread exit after CEF shutdown (CHECK observers_.empty()).
                 closing.extend(s.tabs.drain(..).enumerate().filter(|(i, t)| *i != active && t.view.browser().is_some()).map(|(_, t)| t.view));
                 let hosts: Vec<_> = closing.iter().filter_map(|v| v.browser().and_then(|b| b.host())).collect();
-                *s = State { closing, ..State::default() };
+                *s = State { closing, claimed: true, ..State::default() };
                 hosts
             });
             for h in hosts { h.close_browser(1); }
+            // act on some other open window from now on
+            if let Some(i) = WINS.with_borrow(|w| w.iter().position(|s| s.window.is_some())) {
+                CUR.set(i);
+                if !QUITTING.get() {
+                    crate::session::save_now();
+                }
+            }
         }
 
         // cef-rs defaults every int return to 0; CEF's C++ defaults for these are true.
