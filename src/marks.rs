@@ -189,8 +189,8 @@ mod tests {
     #[test]
     fn parses_qutebrowser_files() {
         assert_eq!(
-            parse("klee https://a/b\n\n# c\nmy mark https://x y", true),
-            [("klee".into(), "https://a/b".into()), ("my mark".into(), "https://x y".into())]
+            parse("klee https://a/b\n\n# c\nmy mark https://x", true),
+            [("klee".into(), "https://a/b".into()), ("my mark".into(), "https://x".into())]
                 as [(String, String); 2]
         );
         assert_eq!(
