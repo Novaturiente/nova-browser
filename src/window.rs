@@ -591,6 +591,8 @@ pub fn refresh() {
             }),
             js_str(modes::mode_name()),
         );
+        let (dl, dl_class) = crate::downloads::summary();
+        let status = format!("{},\"dl\":{},\"dlc\":{}}}", &status[..status.len() - 1], js_str(&dl), js_str(dl_class));
         let title = theme::format_title(&cfg.str("window.title_format"), &fields(s.active, t));
         Some((
             s.tabbar.clone()?,

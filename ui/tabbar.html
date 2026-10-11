@@ -34,6 +34,11 @@
   #mode.command { color: var(--colors-statusbar-command-fg); background: var(--colors-statusbar-command-bg); }
   #keys { color: var(--colors-statusbar-normal-fg); background: var(--colors-statusbar-normal-bg); }
   #msg { min-width: 0; }
+  #dl { color: var(--colors-statusbar-normal-fg); background: var(--colors-statusbar-normal-bg); cursor: pointer;
+        font-variant-numeric: tabular-nums; }
+  #dl.run { color: var(--colors-downloads-start-fg, inherit); background: var(--colors-downloads-start-bg, inherit); }
+  #dl.done { color: var(--colors-downloads-stop-fg, inherit); background: var(--colors-downloads-stop-bg, inherit); }
+  #dl.fail { color: var(--colors-downloads-error-fg, inherit); background: var(--colors-downloads-error-bg, inherit); }
   #msg.error { color: var(--colors-messages-error-fg); background: var(--colors-messages-error-bg); }
   #msg.warning { color: var(--colors-messages-warning-fg); background: var(--colors-messages-warning-bg); }
   #msg.prompt { color: var(--colors-prompts-fg); background: var(--colors-prompts-bg); border: var(--colors-prompts-border, none); }
@@ -43,7 +48,7 @@
   body.vertical #progress { top: 0; bottom: auto; }
 </style>
 <body>
-<div id="tabs"></div><div id="info"><span id="msg"></span><span id="keys"></span><span id="mode"></span></div><div id="progress"></div>
+<div id="tabs"></div><div id="info"><span id="msg"></span><span id="keys"></span><span id="dl" title="Downloads"></span><span id="mode"></span></div><div id="progress"></div>
 <script>
   const $ = (id) => document.getElementById(id);
   nova.theme = (t) => {
@@ -57,6 +62,8 @@
     $("mode").textContent = st.cmd ? "" : st.mode.replace(/^-- | --$/g, "");
     $("mode").className = st.modename;
     $("keys").textContent = st.keys;
+    $("dl").textContent = st.dl;
+    $("dl").className = st.dlc;
     $("msg").textContent = st.msg;
     $("msg").className = st.level;
     $("progress").style.width = st.loading ? Math.max(3, Math.round(st.p * 100)) + "%" : "0";
@@ -73,6 +80,7 @@
     }));
     document.querySelector(".t.a")?.scrollIntoView({ block: "nearest", inline: "nearest" });
   };
+  $("dl").onmousedown = (e) => { e.stopPropagation(); nova.send("run downloads"); };
   nova.send("ready");
 </script>
 </body>

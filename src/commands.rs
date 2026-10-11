@@ -479,7 +479,9 @@ pub const NAMES: &[&str] = &[
     "devtools",
     "download",
     "download-cancel",
+    "download-clear",
     "download-open",
+    "downloads",
     "https-toggle",
     "fake-key",
     "forward",
@@ -771,7 +773,9 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
             }
         }
         "download-open" => crate::downloads::open(&cmd.args)?,
-        "download-cancel" => crate::downloads::cancel()?,
+        "download-cancel" => crate::downloads::cancel(cmd.args.first().and_then(|a| a.parse().ok()))?,
+        "download-clear" => crate::downloads::clear(),
+        "downloads" => window::open(&window::data_url(&crate::downloads::page()).to_string(), true),
         "download" => {
             let url = if cmd.args.is_empty() {
                 window::active_url_title().0
