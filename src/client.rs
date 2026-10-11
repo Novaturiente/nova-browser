@@ -83,9 +83,12 @@ wrap_client! {
                 let main_data = frame.is_some_and(|f| f.is_main() != 0 && CefString::from(&f.url()).to_string().starts_with("data:"));
                 let msg = text.strip_prefix("page ").and_then(|t| t.split_once(' ')).filter(|(tok, _)| main_data && *tok == crate::page_token());
                 if let Some(msg) = msg.and_then(|(_, j)| serde_json::from_str::<serde_json::Value>(j).ok()) {
-                    match crate::marks::on_page(&msg) {
+                    let settings = msg["page"].as_str() == Some("settings");
+                    let r = if settings { crate::settings_page::on_page(&msg) } else { crate::marks::on_page(&msg) };
+                    match r {
                         Ok(()) => {
-                            if let Some(f) = b.main_frame() { f.load_url(Some(&window::data_url(&crate::marks::page()))); }
+                            let page = if settings { crate::settings_page::page() } else { crate::marks::page() };
+                            if let Some(f) = b.main_frame() { f.load_url(Some(&window::data_url(&page))); }
                         }
                         Err(e) => window::message("error", &e),
                     }

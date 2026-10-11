@@ -20,6 +20,7 @@ mod permissions;
 mod renderer;
 mod session;
 mod settings;
+mod settings_page;
 mod spawn;
 mod theme;
 mod urlmatch;

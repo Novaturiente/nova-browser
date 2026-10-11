@@ -4,6 +4,7 @@
 //! (name, kind, none_ok, default as JSON, allowed string values)
 
 pub const SETTINGS: &[(&str, &str, bool, &str, &[&str])] = &[
+    ("theme", "str", false, "\"dark\"", &["dark", "light", "tokyo-night", "catppuccin"]),
     ("aliases", "dict", true, "{\"w\": \"session-save\", \"q\": \"close\", \"qa\": \"quit\", \"wq\": \"quit --save\", \"wqa\": \"quit --save\"}", &[]),
     ("session.default_name", "str", true, "null", &[]),
     ("chromium.args", "list", true, "[]", &[]),

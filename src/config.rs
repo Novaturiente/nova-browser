@@ -34,17 +34,78 @@ pub struct Config {
     runtime_patterns: RwLock<Vec<(UrlPattern, String, Value)>>,
 }
 
+/// Values saved by `:set` / the settings page: <config>/autoconfig.json, as typed
+/// strings ({name: value}); re-validated on load. config.ts wins over them.
+static SAVED: LazyLock<RwLock<HashMap<String, Value>>> = LazyLock::new(Default::default);
+
+fn autoconfig() -> PathBuf {
+    dir().join("autoconfig.json")
+}
+
+fn load_saved() {
+    let raw: serde_json::Map<String, Value> = std::fs::read_to_string(autoconfig())
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default();
+    let mut saved = HashMap::new();
+    for (name, v) in raw {
+        match v.as_str().map(|s| parse_value(&name, s)) {
+            Some(Ok(v)) => {
+                saved.insert(name, v);
+            }
+            _ => eprintln!("novabrowser: autoconfig.json: skipping {name}"),
+        }
+    }
+    *SAVED.write().unwrap() = saved;
+}
+
+/// Save (or with None, forget) a setting in autoconfig.json and apply it.
+pub fn save(name: &str, value: Option<&str>) -> Result<(), String> {
+    let parsed = value.map(|v| parse_value(name, v)).transpose()?;
+    let mut raw: serde_json::Map<String, Value> = std::fs::read_to_string(autoconfig())
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default();
+    match value {
+        Some(v) => raw.insert(name.into(), v.into()),
+        None => raw.remove(name),
+    };
+    let _ = std::fs::create_dir_all(dir());
+    crate::write_atomic(&autoconfig(), serde_json::to_string_pretty(&raw).unwrap().as_bytes())
+        .map_err(|e| format!("autoconfig.json: {e}"))?;
+    let mut saved = SAVED.write().unwrap();
+    match parsed {
+        Some(v) => saved.insert(name.into(), v),
+        None => saved.remove(name),
+    };
+    get().runtime.write().unwrap().remove(name);
+    Ok(())
+}
+
 impl Config {
-    /// Effective global value: `:set`, then config.ts, then qutebrowser's default.
+    /// Effective global value: `:set`, config.ts, saved (`:set`/settings page),
+    /// the theme preset (colours), then the built-in default.
     pub fn get(&self, name: &str) -> Value {
         if let Some(v) = self.runtime.read().unwrap().get(name) {
             return v.clone();
         }
-        self.settings
-            .get(name)
-            .or_else(|| DEFAULTS.get(name))
-            .cloned()
-            .unwrap_or(Value::Null)
+        if let Some(v) = self.settings.get(name) {
+            return v.clone();
+        }
+        if let Some(v) = SAVED.read().unwrap().get(name) {
+            return v.clone();
+        }
+        if name != "theme" {
+            if let Some(v) = crate::theme::preset(&self.str("theme"), name) {
+                return v.into();
+            }
+        }
+        DEFAULTS.get(name).cloned().unwrap_or(Value::Null)
+    }
+
+    /// Set in config.ts (so `:set`/the settings page can't change it for good)?
+    pub fn in_config_ts(&self, name: &str) -> bool {
+        self.settings.contains_key(name)
     }
 
     /// Value for `url`: the last matching `pattern()` block that sets it wins.
@@ -196,6 +257,7 @@ pub fn dir() -> PathBuf {
 /// Load config.ts and make it active. A missing file = defaults. On error the
 /// previous config stays and the error (with config line) is returned.
 pub fn load() -> Result<(), String> {
+    load_saved();
     let p = path();
     let cfg = if p.exists() {
         eval(&p)?

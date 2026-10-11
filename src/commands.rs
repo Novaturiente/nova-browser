@@ -509,6 +509,7 @@ pub const NAMES: &[&str] = &[
     "search",
     "search-next",
     "set",
+    "settings",
     "search-prev",
     "session-delete",
     "session-load",
@@ -529,6 +530,20 @@ pub const NAMES: &[&str] = &[
     "zoom-in",
     "zoom-out",
 ];
+
+/// `:set` / `:config-cycle` / settings page: save the value unless `temp`. A value
+/// config.ts sets can only be overridden until restart (config.ts wins).
+pub fn set_user(name: &str, value: &str, temp: bool) -> Result<(), String> {
+    let cfg = config::get();
+    if temp || cfg.in_config_ts(name) {
+        cfg.set_runtime(name, value)?;
+        if !temp {
+            window::message("warning", &format!("{name} is set in config.ts: changed until restart only"));
+        }
+        return Ok(());
+    }
+    config::save(name, Some(value))
+}
 
 fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
     let n = count.unwrap_or(1);
@@ -767,6 +782,7 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
             crate::marks::bookmark_del(&url)?
         }
         "bindings" => window::open_cmdline(&format!(":bindings {}", cmd.rest())),
+        "settings" => window::open(&window::data_url(&crate::settings_page::page()).to_string(), true),
         "bookmarks" => window::open(&window::data_url(&crate::marks::page()).to_string(), true),
         "bookmark-list" => {
             let page = window::data_url(&crate::marks::page()).to_string();
@@ -811,8 +827,9 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
             }
         }
         "set" => {
-            // `set name value`; `set name` shows the value
-            // -t (don't save) is the only behaviour: :set never writes a file yet
+            // `set name value` saves to autoconfig.json; -t/--temp only until restart;
+            // `set name` shows the value
+            let temp = cmd.flag("-t", "--temp");
             let pattern = cmd
                 .flag("-u", "--pattern")
                 .then(|| cmd.args.first().cloned())
@@ -830,7 +847,7 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
             };
             match &pattern {
                 Some(p) => config::get().set_runtime_for(p, name, &value)?,
-                None => config::get().set_runtime(name, &value)?,
+                None => set_user(name, &value, temp)?,
             }
             window::config_changed();
         }
@@ -852,7 +869,7 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
                 .iter()
                 .position(|v| *v == cur)
                 .map_or(0, |i| (i + 1) % values.len());
-            cfg.set_runtime(name, &values[i])?;
+            set_user(name, &values[i], cmd.flag("-t", "--temp"))?;
             window::config_changed();
         }
         other => return Err(format!("not implemented yet ({other})")),

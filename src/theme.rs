@@ -8,8 +8,13 @@ pub fn vars(cfg: &Config) -> Map<String, Value> {
     let mut out = Map::new();
     for (name, kind, ..) in crate::settings::SETTINGS {
         let var = format!("--{}", name.replace(['.', '_'], "-"));
-        if name.starts_with("colors.") && *kind == "str" {
-            out.insert(var, Value::String(css_color(&cfg.str(name))));
+        if name.starts_with("colors.") && matches!(*kind, "str" | "listorvalue") {
+            // list-valued colours (completion.fg) use their first entry
+            let v = match cfg.get(name) {
+                Value::Array(a) => a.first().and_then(Value::as_str).unwrap_or("").to_string(),
+                v => v.as_str().unwrap_or("").to_string(),
+            };
+            out.insert(var, Value::String(css_color(&v)));
         } else if name.starts_with("fonts.")
             && !name.starts_with("fonts.web.")
             && !name.starts_with("fonts.default_")
@@ -311,5 +316,61 @@ mod tests {
             format_title("{perc}{current_title}", &f),
             "[42%] https://rust-lang.org/x"
         );
+    }
+}
+
+/// Built-in theme presets (setting `theme`): colours for every `colors.*` setting the
+/// user doesn't set. (bg0 darkest .. bg3, fg, muted, border, accent, warm, green, red, on_accent)
+const PRESETS: &[(&str, [&str; 12])] = &[
+    ("dark", ["#141518", "#1c1d21", "#26282d", "#34373e", "#e4e5e7", "#9a9ca3", "#2e3036", "#7ab0f5", "#e8c170", "#8fcf8a", "#ec7b7b", "#141518"]),
+    ("light", ["#e9ebef", "#f6f7f9", "#ffffff", "#d8e2f2", "#1f2328", "#5f6670", "#d0d6de", "#0b62d6", "#b07a00", "#1a7f37", "#cf222e", "#ffffff"]),
+    ("tokyo-night", ["#16161e", "#1a1b26", "#24283b", "#2f3549", "#c0caf5", "#737aa2", "#292e42", "#7aa2f7", "#e0af68", "#9ece6a", "#f7768e", "#16161e"]),
+    ("catppuccin", ["#11111b", "#1e1e2e", "#313244", "#45475a", "#cdd6f4", "#a6adc8", "#313244", "#89b4fa", "#f9e2af", "#a6e3a1", "#f38ba8", "#11111b"]),
+];
+
+/// The preset's value for colour setting `name` (None = not a themed colour).
+pub fn preset(theme: &str, name: &str) -> Option<&'static str> {
+    let p = &PRESETS.iter().find(|p| p.0 == theme).unwrap_or(&PRESETS[0]).1;
+    let [bg0, bg1, bg2, bg3, fg, muted, border, accent, warm, green, red, on] = *p;
+    Some(match name.strip_prefix("colors.")? {
+        "tabs.bar.bg" | "tabs.odd.bg" | "tabs.even.bg" => bg0,
+        "tabs.odd.fg" | "tabs.even.fg" => muted,
+        "tabs.selected.odd.bg" | "tabs.selected.even.bg" => bg2,
+        "tabs.selected.odd.fg" | "tabs.selected.even.fg" => fg,
+        "tabs.indicator.start" | "statusbar.progress.bg" => accent,
+        "tabs.indicator.stop" => green,
+        "tabs.indicator.error" => red,
+        "completion.fg" | "keyhint.fg" | "tooltip.fg" | "contextmenu.menu.fg" | "prompts.fg"
+        | "statusbar.normal.fg" | "statusbar.command.fg" | "messages.info.fg"
+        | "completion.item.selected.fg" | "contextmenu.selected.fg" => fg,
+        "completion.even.bg" | "keyhint.bg" | "contextmenu.menu.bg" | "statusbar.normal.bg"
+        | "statusbar.command.bg" => bg1,
+        "tooltip.bg" | "prompts.bg" | "messages.info.bg" => bg2,
+        "completion.item.selected.bg" | "contextmenu.selected.bg" => bg3,
+        "completion.category.border.top" | "prompts.border" => border,
+        "completion.category.fg" | "keyhint.suffix.fg" | "hints.match.fg" => accent,
+        "hints.bg" | "statusbar.passthrough.bg" | "messages.warning.bg" => warm,
+        "statusbar.insert.bg" | "downloads.stop.bg" => green,
+        "downloads.start.bg" => accent,
+        "messages.error.bg" | "downloads.error.bg" => red,
+        "hints.fg" | "statusbar.insert.fg" | "statusbar.passthrough.fg" | "messages.warning.fg"
+        | "messages.error.fg" | "downloads.start.fg" | "downloads.stop.fg" | "downloads.error.fg" => on,
+        "webpage.bg" => if theme == "light" { "#ffffff" } else { bg1 },
+        _ => return None,
+    })
+}
+
+#[cfg(test)]
+mod preset_tests {
+    #[test]
+    fn every_themed_colour_setting_is_covered() {
+        let themes = crate::settings::SETTINGS.iter().find(|s| s.0 == "theme").unwrap().4;
+        assert!(themes.iter().all(|t| super::PRESETS.iter().any(|p| p.0 == *t)));
+        for (name, kind, ..) in crate::settings::SETTINGS {
+            let themed = name.starts_with("colors.") && matches!(*kind, "str" | "listorvalue") && !name.starts_with("colors.webpage.darkmode") && *name != "colors.webpage.preferred_color_scheme";
+            for t in themes {
+                assert_eq!(super::preset(t, name).is_some(), themed, "{t} {name}");
+            }
+        }
     }
 }
