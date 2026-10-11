@@ -65,7 +65,7 @@ pub fn page() -> String {
                                 "value": shown(name, &cfg), "locked": locked, "note": note })
         })
         .collect();
-    let data = serde_json::json!({ "token": crate::page_token(), "rows": rows });
+    let data = serde_json::json!({ "token": crate::page_token(), "rows": rows, "profile": crate::profile() });
     crate::theme::themed_page(PAGE.replace(
         "/*DATA*/{}",
         &serde_json::to_string(&data)
@@ -120,6 +120,7 @@ button{font:inherit;padding:.25em .7em;border-radius:8px;border:0;cursor:pointer
 <div id=rows></div>
 <script>
 const D=/*DATA*/{};
+if(D.profile){document.querySelector("h1").textContent="Settings — profile "+D.profile;document.querySelector("p.note").append(" Changes here apply to this profile only; unchanged ones follow the default profile.");}
 const send=(m)=>window.nova&&nova.send("page "+D.token+" "+JSON.stringify({...m,page:"settings"}));
 const el=(t,p,...c)=>{const e=document.createElement(t);Object.assign(e,p);e.append(...c);return e;};
 for(const r of D.rows){

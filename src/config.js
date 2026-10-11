@@ -72,6 +72,8 @@ function node(store, prefix, fallback) {
 
 export const c = node(out.settings, "", null);
 export const configDir = N.configDir;
+/** Profile name of this instance ("default" for the unnamed one). */
+export const profile = N.profile;
 
 /** Lines of a file, trimmed, empty ones dropped; [] if it doesn't exist. */
 export function readLines(path) {

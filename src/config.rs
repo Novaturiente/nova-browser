@@ -38,15 +38,28 @@ pub struct Config {
 /// strings ({name: value}); re-validated on load. config.ts wins over them.
 static SAVED: LazyLock<RwLock<HashMap<String, Value>>> = LazyLock::new(Default::default);
 
+/// This profile's file: `<config>/autoconfig.json`, or for a named profile
+/// `<config>/profiles/<name>/autoconfig.json`.
 fn autoconfig() -> PathBuf {
-    dir().join("autoconfig.json")
+    match crate::profile() {
+        Some(name) => dir().join("profiles").join(name).join("autoconfig.json"),
+        None => dir().join("autoconfig.json"),
+    }
 }
 
-fn load_saved() {
-    let raw: serde_json::Map<String, Value> = std::fs::read_to_string(autoconfig())
+fn read_json(p: &Path) -> serde_json::Map<String, Value> {
+    std::fs::read_to_string(p)
         .ok()
         .and_then(|t| serde_json::from_str(&t).ok())
-        .unwrap_or_default();
+        .unwrap_or_default()
+}
+
+/// Named profiles start from the default profile's saved values; their own win.
+fn load_saved() {
+    let mut raw = read_json(&dir().join("autoconfig.json"));
+    if crate::profile().is_some() {
+        raw.extend(read_json(&autoconfig()));
+    }
     let mut saved = HashMap::new();
     for (name, v) in raw {
         match v.as_str().map(|s| parse_value(&name, s)) {
@@ -61,26 +74,21 @@ fn load_saved() {
 
 /// Save (or with None, forget) a setting in autoconfig.json and apply it.
 pub fn save(name: &str, value: Option<&str>) -> Result<(), String> {
-    let parsed = value.map(|v| parse_value(name, v)).transpose()?;
-    let mut raw: serde_json::Map<String, Value> = std::fs::read_to_string(autoconfig())
-        .ok()
-        .and_then(|t| serde_json::from_str(&t).ok())
-        .unwrap_or_default();
+    if let Some(v) = value {
+        parse_value(name, v)?;
+    }
+    let mut raw = read_json(&autoconfig());
     match value {
         Some(v) => raw.insert(name.into(), v.into()),
         None => raw.remove(name),
     };
-    let _ = std::fs::create_dir_all(dir());
+    let _ = std::fs::create_dir_all(autoconfig().parent().unwrap());
     crate::write_atomic(
         &autoconfig(),
         serde_json::to_string_pretty(&raw).unwrap().as_bytes(),
     )
     .map_err(|e| format!("autoconfig.json: {e}"))?;
-    let mut saved = SAVED.write().unwrap();
-    match parsed {
-        Some(v) => saved.insert(name.into(), v),
-        None => saved.remove(name),
-    };
+    load_saved();
     get().runtime.write().unwrap().remove(name);
     Ok(())
 }
@@ -439,6 +447,7 @@ fn install_api(ctx: &Ctx<'_>, config_dir: &str) -> rquickjs::Result<()> {
         .collect();
     n.set("schema", Value::Object(schema).to_string())?;
     n.set("configDir", config_dir)?;
+    n.set("profile", crate::profile().unwrap_or("default"))?;
     let dir = config_dir.to_string();
     n.set(
         "readLines",

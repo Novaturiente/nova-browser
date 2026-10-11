@@ -73,7 +73,10 @@ right-click a tab for its menu.
 - `:set <setting> <value>` — any setting; saved. `:set -t` only until restart.
 - `:profile-new` — create a profile (asks for a name) and open it in its own
   window; `:profile-open <name>` opens one. Each profile has its own history,
-  cookies, logins, bookmarks and sessions; the config is shared. The name shows
+  cookies, logins, bookmarks and sessions. `:set` and `:settings` changes apply
+  to the current profile only (a new profile starts from the default profile's
+  choices); config.ts is shared and can branch with
+  `import { profile } from "nova"; if (profile === "work") …`. The name shows
   at the start of the tab bar.
 - `:dark-toggle` / `:https-toggle` (`<Space>td` / `<Space>th`) — per-site dark
   mode and HTTPS-only exceptions.
