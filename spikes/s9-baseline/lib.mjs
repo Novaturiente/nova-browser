@@ -173,7 +173,12 @@ export function treeMem(root) {
 // Hyprland: float + size + place every window owned by the browser process tree.
 export function hyprClients(root) {
   const pids = new Set(tree(root));
-  const all = JSON.parse(execFileSync("hyprctl", ["clients", "-j"], { encoding: "utf8" }));
+  let all;
+  try {
+    all = JSON.parse(execFileSync("hyprctl", ["clients", "-j"], { encoding: "utf8" }));
+  } catch (e) {
+    throw new Error(`hyprctl clients -j: ${e.message}`);
+  }
   return all.filter((c) => pids.has(c.pid));
 }
 // Window sizes chosen so both get a 1400x913 page viewport: Chrome's toolbar is 87 px, cefsimple (Alloy) has none.
@@ -236,7 +241,12 @@ export async function connect(port) {
   const pending = new Map();
   const listeners = [];
   ws.onmessage = (e) => {
-    const m = JSON.parse(e.data);
+    let m;
+    try {
+      m = JSON.parse(e.data);
+    } catch {
+      return; // not a CDP JSON frame
+    }
     if (m.id && pending.has(m.id)) {
       const { resolve, reject, method } = pending.get(m.id);
       pending.delete(m.id);

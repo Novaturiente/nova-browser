@@ -29,7 +29,7 @@ wrap_browser_process_handler! {
     impl BrowserProcessHandler {
         fn on_context_initialized(&self) {
             modes::init();
-            // here, not in main(): its first post_task needs CEF running
+            net::apply_cookie_policy();
             history::start(xdg_dir("XDG_DATA_HOME", ".local/share").join("history.sqlite"));
             adblock::start();
             ipc::start(); // after CEF init: its requests post_task to the UI thread
@@ -264,3 +264,4 @@ fn main() {
     run_message_loop();
     shutdown();
 }
+

@@ -2,8 +2,9 @@
 use crate::config;
 use cef::*;
 use serde_json::Value;
+use std::collections::BTreeSet;
 use std::net::IpAddr;
-use std::sync::RwLock;
+use std::sync::{Mutex, RwLock};
 
 /// `host` or `host:port` lines from <config>/https_excludes: left on http.
 static HTTPS_EXCLUDES: RwLock<Vec<String>> = RwLock::new(Vec::new());
@@ -79,8 +80,109 @@ fn site(url: &str) -> Option<String> {
     adblock::url_parser::parse_url(url).map(|u| u.domain().to_string())
 }
 
+// ---- Cookies, Chromium side. Its third-party blocking also covers document.cookie
+// and storage, which our CookieAccessFilter (network only) can't see. Exceptions
+// must be exact (third-party origin, page origin) pairs: CEF can't express "any
+// third party on this page" (spike 2026-10-11), so pairs are added as seen.
+
+/// Pairs we allowed via set_content_setting; Chromium persists them in the profile,
+/// so we keep our own list to undo them when the config stops asking for them.
+static PAIRS: Mutex<BTreeSet<(String, String)>> = Mutex::new(BTreeSet::new());
+
+fn pairs_file() -> std::path::PathBuf {
+    crate::xdg_dir("XDG_DATA_HOME", ".local/share").join("cookie_exceptions.json")
+}
+
+fn save_pairs(p: &BTreeSet<(String, String)>) {
+    let f = pairs_file();
+    let tmp = f.with_extension("tmp");
+    let text = serde_json::to_string(p).unwrap();
+    if let Err(e) = std::fs::write(&tmp, text).and_then(|_| std::fs::rename(&tmp, &f)) {
+        eprintln!("novabrowser: {}: {e}", f.display());
+    }
+}
+
+fn origin(url: &str) -> Option<String> {
+    let scheme = url.split_once("://")?.0;
+    Some(format!("{scheme}://{}/", authority(url)?.0))
+}
+
+/// UI thread, at start and after any config change: map `content.cookies.accept`
+/// onto Chromium's cookie controls, and drop exceptions the config no longer wants.
+pub fn apply_cookie_policy() {
+    let Some(ctx) = request_context_get_global_context() else { return };
+    let cfg = config::get();
+    let global = cfg.str("content.cookies.accept");
+    let mut v = value_create().expect("cef value");
+    v.set_int(matches!(global.as_str(), "no-3rdparty" | "no-unknown-3rdparty") as i32);
+    // cef-rs passes an empty CefString out-param as NULL and CEF then fails the call: pre-fill it.
+    let mut err = CefString::from("?");
+    if ctx.set_preference(Some(&"profile.cookie_controls_mode".into()), Some(&mut v), Some(&mut err)) == 0 {
+        eprintln!("novabrowser: cookie_controls_mode: {err}");
+    }
+    // shortcut: per-site overrides under a global `never` aren't mapped (they'd need allow pairs too).
+    let default = if global == "never" { ContentSettingValues::BLOCK } else { ContentSettingValues::DEFAULT };
+    ctx.set_content_setting(None, None, ContentSettingTypes::COOKIES, default);
+    let mut pairs = PAIRS.lock().unwrap();
+    if pairs.is_empty() {
+        *pairs = std::fs::read_to_string(pairs_file())
+            .ok()
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_default();
+    }
+    let before = pairs.len();
+    pairs.retain(|(req, page)| {
+        let keep = global_blocks_third_party(&cfg) && page_allows_all(&cfg, page);
+        if !keep {
+            ctx.set_content_setting(Some(&req.as_str().into()), Some(&page.as_str().into()), ContentSettingTypes::COOKIES, ContentSettingValues::DEFAULT);
+        }
+        keep
+    });
+    if pairs.len() != before {
+        save_pairs(&pairs);
+    }
+}
+
+fn global_blocks_third_party(cfg: &config::Config) -> bool {
+    matches!(cfg.str("content.cookies.accept").as_str(), "no-3rdparty" | "no-unknown-3rdparty")
+}
+
+fn page_allows_all(cfg: &config::Config, page: &str) -> bool {
+    cfg.get_for("content.cookies.accept", page).as_str() == Some("all")
+}
+
+wrap_task! {
+    struct AllowPair { req: String, page: String }
+    impl Task {
+        fn execute(&self) {
+            if let Some(ctx) = request_context_get_global_context() {
+                ctx.set_content_setting(Some(&self.req.as_str().into()), Some(&self.page.as_str().into()), ContentSettingTypes::COOKIES, ContentSettingValues::ALLOW);
+            }
+            save_pairs(&PAIRS.lock().unwrap());
+        }
+    }
+}
+
+/// IO thread, every subresource request: on a page whose pattern says `all` while
+/// the global setting blocks third parties, allow this (third party, page) pair.
+/// shortcut: the pair's very first request goes out before the exception exists
+/// (no cookie on it); later ones and later visits are fine.
+pub fn note_request(url: &str, page: &str) {
+    let cfg = config::get();
+    if page.is_empty() || !global_blocks_third_party(&cfg) || !page_allows_all(&cfg, page) {
+        return;
+    }
+    if matches!((site(url), site(page)), (Some(a), Some(b)) if a == b) {
+        return;
+    }
+    let (Some(req), Some(pg)) = (origin(url), origin(page)) else { return };
+    if PAIRS.lock().unwrap().insert((req.clone(), pg.clone())) {
+        post_task(ThreadId::UI, Some(&mut AllowPair::new(req, pg)));
+    }
+}
+
 /// `content.cookies.accept`, looked up for the tab's page (`first_party`) like qutebrowser.
-/// shortcut: network cookies only; `document.cookie` in third-party iframes isn't filtered.
+/// Network cookies; Chromium's own blocking (apply_cookie_policy) adds document.cookie and storage.
 pub fn cookie_allowed(url: &str, first_party: &str) -> bool {
     let first_party = if first_party.is_empty() {
         url

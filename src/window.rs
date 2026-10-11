@@ -921,6 +921,7 @@ pub fn ui_ready() {
 /// After `:config-source` / `:set`: rebuild keys, layout, theme, per-site dark mode.
 pub fn config_changed() {
     modes::init();
+    crate::net::apply_cookie_policy();
     apply_layout();
     let browsers: Vec<Browser> =
         S.with_borrow(|s| s.tabs.iter().filter_map(|t| t.view.browser()).collect());

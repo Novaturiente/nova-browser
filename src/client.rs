@@ -174,6 +174,7 @@ wrap_resource_request_handler! {
                 }
             }
             net::set_headers(r, &url);
+            net::note_request(&url, &source);
             ReturnValue::CONTINUE
         }
         fn on_resource_redirect(&self, _browser: Option<&mut Browser>, _frame: Option<&mut Frame>, _request: Option<&mut Request>, _response: Option<&mut Response>, new_url: Option<&mut CefString>) {
