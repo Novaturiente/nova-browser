@@ -42,6 +42,21 @@ wrap_task! {
     }
 }
 
+wrap_download_handler! {
+    struct TabDownloads {}
+    impl DownloadHandler {
+        fn can_download(&self, _browser: Option<&mut Browser>, _url: Option<&CefString>, _method: Option<&CefString>) -> ::std::os::raw::c_int { 1 }
+        fn on_before_download(&self, _browser: Option<&mut Browser>, item: Option<&mut DownloadItem>, suggested_name: Option<&CefString>, callback: Option<&mut BeforeDownloadCallback>) -> ::std::os::raw::c_int {
+            let (Some(item), Some(cb)) = (item, callback) else { return 0 };
+            crate::downloads::before(item, &suggested_name.map(|s| s.to_string()).unwrap_or_default(), cb);
+            1
+        }
+        fn on_download_updated(&self, _browser: Option<&mut Browser>, item: Option<&mut DownloadItem>, callback: Option<&mut DownloadItemCallback>) {
+            if let Some(item) = item { crate::downloads::updated(item, callback.as_deref()); }
+        }
+    }
+}
+
 wrap_client! {
     pub struct TabClient {}
     impl Client {
@@ -52,6 +67,7 @@ wrap_client! {
         fn jsdialog_handler(&self) -> Option<JsdialogHandler> { Some(TabDialogs::new()) }
         fn request_handler(&self) -> Option<RequestHandler> { Some(TabRequest::new()) }
         fn keyboard_handler(&self) -> Option<KeyboardHandler> { Some(TabKeys::new()) }
+        fn download_handler(&self) -> Option<DownloadHandler> { Some(TabDownloads::new()) }
         fn on_process_message_received(
             &self,
             browser: Option<&mut Browser>,

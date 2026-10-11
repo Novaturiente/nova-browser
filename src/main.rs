@@ -15,6 +15,7 @@ mod modes;
 mod net;
 mod permissions;
 mod renderer;
+mod downloads;
 mod marks;
 mod session;
 mod settings;

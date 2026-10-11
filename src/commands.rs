@@ -476,6 +476,9 @@ pub const NAMES: &[&str] = &[
     "config-source",
     "cmd-set-text",
     "dark-toggle",
+    "download",
+    "download-cancel",
+    "download-open",
     "https-toggle",
     "fake-key",
     "forward",
@@ -739,6 +742,13 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
         "bookmark-list" => {
             let page = window::data_url(&crate::marks::list_page()).to_string();
             if cmd.flag("-j", "--jump") { open_in(&page, cmd)? } else { window::open(&page, true) }
+        }
+        "download-open" => crate::downloads::open(&cmd.args)?,
+        "download-cancel" => crate::downloads::cancel()?,
+        "download" => {
+            let url = if cmd.args.is_empty() { window::active_url_title().0 } else { url_or_search(&cmd.rest()) };
+            let h = need()?.host().ok_or("no active tab")?;
+            h.start_download(Some(&CefString::from(url.as_str())));
         }
         "session-save" => crate::session::save(cmd.args.first().map(String::as_str))?,
         "session-load" => crate::session::load(
