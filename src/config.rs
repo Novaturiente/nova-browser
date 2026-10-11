@@ -11,89 +11,6 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, RwLock};
 
-/// Settings the browser applies. Anything else set in config.ts is listed as pending.
-/// shortcut: hand-kept list; mark a setting here when its feature lands.
-const APPLIED: &[&str] = &[
-    "aliases",
-    "auto_save.session",
-    "content.fullscreen.window",
-    "spellcheck.languages",
-    "downloads.location.directory",
-    "downloads.open_dispatcher",
-    "session.default_name",
-    "colors.",
-    "completion.height",
-    "content.blocking.adblock.lists",
-    "content.blocking.enabled",
-    "content.blocking.method",
-    "content.blocking.whitelist",
-    "content.autoplay",
-    "content.canvas_reading",
-    "content.cookies.accept",
-    "content.desktop_capture",
-    "content.geolocation",
-    "content.javascript.clipboard",
-    "content.media.audio_capture",
-    "content.media.video_capture",
-    "content.mouse_lock",
-    "content.notifications.enabled",
-    "content.persistent_storage",
-    "content.register_protocol_handler",
-    "content.headers.accept_language",
-    "content.headers.custom",
-    "content.headers.do_not_track",
-    "content.webrtc_ip_handling_policy",
-    "fonts.",
-    "hints.border",
-    "hints.chars",
-    "hints.min_chars",
-    "hints.radius",
-    "hints.selectors",
-    "hints.uppercase",
-    "input.insert_mode.auto_enter",
-    "messages.timeout",
-    "qt.args",
-    "qt.chromium.low_end_device_mode",
-    "scrolling.smooth",
-    "statusbar.padding",
-    "statusbar.widgets",
-    "tabs.indicator.width",
-    "tabs.last_close",
-    "tabs.max_width",
-    "tabs.min_width",
-    "tabs.padding",
-    "tabs.position",
-    "tabs.show",
-    "tabs.title.alignment",
-    "tabs.title.format",
-    "tabs.width",
-    "url.auto_search",
-    "url.searchengines",
-    "url.start_pages",
-    "window.title_format",
-    "zoom.default",
-    "zoom.levels",
-];
-// Exceptions inside the `colors.`/`fonts.` prefixes above.
-const NOT_APPLIED: &[&str] = &[
-    "colors.contextmenu.",
-    "colors.downloads.",
-    "colors.keyhint.",
-    "colors.statusbar.caret",
-    "colors.statusbar.private",
-    "colors.statusbar.command.private",
-    "colors.tabs.pinned.",
-    "colors.webpage.darkmode.contrast",
-    "colors.webpage.darkmode.policy.page",
-    "colors.webpage.darkmode.threshold",
-    "fonts.contextmenu",
-    "fonts.debug_console",
-    "fonts.downloads",
-    "fonts.keyhint",
-    "fonts.prompts",
-    "fonts.tooltip",
-];
-
 static DEFAULTS: LazyLock<HashMap<&'static str, Value>> = LazyLock::new(|| {
     let mut d: HashMap<&'static str, Value> = SETTINGS
         .iter()
@@ -101,11 +18,7 @@ static DEFAULTS: LazyLock<HashMap<&'static str, Value>> = LazyLock::new(|| {
             (*name, serde_json::from_str(default).unwrap_or(Value::Null))
         })
         .collect();
-    // qutebrowser defaults that name qutebrowser
-    d.insert(
-        "window.title_format",
-        "{perc}{current_title}{title_sep}novabrowser".into(),
-    );
+    d.insert("bindings.default", crate::bindings::default_setting());
     d
 });
 
@@ -236,22 +149,9 @@ impl Config {
             .any(|(_, v)| v.get(name) == Some(value))
     }
 
-    /// Settings set in config.ts that nothing applies yet.
-    pub fn pending(&self) -> Vec<String> {
-        let applied = |n: &str| {
-            APPLIED
-                .iter()
-                .any(|a| n == *a || (a.ends_with('.') && n.starts_with(a)))
-                && !NOT_APPLIED.iter().any(|a| n.starts_with(a))
-        };
-        let mut names: Vec<String> = self
-            .settings
-            .keys()
-            .chain(self.patterns.iter().flat_map(|(_, v)| v.keys()))
-            .filter(|n| !applied(n))
-            .cloned()
-            .collect();
-        // settings read with get_for(); other per-site values aren't applied yet
+    /// Settings put in a `pattern()` that are only applied globally.
+    pub fn ignored_per_site(&self) -> Vec<String> {
+        // settings read with get_for()
         const PER_SITE: &[&str] = &[
             "colors.webpage.darkmode.enabled",
             "content.blocking.enabled",
@@ -259,13 +159,13 @@ impl Config {
             "content.headers.custom",
             "content.headers.do_not_track",
         ];
-        names.extend(
-            self.patterns
-                .iter()
-                .flat_map(|(_, v)| v.keys())
-                .filter(|n| applied(n) && !PER_SITE.contains(&n.as_str()))
-                .map(|n| format!("{n} (per-site)")),
-        );
+        let mut names: Vec<String> = self
+            .patterns
+            .iter()
+            .flat_map(|(_, v)| v.keys())
+            .filter(|n| !PER_SITE.contains(&n.as_str()) && !crate::permissions::is_setting(n))
+            .cloned()
+            .collect();
         names.sort();
         names.dedup();
         names
@@ -660,7 +560,7 @@ bind("<Alt-Backspace>", "mode-leave", "insert");
         assert_eq!(cfg.binds[1], ("normal".into(), "<Ctrl-v>".into(), None));
         assert_eq!(cfg.binds[2].0, "insert");
         assert_eq!(cfg.str("tabs.position"), "top", "default");
-        assert!(cfg.pending().is_empty(), "{:?}", cfg.pending());
+        assert!(cfg.ignored_per_site().is_empty());
     }
 
     #[test]
@@ -688,15 +588,13 @@ bind("<Alt-Backspace>", "mode-leave", "insert");
     }
 
     #[test]
-    fn pending_lists_unbuilt_settings() {
+    fn removed_and_global_only_settings() {
+        assert!(load_str("import { c } from \"nova\";\nc.content.pdfjs = true;\n").err().unwrap().contains("unknown setting"));
         let cfg = load_str(
-            "import { c, pattern } from \"nova\";\nc.content.pdfjs = true;\nc.hints.chars = \"ab\";\npattern(\"*://*.google.com/*\", (p) => { p.content.cookies.accept = \"all\"; p.content.webgl = false; p.zoom.default = \"90%\"; });\n",
+            "import { c, pattern } from \"nova\";\npattern(\"*://*.google.com/*\", (p) => { p.content.cookies.accept = \"all\"; p.hints.chars = \"ab\"; });\n",
         )
         .unwrap();
-        assert_eq!(
-            cfg.pending(),
-            ["content.pdfjs", "content.webgl", "zoom.default (per-site)"]
-        );
+        assert_eq!(cfg.ignored_per_site(), ["hints.chars"]);
     }
 
     #[test]

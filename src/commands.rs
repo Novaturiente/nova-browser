@@ -803,11 +803,12 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
             crate::marks::reload();
             crate::net::load_https_excludes();
             window::config_changed();
-            let pending = config::get().pending().len();
-            window::message(
-                "info",
-                &format!("config.ts loaded ({pending} settings not built yet)"),
-            );
+            let ignored = config::get().ignored_per_site();
+            if ignored.is_empty() {
+                window::message("info", "config.ts loaded");
+            } else {
+                window::message("warning", &format!("config.ts loaded; only global, ignored in pattern(): {}", ignored.join(", ")));
+            }
         }
         "set" => {
             // `set name value`; `set name` shows the value

@@ -2,6 +2,7 @@
 mod adblock;
 mod client;
 mod clipboard;
+mod bindings;
 mod commands;
 mod completion;
 mod config;
@@ -74,11 +75,11 @@ wrap_app! {
     }
 }
 
-/// Chromium switches from config (qutebrowser qtargs.py + darkmode.py): `qt.args`
+/// Chromium switches from config (ported from qutebrowser qtargs.py + darkmode.py): `chromium.args`
 /// verbatim, then the settings that map to a switch.
 fn switches(cfg: &config::Config) -> Vec<(String, Option<String>)> {
     let mut out: Vec<(String, Option<String>)> = cfg
-        .list("qt.args")
+        .list("chromium.args")
         .iter()
         .map(|a| {
             let a = a.trim_start_matches('-');
@@ -110,7 +111,7 @@ fn switches(cfg: &config::Config) -> Vec<(String, Option<String>)> {
             Some(&p.replace('-', "_")),
         ),
     }
-    match cfg.str("qt.chromium.low_end_device_mode").as_str() {
+    match cfg.str("chromium.low_end_device_mode").as_str() {
         "always" => add("enable-low-end-device-mode", None),
         "never" => add("disable-low-end-device-mode", None),
         _ => {}
@@ -240,11 +241,13 @@ fn main() {
     if argv.get(1).map(String::as_str) == Some("--check-config") {
         // load config.ts without starting the browser: errors and unbuilt settings
         match config::load() {
-            Ok(()) => println!(
-                "{}: ok; not built yet: {}",
-                config::path().display(),
-                config::get().pending().join(", ")
-            ),
+            Ok(()) => {
+                println!("{}: ok", config::path().display());
+                let ignored = config::get().ignored_per_site();
+                if !ignored.is_empty() {
+                    println!("only global, ignored in pattern(): {}", ignored.join(", "));
+                }
+            }
             Err(e) => {
                 eprintln!("{e}");
                 std::process::exit(1);
@@ -336,20 +339,11 @@ fn main() {
     if let Some(e) = config_error {
         window::startup_message("error", &format!("config: {e}"));
     } else {
-        let pending = config::get().pending();
-        if !pending.is_empty() {
-            eprintln!(
-                "novabrowser: config settings not applied yet: {}",
-                pending.join(", ")
-            );
-            window::startup_message(
-                "info",
-                &format!(
-                    "config: {} settings not built yet: {}",
-                    pending.len(),
-                    pending.join(", ")
-                ),
-            );
+        let ignored = config::get().ignored_per_site();
+        if !ignored.is_empty() {
+            let msg = format!("config: only global, ignored in pattern(): {}", ignored.join(", "));
+            eprintln!("novabrowser: {msg}");
+            window::startup_message("warning", &msg);
         }
     }
     run_message_loop();

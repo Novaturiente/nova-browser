@@ -45,10 +45,6 @@ fn all_binds(cfg: &config::Config) -> Vec<(String, String, Option<String>, bool)
                 binds.push((mode.clone(), key.clone(), cmd, setting == "bindings.commands"));
             }
         }
-        if setting == "bindings.default" {
-            // ours on top of qutebrowser's defaults (`?` is search-backward there)
-            binds.push(("normal".into(), "<F1>".into(), Some("bindings".into()), false));
-        }
     }
     binds.extend(cfg.binds.iter().map(|(m, k, c)| (m.clone(), k.clone(), c.clone(), true)));
     binds

@@ -29,6 +29,11 @@ const MEDIA_BITS: &[(u32, &str, &str)] = &[
     (8, "content.desktop_capture", "capture your screen"),
 ];
 
+/// A setting decided per origin here (so it may be used inside `pattern()`).
+pub fn is_setting(name: &str) -> bool {
+    PROMPT_BITS.iter().map(|b| b.1).chain(MEDIA_BITS.iter().map(|b| b.1)).any(|s| s == name)
+}
+
 enum Callback {
     Prompt(u64, PermissionPromptCallback),
     Media(u32, MediaAccessCallback),
