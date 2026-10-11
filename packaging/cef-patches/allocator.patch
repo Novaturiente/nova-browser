@@ -1,0 +1,28 @@
+--- a/cef/tools/gn_args.py	2026-10-11 23:30:36.364639486 +0530
++++ b/cef/tools/gn_args.py	2026-10-11 23:30:36.379045804 +0530
+@@ -568,10 +568,10 @@
+       # |use_allocator_shim=false use_partition_alloc=false| to completely
+       # disable the allocator shim and PartitionAlloc, however that currently
+       # causes build errors in Chromium (see issue #3095).
+-      add_args['use_partition_alloc_as_malloc'] = False
+-
+-      # BackupRefPtr support requires PA-E, so disable it.
+-      add_args['enable_backup_ref_ptr_support'] = False
++      # novabrowser: keep PA-E + BackupRefPtr (Chrome's defaults). The reason
++      # above (#3095) is hosts that bring their own malloc; ours links libcef at
++      # startup and uses glibc.
++      pass
+   else:
+     is_asan = GetArgValue(args, 'is_asan')
+ 
+--- a/build/config/compiler/BUILD.gn	2026-10-11 23:30:36.368423492 +0530
++++ b/build/config/compiler/BUILD.gn	2026-10-11 23:30:36.379304496 +0530
+@@ -835,7 +835,7 @@
+       # and let it use all cores.
+       # TODO(thakis): Check if '=0' (that is, number of cores, instead
+       # of "all" which means number of hardware threads) is faster.
+-      ldflags += [ "-Wl,--thinlto-jobs=all" ]
++      ldflags += [ "-Wl,--thinlto-jobs=8" ]  # novabrowser: bound link RAM on 16 GB hosts
+ 
+       if (is_chromeos) {
+         # ARM was originally set lower than x86 to keep the size

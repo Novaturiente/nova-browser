@@ -6,7 +6,7 @@ session; update before ending one (rules in `AGENTS.md`).
 ## Now
 
 - **Phase:** 8 week running + 8b hands-on + 9 (AUR) built
-- **Next action:** own CEF build on the laptop. Source download running in `~/cef-build` (branch 8037 @ 14c5a08). Tonight: patch `src/cef/tools/gn_args.py` (PA-E + BRP on) and add `-march=x86-64-v3`, then build with `--no-update --force-config`, `ninja -j6`, `concurrent_links=1`. Check: novabrowser tests + smoke against it, no `__libc_malloc` import, H.264 plays, Speedometer 3 ×3 vs prebuilt and Chrome. User-only: `rbw login` + save/update test, package install, Phase 8 week.
+- **Next action:** own CEF build on the laptop. Source download running in `~/cef-build` (branch 8037 @ 14c5a08). Source downloaded (29 GB), patches applied and `gn gen` verified (PA-E, BRP, PGO 2, ThinLTO, CFI, codecs). Tonight: `autoninja -j6 cefsimple` + `make_distrib` per `packaging/cef-patches/README.md`. Check: novabrowser tests + smoke against it, no `__libc_malloc` import, H.264 plays, Speedometer 3 ×3 vs prebuilt and Chrome. User-only: `rbw login` + save/update test, package install, Phase 8 week.
 - **Blockers:** none
 
 ## Checklist
@@ -48,6 +48,7 @@ Each done item links its evidence (file, commit, or session-log date).
 
 Newest first. Settled — don't reopen without new evidence.
 
+- 2026-10-11 — Privacy (user): idle net-log on `about:blank` must show no Google hosts. Runtime (main.rs, works on prebuilt CEF): disable-features NetworkTimeServiceQuerying, AimEnabled, AimServerEligibilityEnabled, PreconnectToSearch, PreconnectFromKeyedService, BrowsingTopics; `--no-pings`; prefs `signin.allowed`/`safebrowsing.enabled` false (Safe Browsing gets HTTP 400 without an API key anyway). Build patch (`packaging/cef-patches/privacy.patch`): component allowlist = Widevine, CRLSet, PKI metadata (CT), hyphenation; `TriggerListAccounts` no-op. `--disable-background-networking` does nothing here; whole-sale ungoogled patches rejected (CEF conflicts). WebRTC policy left at all-interfaces (Chromium already hides local IPs via mDNS).
 - 2026-10-11 — Own CEF build options (research + user): `is_official_build` + `--with-pgo-profiles` (CEF measured ~15% Speedometer), `proprietary_codecs ffmpeg_branding=Chrome`, `symbol_level=0` (blink/v8 too), `use_sysroot=true`; patch CEF `gn_args.py`, which forces `use_partition_alloc_as_malloc=false`/BRP off on Linux after GN_DEFINES (reason: issue #3095, jemalloc hosts; doesn't apply to us). User chose `-march=x86-64-v3` for own builds — risk: SIGILL on pre-AVX2 CPUs, so never ship that libcef in the public package (needs a baseline build). Rejected: -O3, optimize_for_size, unwind-table removal, ungoogled feature trimming, system libs, dropping PGO/ThinLTO.
 
 - 2026-10-11 — Passwords (user): focus + pick fill (never on load), base-domain match, backends rbw/bw/pass behind `passwords.backend`; generation is ours. Per-profile settings: `:set`/`:settings` write `<config>/profiles/<name>/autoconfig.json` layered over the default profile's; config.ts shared, exports `profile`.

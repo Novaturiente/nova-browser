@@ -1,0 +1,15 @@
+--- a/build/config/compiler_cpu_abi.gn	2026-10-11 23:30:36.370997607 +0530
++++ b/build/config/compiler_cpu_abi.gn	2026-10-11 23:30:36.379381478 +0530
+@@ -56,6 +56,12 @@
+       cpu_abi_ldflags += [ "-m64" ]
+     }
+     cpu_abi_cflags += [ "-msse3" ]
++    if (!is_chromeos) {
++      # novabrowser personal build: AVX2-class CPUs only (SIGILL elsewhere).
++      # ldflags too: ThinLTO generates code at link time.
++      cpu_abi_cflags += [ "-march=x86-64-v3" ]
++      cpu_abi_ldflags += [ "-march=x86-64-v3" ]
++    }
+     if (target_os == "chromeos" && cros_target_cpu_arch != "" &&
+         is_a_target_toolchain) {
+       cpu_abi_cflags += [ "-march=$cros_target_cpu_arch" ]
