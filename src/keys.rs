@@ -412,6 +412,28 @@ impl Keymap {
         }
     }
 
+    /// Bindings that continue `seq`: (remaining keys, command), sorted by keys.
+    pub fn continuations(&self, seq: &[Key]) -> Vec<(String, String)> {
+        fn walk(node: &Node, path: &mut Vec<String>, out: &mut Vec<(String, String)>) {
+            if let Some(c) = &node.command {
+                out.push((path.concat(), c.clone()));
+            }
+            for (k, child) in &node.children {
+                path.push(k.to_string());
+                walk(child, path, out);
+                path.pop();
+            }
+        }
+        let mut out = vec![];
+        if let Some(node) = self.lookup(seq).filter(|_| !seq.is_empty()) {
+            for (k, child) in &node.children {
+                walk(child, &mut vec![k.to_string()], &mut out);
+            }
+        }
+        out.sort();
+        out
+    }
+
     fn lookup(&self, seq: &[Key]) -> Option<&Node> {
         let mut node = &self.root;
         for k in seq {
@@ -493,6 +515,10 @@ impl Parser {
     pub fn clear(&mut self) {
         self.sequence.clear();
         self.count.clear();
+    }
+
+    pub fn sequence(&self) -> &[Key] {
+        &self.sequence
     }
 
     /// e.g. "3g" for the status bar

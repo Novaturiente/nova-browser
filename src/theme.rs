@@ -67,6 +67,11 @@ pub fn bar_height(cfg: &Config, font_setting: &str, padding_setting: &str) -> i3
     (px * 1.25).ceil() as i32 + (v("top") + v("bottom")) as i32
 }
 
+/// Pixel size of a font setting (16 when it has none).
+pub fn setting_px(cfg: &Config, font_setting: &str) -> f64 {
+    font_px(&resolve_font(cfg, &cfg.str(font_setting))).unwrap_or(16.0)
+}
+
 fn font_px(font: &str) -> Option<f64> {
     font.split_whitespace().find_map(|t| {
         if let Some(n) = t.strip_suffix("pt") {

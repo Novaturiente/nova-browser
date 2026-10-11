@@ -1,0 +1,35 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>keyhint</title>
+<style>
+  /* Which-key popup: keys that can follow the pending prefix (bottom-right). */
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body { background: var(--colors-keyhint-bg, #222); color: var(--colors-keyhint-fg, #fff);
+         font: var(--fonts-keyhint, 10pt monospace); box-sizing: border-box; padding: 8px 12px;
+         border: 1px solid var(--colors-completion-category-border-top, #444); }
+  .row { display: flex; gap: 14px; white-space: nowrap; line-height: 1.6; }
+  .k { flex: 0 0 auto; min-width: 4ch; }
+  .p { opacity: .5; }
+  .s { color: var(--colors-keyhint-suffix-fg, #fc6); font-weight: bold; }
+  .c { flex: 1; overflow: hidden; text-overflow: ellipsis; opacity: .8; }
+</style>
+<body><div id="list"></div>
+<script>
+  nova.theme = (t) => {
+    for (const [k, v] of Object.entries(t.vars)) document.documentElement.style.setProperty(k, v);
+  };
+  // nova.keyhint(prefix, [[rest, command], ...])
+  nova.keyhint = (prefix, rows) => {
+    const el = (cls, text) => Object.assign(document.createElement("span"), { className: cls, textContent: text });
+    document.getElementById("list").replaceChildren(...rows.map(([rest, cmd]) => {
+      const r = document.createElement("div");
+      r.className = "row";
+      const k = el("k", "");
+      k.append(el("p", prefix), el("s", rest));
+      r.append(k, el("c", cmd));
+      return r;
+    }));
+  };
+  nova.send("ready");
+</script>
+</body>

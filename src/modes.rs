@@ -101,6 +101,17 @@ pub fn mode() -> Mode {
     S.with_borrow(|s| s.mode)
 }
 
+/// Which-key rows for the pending keychain in normal mode: (prefix, [(rest, command)]).
+pub fn keyhint() -> (String, Vec<(String, String)>) {
+    S.with_borrow(|s| {
+        let seq = s.parser.sequence();
+        if s.mode != Mode::Normal || seq.is_empty() {
+            return (String::new(), vec![]);
+        }
+        (seq.iter().map(|k| k.to_string()).collect(), s.normal.continuations(seq))
+    })
+}
+
 pub fn pending() -> String {
     S.with_borrow(|s| s.parser.pending())
 }

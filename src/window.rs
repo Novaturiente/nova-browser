@@ -11,6 +11,7 @@ use cef::*;
 use std::cell::{Cell, RefCell};
 const TABBAR_HTML: &str = include_str!("../ui/tabbar.html");
 const PALETTE_HTML: &str = include_str!("../ui/palette.html");
+const KEYHINT_HTML: &str = include_str!("../ui/keyhint.html");
 
 struct Tab {
     view: BrowserView,
@@ -36,6 +37,9 @@ struct State {
     tabbar: Option<BrowserView>,
     /// Command line + completion, floating over the content (hidden outside command mode).
     palette: Option<(BrowserView, OverlayController)>,
+    keyhint: Option<(BrowserView, OverlayController)>,
+    /// bumped on every keyhint change; a delayed show only applies if still current
+    keyhint_gen: u64,
     /// Palette shown as a thin strip (search: the page must stay visible).
     compact: bool,
     tabs: Vec<Tab>,
@@ -554,6 +558,7 @@ fn fields(i: usize, t: &Tab) -> TitleFields<'_> {
 
 /// Push the current state into the tab bar, status bar and window title.
 pub fn refresh() {
+    update_keyhint();
     let cfg = config::get();
     let tab_fmt = cfg.str("tabs.title.format");
     let Some((tabbar, window, bar_json, title)) = S.with_borrow(|s| {
@@ -903,6 +908,57 @@ pub fn show_completion(json: Option<&str>) {
     palette_js(&format!("nova.complete({})", json.unwrap_or("null")));
 }
 
+wrap_task! {
+    struct ShowKeyhint { generation: u64 }
+    impl Task {
+        fn execute(&self) { show_keyhint(self.generation); }
+    }
+}
+
+/// Which-key: after a pending prefix (e.g. `g`) waits briefly, then lists what can
+/// follow, bottom-right of the page. Hidden as soon as the chain ends.
+fn update_keyhint() {
+    let rows = modes::keyhint().1;
+    let generation = S.with_borrow_mut(|s| {
+        s.keyhint_gen += 1;
+        s.keyhint_gen
+    });
+    if rows.is_empty() {
+        if let Some((_, o)) = S.with_borrow(|s| s.keyhint.clone()) {
+            o.set_visible(0);
+        }
+    } else {
+        post_delayed_task(ThreadId::UI, Some(&mut ShowKeyhint::new(generation)), 350);
+    }
+}
+
+fn show_keyhint(generation: u64) {
+    let Some((view, overlay, mid, content)) = S.with_borrow(|s| {
+        if s.keyhint_gen != generation {
+            return None;
+        }
+        let (v, o) = s.keyhint.clone()?;
+        Some((v, o, s.mid.clone()?, s.content.clone()?))
+    }) else {
+        return;
+    };
+    let (prefix, rows) = modes::keyhint();
+    if rows.is_empty() {
+        return;
+    }
+    let cfg = config::get();
+    let row_h = (theme::setting_px(&cfg, "fonts.keyhint") * 1.6).ceil() as i32;
+    let (m, c) = (mid.bounds(), content.bounds());
+    let h = (rows.len() as i32 * row_h + 18).min(c.height - 24);
+    let w = 380.min(c.width - 24);
+    overlay.set_bounds(Some(&Rect { x: m.x + c.x + c.width - w - 12, y: m.y + c.y + c.height - h - 12, width: w, height: h }));
+    overlay.set_visible(1);
+    if let Some(f) = view.browser().and_then(|b| b.main_frame()) {
+        let js = format!("nova.keyhint({}, {})", js_str(&prefix), serde_json::json!(rows));
+        f.execute_java_script(Some(&CefString::from(js.as_str())), None, 0);
+    }
+}
+
 /// Full content area, or a top strip one input tall when compact.
 fn place_palette() {
     let Some((overlay, mid, content, compact)) = S.with_borrow(|s| {
@@ -1069,7 +1125,7 @@ fn push_theme() {
         },
     })
     .to_string();
-    let views = S.with_borrow(|s| [s.tabbar.clone(), s.palette.as_ref().map(|c| c.0.clone())]);
+    let views = S.with_borrow(|s| [s.tabbar.clone(), s.palette.as_ref().map(|c| c.0.clone()), s.keyhint.as_ref().map(|c| c.0.clone())]);
     for v in views.into_iter().flatten() {
         if let Some(f) = v.browser().and_then(|b| b.main_frame()) {
             let js = format!("window.nova && nova.theme && nova.theme({json})");
@@ -1160,6 +1216,10 @@ wrap_window_delegate! {
             }));
             let content = panel_create(None).expect("panel");
             content.set_to_fill_layout();
+            let keyhint = browser_view(&mut UiClient::new(), &data_url(KEYHINT_HTML).to_string(), KIND_FIXED, &ui);
+            let kh_overlay = window
+                .add_overlay_view(Some(&mut View::from(&keyhint)), DockingMode::CUSTOM, 0)
+                .expect("keyhint overlay");
             // Added last so it stays on top (cef_window.h); positioned by place_palette.
             let palette = browser_view(&mut UiClient::new(), &data_url(PALETTE_HTML).to_string(), KIND_FIXED, &ui);
             let overlay = window
@@ -1167,6 +1227,7 @@ wrap_window_delegate! {
                 .expect("palette overlay");
             let (start, startup) = S.with_borrow_mut(|s| {
                 s.palette = Some((palette, overlay));
+                s.keyhint = Some((keyhint, kh_overlay));
                 s.window = Some(window.clone());
                 s.mid = Some(mid);
                 s.content = Some(content);
