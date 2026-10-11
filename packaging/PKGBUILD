@@ -33,6 +33,7 @@ prepare() {
 build() {
   cd "$pkgname"
   export CARGO_HOME="$srcdir/cargo-home"
+  export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$srcdir=/build"  # no build paths in panic messages
   # cef-dll-sys downloads the matching CEF minimal build (sha1-checked) into here
   export CEF_PATH="$srcdir/cef"
   cargo build --release --frozen
@@ -41,6 +42,7 @@ build() {
 check() {
   cd "$pkgname"
   export CARGO_HOME="$srcdir/cargo-home" CEF_PATH="$srcdir/cef"
+  export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$srcdir=/build"  # same as build(), else a full rebuild
   cargo test --release --frozen
 }
 
