@@ -1,0 +1,4 @@
+src/
+pkg/
+novabrowser-git/
+*.pkg.tar.*
