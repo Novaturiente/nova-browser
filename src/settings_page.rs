@@ -12,7 +12,10 @@ const SHOWN: &[(&str, &str)] = &[
     ("tabs.position", "Tab bar position"),
     ("tabs.show", "Show tab bar"),
     ("colors.webpage.darkmode.enabled", "Dark mode for web pages"),
-    ("colors.webpage.preferred_color_scheme", "Preferred colour scheme for sites"),
+    (
+        "colors.webpage.preferred_color_scheme",
+        "Preferred colour scheme for sites",
+    ),
     ("content.blocking.enabled", "Block ads and trackers"),
     ("content.cookies.accept", "Cookies"),
     ("content.autoplay", "Autoplay media"),
@@ -32,7 +35,9 @@ fn shown(name: &str, cfg: &config::Config) -> String {
     };
     match v {
         serde_json::Value::String(s) => s,
-        serde_json::Value::Array(a) if a.len() == 1 && a[0].is_string() => a[0].as_str().unwrap().into(),
+        serde_json::Value::Array(a) if a.len() == 1 && a[0].is_string() => {
+            a[0].as_str().unwrap().into()
+        }
         serde_json::Value::Null => String::new(),
         v => v.to_string(),
     }
@@ -49,13 +54,24 @@ pub fn page() -> String {
                 (_, Some(s)) => (s.1, s.4.to_vec()),
                 _ => ("str", vec![]),
             };
-            let locked = cfg.in_config_ts(if *name == "search" { "url.searchengines" } else { name });
+            let locked = cfg.in_config_ts(if *name == "search" {
+                "url.searchengines"
+            } else {
+                name
+            });
+            let n = if *name == "theme" { cfg.colors_in_config_ts() } else { 0 };
+            let note = if n > 0 { format!("config.ts sets {n} colours itself, they override the theme") } else { String::new() };
             serde_json::json!({ "name": name, "label": label, "kind": kind, "values": values,
-                                "value": shown(name, &cfg), "locked": locked })
+                                "value": shown(name, &cfg), "locked": locked, "note": note })
         })
         .collect();
     let data = serde_json::json!({ "token": crate::page_token(), "rows": rows });
-    PAGE.replace("/*DATA*/{}", &serde_json::to_string(&data).unwrap().replace('<', "\\u003c"))
+    PAGE.replace(
+        "/*DATA*/{}",
+        &serde_json::to_string(&data)
+            .unwrap()
+            .replace('<', "\\u003c"),
+    )
 }
 
 /// {"a": "set", "k": name, "v": value} | {"a": "reset", "k": name}
@@ -92,7 +108,9 @@ body{font:14px system-ui,sans-serif;max-width:46em;margin:2em auto;padding:0 1em
 h1{font-size:1.3em;font-weight:600}p.note{opacity:.65}
 .r{display:flex;gap:1em;align-items:center;padding:.6em .8em;border-radius:10px;margin:.35em 0;background:color-mix(in srgb,currentColor 6%,transparent)}
 .r label{flex:1}.r small{display:block;opacity:.55;font-size:.8em}
-input,select{font:inherit;padding:.3em .6em;border-radius:8px;border:1px solid color-mix(in srgb,currentColor 25%,transparent);background:transparent;color:inherit;width:18em}
+input,select{font:inherit;padding:.3em .6em;border-radius:8px;border:1px solid color-mix(in srgb,currentColor 25%,transparent);background:Canvas;color:CanvasText;width:18em}
+option{background:Canvas;color:CanvasText}
+.warn{color:#e5a50a;opacity:1}
 input[type=checkbox]{width:auto;transform:scale(1.3)}
 button{font:inherit;padding:.25em .7em;border-radius:8px;border:0;cursor:pointer;background:color-mix(in srgb,currentColor 12%,transparent);color:inherit}
 .locked{opacity:.55}
@@ -111,7 +129,7 @@ for(const r of D.rows){
   else if(r.values.length) input=el("select",{onchange:(e)=>set(e.target.value)},...r.values.map(v=>el("option",{value:v,textContent:v,selected:v===r.value})));
   else input=el("input",{value:r.value,onchange:(e)=>set(e.target.value)});
   input.disabled=r.locked;
-  const row=el("div",{className:"r"+(r.locked?" locked":"")},el("label",{textContent:r.label},el("small",{textContent:r.name+(r.locked?" · set in config.ts":"")})),input);
+  const row=el("div",{className:"r"+(r.locked?" locked":"")},el("label",{textContent:r.label},el("small",{textContent:r.name+(r.locked?" · set in config.ts":"")}),...(r.note?[el("small",{className:"warn",textContent:r.note})]:[])),input);
   if(!r.locked) row.append(el("button",{textContent:"Reset",title:"back to the default",onclick:()=>send({a:"reset",k:r.name})}));
   document.getElementById("rows").append(row);
 }

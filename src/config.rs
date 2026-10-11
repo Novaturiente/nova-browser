@@ -71,8 +71,11 @@ pub fn save(name: &str, value: Option<&str>) -> Result<(), String> {
         None => raw.remove(name),
     };
     let _ = std::fs::create_dir_all(dir());
-    crate::write_atomic(&autoconfig(), serde_json::to_string_pretty(&raw).unwrap().as_bytes())
-        .map_err(|e| format!("autoconfig.json: {e}"))?;
+    crate::write_atomic(
+        &autoconfig(),
+        serde_json::to_string_pretty(&raw).unwrap().as_bytes(),
+    )
+    .map_err(|e| format!("autoconfig.json: {e}"))?;
     let mut saved = SAVED.write().unwrap();
     match parsed {
         Some(v) => saved.insert(name.into(), v),
@@ -106,6 +109,11 @@ impl Config {
     /// Set in config.ts (so `:set`/the settings page can't change it for good)?
     pub fn in_config_ts(&self, name: &str) -> bool {
         self.settings.contains_key(name)
+    }
+
+    /// How many `colors.*` settings config.ts sets (they hide the theme preset).
+    pub fn colors_in_config_ts(&self) -> usize {
+        self.settings.keys().filter(|k| k.starts_with("colors.") && !k.starts_with("colors.webpage.")).count()
     }
 
     /// Value for `url`: the last matching `pattern()` block that sets it wins.
@@ -651,7 +659,12 @@ bind("<Alt-Backspace>", "mode-leave", "insert");
 
     #[test]
     fn removed_and_global_only_settings() {
-        assert!(load_str("import { c } from \"nova\";\nc.content.pdfjs = true;\n").err().unwrap().contains("unknown setting"));
+        assert!(
+            load_str("import { c } from \"nova\";\nc.content.pdfjs = true;\n")
+                .err()
+                .unwrap()
+                .contains("unknown setting")
+        );
         let cfg = load_str(
             "import { c, pattern } from \"nova\";\npattern(\"*://*.google.com/*\", (p) => { p.content.cookies.accept = \"all\"; p.hints.chars = \"ab\"; });\n",
         )

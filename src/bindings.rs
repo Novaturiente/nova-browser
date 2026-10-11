@@ -73,6 +73,8 @@ pub const CORE: &[(&str, &str, &str)] = &[
     ("normal", "gb", "cmd-set-text -s :bookmark-load"),
     ("normal", "gB", "cmd-set-text -s :bookmark-load -t"),
     ("normal", "Sb", "bookmarks"),
+    ("normal", "Ss", "settings"),
+    ("normal", "Sd", "downloads"),
     // zoom
     ("normal", "+", "zoom-in"),
     ("normal", "-", "zoom-out"),
@@ -83,7 +85,11 @@ pub const CORE: &[(&str, &str, &str)] = &[
     // modes and the rest
     ("normal", "i", "mode-enter insert"),
     ("normal", "<Ctrl-v>", "mode-enter passthrough"),
-    ("normal", "<Escape>", "clear-keychain ;; search ;; fullscreen --leave"),
+    (
+        "normal",
+        "<Escape>",
+        "clear-keychain ;; search ;; fullscreen --leave",
+    ),
     ("normal", "gd", "download"),
     ("normal", "<F1>", "bindings"),
     ("normal", "<F11>", "fullscreen"),
@@ -116,7 +122,10 @@ mod tests {
             assert!(seen.insert((*mode, canon)), "duplicate key {key}");
             for part in cmd.split(";;") {
                 let name = part.split_whitespace().next().unwrap();
-                assert!(crate::commands::NAMES.contains(&name), "unknown command {name} ({key})");
+                assert!(
+                    crate::commands::NAMES.contains(&name),
+                    "unknown command {name} ({key})"
+                );
             }
         }
         let actions: std::collections::HashSet<_> = CORE.iter().map(|(m, _, c)| (m, c)).collect();
