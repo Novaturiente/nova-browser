@@ -397,8 +397,14 @@ and persists; `novabrowser --cmd` opens a tab in the running instance.
 (Rev 2026-10-11: the `<Space>pp`/qute-pass check moved to Phase 10.)
 
 ### Phase 7 — Privacy, blocking, prompts
-**Exit:** blocking matches qutebrowser on a test page set; per-site prompt
-answers survive a restart.
+Adblock uses all three parts of Brave's `adblock` engine (rev 2026-10-11,
+user): network blocking, cosmetic CSS, and **scriptlets** (uBlock `+js(...)`
+rules, needed for YouTube ads) injected into the page's main world before
+page scripts run. Engine loaded with uBlock's scriptlet resources. Filter
+lists auto-update daily in the background (plus `:adblock-update`), engine
+cached on disk so start-up never waits for the network.
+**Exit:** blocking matches qutebrowser on a test page set; no ads on 3
+YouTube videos; per-site prompt answers survive a restart.
 
 ### Phase 8 — Sessions and daily driving
 Lazy restore, undo-close, quickmarks/bookmarks, devtools,

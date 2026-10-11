@@ -1,4 +1,5 @@
 //! novabrowser: one binary; re-executes itself as the CEF subprocesses.
+mod adblock;
 mod client;
 mod clipboard;
 mod commands;
@@ -28,6 +29,7 @@ wrap_browser_process_handler! {
             modes::init();
             // here, not in main(): its first post_task needs CEF running
             history::start(xdg_dir("XDG_DATA_HOME", ".local/share").join("history.sqlite"));
+            adblock::start();
             ipc::start(); // after CEF init: its requests post_task to the UI thread
             window::create(self.start_url.clone());
         }

@@ -6,6 +6,7 @@ license = "GPL-3.0-or-later"
 publish = false
 
 [dependencies]
+adblock = { version = "0.13.3", default-features = false, features = ["embedded-domain-resolver", "full-regex-handling"] }
 cef = { path = "../cef-rs/cef" }
 oxc_allocator = "0.153"
 oxc_codegen = "0.153"

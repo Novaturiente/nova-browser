@@ -375,6 +375,7 @@ pub fn spawn(argv: &[String]) -> Result<(), String> {
 
 /// Implemented commands, for `:` completion. Keep in sync with `run_one`.
 pub const NAMES: &[&str] = &[
+    "adblock-update",
     "back",
     "clear-keychain",
     "close",
@@ -599,6 +600,7 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
             window::message(cmd.name.trim_start_matches("message-"), &cmd.rest());
         }
         "close" | "quit" => window::close_window(),
+        "adblock-update" => crate::adblock::update_now(),
         "config-source" => {
             config::load().map_err(|e| format!("config unchanged: {e}"))?;
             window::config_changed();
