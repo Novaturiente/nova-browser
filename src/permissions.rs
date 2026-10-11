@@ -39,6 +39,8 @@ enum Callback {
     Media(u32, MediaAccessCallback),
     /// alert / confirm / prompt() / leave-page; the String is what "yes" returns to prompt().
     Dialog(JsdialogCallback, String),
+    /// our own yes/no questions (passwords.rs save/update)
+    Ask(std::rc::Rc<dyn Fn(bool)>),
 }
 
 struct Pending {
@@ -128,6 +130,7 @@ fn answer(cb: &Callback, allow: bool) {
         Callback::Media(bits, c) if allow => c.cont(*bits),
         Callback::Media(_, c) => c.cancel(),
         Callback::Dialog(c, input) => c.cont(allow as i32, Some(&input.as_str().into())),
+        Callback::Ask(f) => f(allow),
     }
 }
 
@@ -236,6 +239,20 @@ pub fn dialog(
             settings: Vec::new(),
             text,
             cb,
+        })
+    });
+    show_later();
+}
+
+/// A yes/no question in the prompt queue; `f` gets the answer (Escape = no).
+pub fn ask(browser: &Browser, text: String, f: impl Fn(bool) + 'static) {
+    QUEUE.with_borrow_mut(|q| {
+        q.push_back(Pending {
+            browser: browser.identifier(),
+            origin: String::new(),
+            settings: Vec::new(),
+            text,
+            cb: Callback::Ask(std::rc::Rc::new(f)),
         })
     });
     show_later();

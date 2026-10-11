@@ -473,6 +473,7 @@ pub const NAMES: &[&str] = &[
     "bookmark-del",
     "bookmark-list",
     "bookmark-load",
+    "password-fill",
     "bookmarks",
     "clear-keychain",
     "close",
@@ -807,6 +808,7 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
         "download-open" => crate::downloads::open(&cmd.args)?,
         "download-cancel" => crate::downloads::cancel(cmd.args.first().and_then(|a| a.parse().ok()))?,
         "download-clear" => crate::downloads::clear(),
+        "password-fill" => crate::passwords::fill_command(cmd.flag("-o", "--otp"))?,
         "downloads" => window::open(&window::data_url(&crate::downloads::page()).to_string(), true),
         "download" => {
             let url = if cmd.args.is_empty() {

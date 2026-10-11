@@ -16,6 +16,7 @@ mod keys;
 mod marks;
 mod modes;
 mod net;
+mod passwords;
 mod permissions;
 mod renderer;
 mod session;
@@ -210,6 +211,23 @@ pub(crate) fn apply_spellcheck() {
 }
 
 /// Temp file, fsync, rename: a crash leaves the old or the new file, never half of one.
+type UiFn = Box<dyn FnOnce() + Send>;
+
+wrap_task! {
+    struct UiTask { f: std::sync::Arc<std::sync::Mutex<Option<UiFn>>> }
+    impl Task {
+        fn execute(&self) {
+            if let Some(f) = self.f.lock().unwrap().take() { f() }
+        }
+    }
+}
+
+/// Run `f` on the CEF UI thread (results from worker threads).
+pub(crate) fn on_ui(f: impl FnOnce() + Send + 'static) {
+    let f: UiFn = Box::new(f);
+    post_task(ThreadId::UI, Some(&mut UiTask::new(std::sync::Arc::new(std::sync::Mutex::new(Some(f))))));
+}
+
 pub(crate) fn write_atomic(path: &std::path::Path, data: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
     let tmp = path.with_extension("tmp");
@@ -266,6 +284,10 @@ fn main() {
             eprintln!("novabrowser: bad profile name {name:?} (letters, digits, space, - and _)");
             std::process::exit(2);
         }
+    }
+    // rbw add/edit run us as $VISUAL (passwords.rs): put the secret in the file
+    if std::env::var_os("NOVA_PW_SECRET").is_some() && argv.len() == 2 {
+        std::process::exit(passwords::editor_main(&argv[1]));
     }
     if argv.get(1).map(String::as_str) == Some("--import") {
         let data = xdg_dir("XDG_DATA_HOME", ".local/share");

@@ -1141,6 +1141,31 @@ wrap_task! {
     }
 }
 
+/// Password suggestions (passwords.rs) under a login field; `field` is in the page's
+/// CSS px from the content's top-left. Uses the tooltip overlay (never takes focus,
+/// so typing stays in the field).
+pub fn suggest(field: Rect, data: &serde_json::Value) {
+    let Some((view, overlay, mid, content)) = S.with_borrow(|s| {
+        let (v, o) = s.tip.clone()?;
+        Some((v, o, s.mid.clone()?, s.content.clone()?))
+    }) else {
+        return;
+    };
+    let (m, c) = (mid.bounds(), content.bounds());
+    let n = data["rows"].as_array().map_or(0, |a| a.len()) as i32;
+    let r = Rect { x: m.x + c.x + field.x, y: m.y + c.y + field.y + field.height + 4, width: 360, height: 34 + n.min(8) * 28 };
+    popup_at(&view, &overlay, r, &format!("nova.suggest({data})"));
+}
+
+pub fn suggest_hide() {
+    if let Some((v, o)) = S.with_borrow(|s| s.tip.clone()) {
+        o.set_visible(0);
+        if let Some(f) = v.browser().and_then(|b| b.main_frame()) {
+            f.execute_java_script(Some(&CefString::from("nova.suggest(null)")), None, 0);
+        }
+    }
+}
+
 pub fn close_popup() {
     if let Some((_, o)) = S.with_borrow(|s| s.menu.clone()) {
         o.set_visible(0);

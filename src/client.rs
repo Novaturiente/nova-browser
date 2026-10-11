@@ -95,12 +95,27 @@ wrap_client! {
                 }
                 return 1;
             }
-            // Focus reports from renderer.rs; worst a page can do is toggle insert mode.
+            if name == "nova.creds" {
+                // a page can fake this; worst case is a save prompt the user declines
+                let text = m.argument_list().map(|l| CefString::from(&l.string(0)).to_string()).unwrap_or_default();
+                if let Some(f) = frame { window::in_owner(b, || crate::passwords::on_submit(b, f, &text)); }
+                return 1;
+            }
+            // Focus reports from renderer.rs; worst a page can do is toggle insert mode
+            // or list the user's own logins for its site (filling still needs the user).
             if name != "nova.focus" { return 0; }
+            let field = m.argument_list().map(|l| CefString::from(&l.string(1)).to_string()).unwrap_or_default();
             window::in_owner(b, || {
                 let active = window::active_browser().is_some_and(|a| a.identifier() == b.identifier());
                 if active {
                     modes::on_focus(m.argument_list().is_some_and(|l| l.bool(0) != 0));
+                    if let Some(f) = frame {
+                        let mut p = field.split(' ');
+                        let kind = p.next().unwrap_or("");
+                        let n: Vec<i32> = p.filter_map(|x| x.parse().ok()).collect();
+                        let rect = match n[..] { [x, y, width, height] => Rect { x, y, width, height }, _ => Rect::default() };
+                        crate::passwords::on_focus(b, f, kind, rect);
+                    }
                 }
             });
             1
@@ -137,6 +152,7 @@ wrap_client! {
                 ("menu", _) => window::tab_menu(arg),
                 ("menuact", _) => window::tab_menu_action(arg),
                 ("menuclose", _) => window::close_popup(),
+                ("pwpick", Ok(i)) if i >= 0 => crate::passwords::on_click(i as usize),
                 _ => eprintln!("novabrowser: unknown UI message {text:?}"),
             });
             1
@@ -169,7 +185,10 @@ wrap_load_handler! {
     impl LoadHandler {
         fn on_load_start(&self, browser: Option<&mut Browser>, frame: Option<&mut Frame>, _transition_type: TransitionType) {
             if let (Some(b), Some(f)) = (browser, frame) {
-                if f.is_main() != 0 { adblock::on_load_start(b, &CefString::from(&f.url()).to_string()); }
+                if f.is_main() != 0 {
+                    adblock::on_load_start(b, &CefString::from(&f.url()).to_string());
+                    crate::passwords::hide();
+                }
             }
         }
         fn on_loading_state_change(&self, browser: Option<&mut Browser>, is_loading: ::std::os::raw::c_int, back: ::std::os::raw::c_int, fwd: ::std::os::raw::c_int) {
@@ -366,6 +385,7 @@ wrap_life_span_handler! {
                 crate::devtools::forget(b);
                 adblock::forget(b);
                 crate::permissions::forget(b);
+                crate::passwords::forget(b);
             }
             OPEN.set(OPEN.get() - 1);
             if OPEN.get() == 0 { quit_message_loop(); }

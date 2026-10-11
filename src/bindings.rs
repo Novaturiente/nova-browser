@@ -82,6 +82,8 @@ pub const CORE: &[(&str, &str, &str)] = &[
     // site toggles
     ("normal", "<Space>td", "dark-toggle"),
     ("normal", "<Space>th", "https-toggle"),
+    ("normal", "<Space>pp", "password-fill"),
+    ("normal", "<Space>po", "password-fill --otp"),
     // modes and the rest
     ("normal", "i", "mode-enter insert"),
     ("normal", "<Ctrl-v>", "mode-enter passthrough"),

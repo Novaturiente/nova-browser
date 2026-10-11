@@ -78,6 +78,16 @@ right-click a tab for its menu.
   choices); config.ts is shared and can branch with
   `import { profile } from "nova"; if (profile === "work") …`. The name shows
   at the start of the tab bar.
+- **Passwords** — no built-in store; uses your password manager's CLI, set by
+  `passwords.backend`: `rbw` (Bitwarden, default), `bw` (official Bitwarden CLI,
+  needs `BW_SESSION` in the browser's environment), `pass` (`<site>/<user>`
+  entries, OTP via pass-otp) or `none`. Focusing a login, one-time-code or
+  sign-up field lists matching logins (same registrable domain, like
+  Bitwarden's default) under it: Down/Up pick, Enter fills, Escape hides.
+  `<Space>pp` fills without focusing a field, `<Space>po` fills the TOTP code.
+  Sign-up fields offer a generated password. After you submit a login form
+  novabrowser asks to save it or update the stored password. Nothing is filled
+  on page load, and frames from another site get nothing.
 - `:dark-toggle` / `:https-toggle` (`<Space>td` / `<Space>th`) — per-site dark
   mode and HTTPS-only exceptions.
 - `--import [browser]` — import history and bookmarks from Chrome, Chromium,

@@ -166,6 +166,10 @@ pub fn on_key(vk: i32, character: u16, cef_mods: u32) -> bool {
     let Some(key) = keys::key_from_cef(vk, character, cef_mods) else {
         return false;
     };
+    // password suggestions open under a login field: Down/Up/Enter/Escape are theirs
+    if key.mods == keys::Mods::default() && crate::passwords::on_key(&key.name) {
+        return true;
+    }
     let act = S.with_borrow_mut(|s| match s.mode {
         Mode::Normal => match s.parser.handle(&key, &s.normal, true) {
             Outcome::Pending => Act::Eat,

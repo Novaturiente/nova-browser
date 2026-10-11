@@ -34,6 +34,18 @@
     return d;
   }));
   const pick = (i) => nova.send("menuact " + tab + " " + items[i][0]);
+  // nova.suggest({title, rows: [{a, b, sel}]}): password suggestions; never focused,
+  // keys come through the browser (Down/Up/Enter/Escape), clicks via "pwpick i".
+  nova.suggest = (d) => {
+    items = []; document.body.className = "menu";
+    if (!d) return c.replaceChildren();
+    c.replaceChildren(el("u", d.title), ...d.rows.map((r, i) => {
+      const x = el("i" + (r.sel ? " sel" : ""), "");
+      x.append(Object.assign(document.createElement("span"), { textContent: r.a }), Object.assign(document.createElement("kbd"), { textContent: r.b }));
+      x.onmousedown = (e) => { e.preventDefault(); nova.send("pwpick " + i); };
+      return x;
+    }));
+  };
   addEventListener("keydown", (e) => {
     if (!items.length) return;
     const k = e.key;

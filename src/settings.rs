@@ -5,6 +5,7 @@
 
 pub const SETTINGS: &[(&str, &str, bool, &str, &[&str])] = &[
     ("theme", "str", false, "\"dark\"", &["dark", "light", "tokyo-night", "catppuccin"]),
+    ("passwords.backend", "str", false, "\"rbw\"", &["rbw", "bw", "pass", "none"]),
     ("aliases", "dict", true, "{\"w\": \"session-save\", \"q\": \"close\", \"qa\": \"quit\", \"wq\": \"quit --save\", \"wqa\": \"quit --save\"}", &[]),
     ("session.default_name", "str", true, "null", &[]),
     ("chromium.args", "list", true, "[]", &[]),

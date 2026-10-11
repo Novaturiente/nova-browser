@@ -24,6 +24,7 @@ const SHOWN: &[(&str, &str)] = &[
     ("fonts.default_family", "UI font"),
     ("fonts.default_size", "UI font size"),
     ("hints.chars", "Hint characters"),
+    ("passwords.backend", "Password manager (rbw = Bitwarden)"),
 ];
 
 /// Display string for a value (what goes back through `:set` parsing).
