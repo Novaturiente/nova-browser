@@ -1,8 +1,8 @@
 //! novabrowser: one binary; re-executes itself as the CEF subprocesses.
 mod adblock;
+mod bindings;
 mod client;
 mod clipboard;
-mod bindings;
 mod commands;
 mod completion;
 mod config;
@@ -18,15 +18,15 @@ mod modes;
 mod net;
 mod passwords;
 mod permissions;
+mod profiles;
 mod renderer;
 mod session;
-mod profiles;
 mod settings;
 mod settings_page;
 mod spawn;
 mod theme;
-mod welcome;
 mod urlmatch;
+mod welcome;
 mod window;
 
 use cef::*;
@@ -182,7 +182,9 @@ pub(crate) fn page_token() -> &'static str {
     T.get_or_init(|| {
         let mut b = [0u8; 16];
         use std::io::Read;
-        std::fs::File::open("/dev/urandom").and_then(|mut f| f.read_exact(&mut b)).expect("/dev/urandom");
+        std::fs::File::open("/dev/urandom")
+            .and_then(|mut f| f.read_exact(&mut b))
+            .expect("/dev/urandom");
         b.iter().map(|x| format!("{x:02x}")).collect()
     })
 }
@@ -229,7 +231,12 @@ wrap_task! {
 /// Run `f` on the CEF UI thread (results from worker threads).
 pub(crate) fn on_ui(f: impl FnOnce() + Send + 'static) {
     let f: UiFn = Box::new(f);
-    post_task(ThreadId::UI, Some(&mut UiTask::new(std::sync::Arc::new(std::sync::Mutex::new(Some(f))))));
+    post_task(
+        ThreadId::UI,
+        Some(&mut UiTask::new(std::sync::Arc::new(
+            std::sync::Mutex::new(Some(f)),
+        ))),
+    );
 }
 
 pub(crate) fn write_atomic(path: &std::path::Path, data: &[u8]) -> std::io::Result<()> {
@@ -276,13 +283,17 @@ pub(crate) fn profile() -> Option<&'static str> {
 pub(crate) fn valid_profile_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 40
-        && name.chars().all(|c| c.is_alphanumeric() || matches!(c, ' ' | '-' | '_'))
+        && name
+            .chars()
+            .all(|c| c.is_alphanumeric() || matches!(c, ' ' | '-' | '_'))
         && !name.starts_with(' ')
 }
 
 fn main() {
     // --profile=<name> may come first; the subcommands below look at argv[1]
-    let argv: Vec<String> = std::env::args().filter(|a| !a.starts_with("--profile=")).collect();
+    let argv: Vec<String> = std::env::args()
+        .filter(|a| !a.starts_with("--profile="))
+        .collect();
     if let Some(name) = profile() {
         if !valid_profile_name(name) {
             eprintln!("novabrowser: bad profile name {name:?} (letters, digits, space, - and _)");
@@ -409,7 +420,10 @@ fn main() {
     } else {
         let ignored = config::get().ignored_per_site();
         if !ignored.is_empty() {
-            let msg = format!("config: only global, ignored in pattern(): {}", ignored.join(", "));
+            let msg = format!(
+                "config: only global, ignored in pattern(): {}",
+                ignored.join(", ")
+            );
             eprintln!("novabrowser: {msg}");
             window::startup_message("warning", &msg);
         }

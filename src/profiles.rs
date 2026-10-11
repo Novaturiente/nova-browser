@@ -20,12 +20,16 @@ pub fn list() -> Vec<String> {
 pub fn create(name: &str) -> Result<(), String> {
     let name = name.trim();
     if !crate::valid_profile_name(name) || name == "default" {
-        return Err(format!("bad profile name {name:?}: letters, digits, space, - and _"));
+        return Err(format!(
+            "bad profile name {name:?}: letters, digits, space, - and _"
+        ));
     }
     if list().iter().any(|n| n == name) {
         return Err(format!("profile '{name}' exists: :profile-open {name}"));
     }
-    let dir = crate::xdg_root("XDG_DATA_HOME", ".local/share").join("profiles").join(name);
+    let dir = crate::xdg_root("XDG_DATA_HOME", ".local/share")
+        .join("profiles")
+        .join(name);
     std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     open(name)
 }

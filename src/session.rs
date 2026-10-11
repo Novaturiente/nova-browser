@@ -111,7 +111,9 @@ pub fn startup() -> Option<Value> {
     }
     let v = read(&default_name()).ok()?;
     let has_tabs = v["tabs"].as_array().is_some_and(|t| !t.is_empty())
-        || v["windows"][0]["tabs"].as_array().is_some_and(|t| !t.is_empty());
+        || v["windows"][0]["tabs"]
+            .as_array()
+            .is_some_and(|t| !t.is_empty());
     has_tabs.then(|| {
         LAST.set(serde_json::to_string_pretty(&v).unwrap());
         v

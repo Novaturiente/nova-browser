@@ -34,8 +34,13 @@ pub fn page() -> String {
     } else {
         format!("<p>Found on this computer — run one in a terminal while novabrowser is closed:</p><ul>{browsers}</ul>")
     };
-    let profile = crate::profile().map(|p| format!(" — profile {p}")).unwrap_or_default();
-    crate::theme::themed_page(PAGE.replace("{import}", &import).replace("{profile}", &profile))
+    let profile = crate::profile()
+        .map(|p| format!(" — profile {p}"))
+        .unwrap_or_default();
+    crate::theme::themed_page(
+        PAGE.replace("{import}", &import)
+            .replace("{profile}", &profile),
+    )
 }
 
 const PAGE: &str = r##"<!doctype html><meta charset=utf-8><title>Welcome</title>

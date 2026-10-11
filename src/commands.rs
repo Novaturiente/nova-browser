@@ -544,7 +544,10 @@ pub fn set_user(name: &str, value: &str, temp: bool) -> Result<(), String> {
     if temp || cfg.in_config_ts(name) {
         cfg.set_runtime(name, value)?;
         if !temp {
-            window::message("warning", &format!("{name} is set in config.ts: changed until restart only"));
+            window::message(
+                "warning",
+                &format!("{name} is set in config.ts: changed until restart only"),
+            );
         }
         return Ok(());
     }
@@ -796,7 +799,10 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
             false => crate::profiles::create(&cmd.rest())?,
         },
         "profile-open" => crate::profiles::open(&cmd.rest())?,
-        "settings" => window::open(&window::data_url(&crate::settings_page::page()).to_string(), true),
+        "settings" => window::open(
+            &window::data_url(&crate::settings_page::page()).to_string(),
+            true,
+        ),
         "bookmarks" => window::open(&window::data_url(&crate::marks::page()).to_string(), true),
         "bookmark-list" => {
             let page = window::data_url(&crate::marks::page()).to_string();
@@ -807,11 +813,16 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
             }
         }
         "download-open" => crate::downloads::open(&cmd.args)?,
-        "download-cancel" => crate::downloads::cancel(cmd.args.first().and_then(|a| a.parse().ok()))?,
+        "download-cancel" => {
+            crate::downloads::cancel(cmd.args.first().and_then(|a| a.parse().ok()))?
+        }
         "download-clear" => crate::downloads::clear(),
         "password-fill" => crate::passwords::fill_command(cmd.flag("-o", "--otp"))?,
         "help" => window::open(&window::data_url(&crate::welcome::page()).to_string(), true),
-        "downloads" => window::open(&window::data_url(&crate::downloads::page()).to_string(), true),
+        "downloads" => window::open(
+            &window::data_url(&crate::downloads::page()).to_string(),
+            true,
+        ),
         "download" => {
             let url = if cmd.args.is_empty() {
                 window::active_url_title().0
@@ -839,7 +850,13 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
             if ignored.is_empty() {
                 window::message("info", "config.ts loaded");
             } else {
-                window::message("warning", &format!("config.ts loaded; only global, ignored in pattern(): {}", ignored.join(", ")));
+                window::message(
+                    "warning",
+                    &format!(
+                        "config.ts loaded; only global, ignored in pattern(): {}",
+                        ignored.join(", ")
+                    ),
+                );
             }
         }
         "set" => {

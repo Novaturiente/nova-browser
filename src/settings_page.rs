@@ -60,19 +60,29 @@ pub fn page() -> String {
             } else {
                 name
             });
-            let n = if *name == "theme" { cfg.colors_in_config_ts() } else { 0 };
-            let note = if n > 0 { format!("config.ts sets {n} colours itself, they override the theme") } else { String::new() };
+            let n = if *name == "theme" {
+                cfg.colors_in_config_ts()
+            } else {
+                0
+            };
+            let note = if n > 0 {
+                format!("config.ts sets {n} colours itself, they override the theme")
+            } else {
+                String::new()
+            };
             serde_json::json!({ "name": name, "label": label, "kind": kind, "values": values,
                                 "value": shown(name, &cfg), "locked": locked, "note": note })
         })
         .collect();
     let data = serde_json::json!({ "token": crate::page_token(), "rows": rows, "profile": crate::profile() });
-    crate::theme::themed_page(PAGE.replace(
-        "/*DATA*/{}",
-        &serde_json::to_string(&data)
-            .unwrap()
-            .replace('<', "\\u003c"),
-    ))
+    crate::theme::themed_page(
+        PAGE.replace(
+            "/*DATA*/{}",
+            &serde_json::to_string(&data)
+                .unwrap()
+                .replace('<', "\\u003c"),
+        ),
+    )
 }
 
 /// {"a": "set", "k": name, "v": value} | {"a": "reset", "k": name}

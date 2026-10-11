@@ -26,12 +26,19 @@ const FIREFOX: &[(&str, &str)] = &[
 /// (browsers keep empty leftover profiles next to the real one).
 fn by_name(name: &str) -> Option<PathBuf> {
     if name == "qutebrowser" {
-        return found().into_iter().find(|(n, _)| *n == "qutebrowser").map(|(_, p)| p);
+        return found()
+            .into_iter()
+            .find(|(n, _)| *n == "qutebrowser")
+            .map(|(_, p)| p);
     }
     found()
         .into_iter()
         .filter(|(n, _)| *n == name)
-        .max_by_key(|(_, p)| history_file(p).and_then(|f| f.metadata().ok()).map_or(0, |m| m.len()))
+        .max_by_key(|(_, p)| {
+            history_file(p)
+                .and_then(|f| f.metadata().ok())
+                .map_or(0, |m| m.len())
+        })
         .map(|(_, p)| p)
 }
 
@@ -39,13 +46,19 @@ pub fn main(arg: Option<&str>, history_db: &Path) -> Result<(), String> {
     let Some(arg) = arg else {
         println!("Usage: novabrowser --import <browser name | profile dir | history file>\nFound:");
         for (name, p) in found() {
-            let mb = history_file(&p).and_then(|f| f.metadata().ok()).map_or(0.0, |m| m.len() as f64 / 1e6);
+            let mb = history_file(&p)
+                .and_then(|f| f.metadata().ok())
+                .map_or(0.0, |m| m.len() as f64 / 1e6);
             println!("  {name:<12} {mb:>7.1} MB  {}", p.display());
         }
         println!("A name picks that browser's profile with the most history, e.g. `--import zen`.");
         return Ok(());
     };
-    let dir = if arg.contains('/') { Some(PathBuf::from(arg)) } else { by_name(arg) };
+    let dir = if arg.contains('/') {
+        Some(PathBuf::from(arg))
+    } else {
+        by_name(arg)
+    };
     let file = dir
         .as_deref()
         .and_then(history_file)
@@ -165,7 +178,11 @@ fn parse_qb_session(text: &str) -> Vec<(String, String)> {
 pub fn found() -> Vec<(&'static str, PathBuf)> {
     let home = PathBuf::from(std::env::var_os("HOME").unwrap_or_default());
     let mut out = vec![];
-    for (name, base) in CHROMIUM.iter().chain(FIREFOX).map(|(n, b)| (*n, home.join(b))) {
+    for (name, base) in CHROMIUM
+        .iter()
+        .chain(FIREFOX)
+        .map(|(n, b)| (*n, home.join(b)))
+    {
         let Ok(dirs) = std::fs::read_dir(&base) else {
             continue;
         };

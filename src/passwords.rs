@@ -220,6 +220,33 @@ fn pass_entries() -> Vec<Entry> {
     out
 }
 
+/// Locked vault? Listing then would make rbw pop its pinentry on a mere focus, so
+/// we ask first and unlock only on a user action.
+fn locked(b: Backend) -> bool {
+    match b {
+        Backend::Rbw => Command::new("rbw")
+            .arg("unlocked")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|s| !s.success()),
+        Backend::Bw => run("bw", &["status"], None, &[])
+            .ok()
+            .and_then(|t| json(&t).ok())
+            .is_some_and(|v| v["status"] != "unlocked"),
+        Backend::Pass => false, // gpg-agent asks on the first decrypt
+    }
+}
+
+/// Unlock with the manager's own dialog (rbw: its configured pinentry).
+fn unlock(b: Backend) -> Result<(), String> {
+    match b {
+        Backend::Rbw => run("rbw", &["unlock"], None, &[]).map(|_| ()),
+        Backend::Bw => Err("bw is locked: run `bw unlock`, export BW_SESSION and restart novabrowser".into()),
+        Backend::Pass => Ok(()),
+    }
+}
+
 /// Entries whose URI shares the registrable domain of `url`; same host first.
 pub fn matching(b: Backend, url: &str) -> Result<Vec<Entry>, String> {
     let Some(want) = site(url) else {
@@ -432,6 +459,8 @@ impl Kind {
 enum Item {
     Entry(Entry),
     Generate,
+    /// vault locked: picking it unlocks, then the list fills in
+    Unlock,
 }
 
 struct Field {
@@ -502,10 +531,10 @@ pub fn on_focus(browser: &Browser, frame: &Frame, kind: &str, rect: Rect) {
         sel: None,
     }));
     if kind == Kind::New {
-        return show(seq, Vec::new());
+        return show(seq, Some(Vec::new()));
     }
     std::thread::spawn(move || {
-        let r = matching(b, &url);
+        let r = if locked(b) { Ok(None) } else { matching(b, &url).map(Some) };
         crate::on_ui(move || match r {
             Ok(v) => show(seq, v),
             Err(e) => window::message("error", &e),
@@ -513,15 +542,21 @@ pub fn on_focus(browser: &Browser, frame: &Frame, kind: &str, rect: Rect) {
     });
 }
 
-fn show(seq: u64, entries: Vec<Entry>) {
+/// `None` = vault locked: one "unlock" row (sign-up fields still get "generate").
+fn show(seq: u64, entries: Option<Vec<Entry>>) {
     let rows = FIELD.with_borrow_mut(|f| {
         let f = f.as_mut().filter(|f| f.seq == seq)?;
-        let mut items: Vec<Item> = entries.into_iter().map(Item::Entry).collect();
+        let mut items: Vec<Item> = match entries {
+            Some(v) => v.into_iter().map(Item::Entry).collect(),
+            None if f.kind == Kind::New => Vec::new(),
+            None => vec![Item::Unlock],
+        };
         if f.kind == Kind::New {
             items.push(Item::Generate);
         }
-        f.items = items;
+        // never preselected: Enter in a field must keep submitting the form
         f.sel = None;
+        f.items = items;
         Some(rows(f))
     });
     match rows {
@@ -556,6 +591,7 @@ fn rows(f: &Field) -> (Rect, Value) {
                     "Generate a strong password".into(),
                     format!("saved to {b} after you submit"),
                 ),
+                Item::Unlock => (format!("{b} is locked"), "Down, Enter: unlock".into()),
             };
             serde_json::json!({ "a": a, "b": c, "sel": f.sel == Some(i) })
         })
@@ -628,6 +664,24 @@ fn pick_item(i: usize) {
     hide();
     match item {
         Item::Generate => fill(seq, String::new(), generate(), "new"),
+        Item::Unlock => {
+            let url = url_of(seq); // FIELD is UI-thread state: read it before spawning
+            std::thread::spawn(move || {
+                let r = unlock(b).and_then(|_| matching(b, &url));
+                crate::on_ui(move || match r {
+                    Ok(v) => {
+                        let any = !v.is_empty();
+                        show(seq, Some(v));
+                        if any {
+                            select_first(seq);
+                        } else {
+                            window::message("info", &format!("unlocked; no {} login for this site", label(b)));
+                        }
+                    }
+                    Err(e) => window::message("error", &e),
+                });
+            });
+        }
         Item::Entry(e) => {
             std::thread::spawn(move || {
                 let r = if kind == Kind::Otp {
@@ -642,6 +696,22 @@ fn pick_item(i: usize) {
             });
         }
     }
+}
+
+fn url_of(seq: u64) -> String {
+    FIELD.with_borrow(|f| f.as_ref().filter(|f| f.seq == seq).map(|f| f.url.clone()))
+        .unwrap_or_default()
+}
+
+/// Preselect the first row (after `<Space>pp` or unlocking: Enter fills right away).
+fn select_first(seq: u64) {
+    FIELD.with_borrow_mut(|f| {
+        if let Some(f) = f.as_mut().filter(|f| f.seq == seq && !f.items.is_empty()) {
+            f.sel = Some(0);
+            let (r, j) = rows(f);
+            window::suggest(r, &j);
+        }
+    });
 }
 
 /// Send the secret to the field's frame, if it is still the same page.
@@ -719,7 +789,8 @@ pub fn fill_command(otp: bool) -> Result<(), String> {
         sel: None,
     }));
     std::thread::spawn(move || {
-        let r = matching(b, &url);
+        // an explicit key press: unlocking (rbw's pinentry) is fine here
+        let r = if locked(b) { unlock(b) } else { Ok(()) }.and_then(|_| matching(b, &url));
         crate::on_ui(move || match r {
             Ok(v) if v.is_empty() => {
                 window::message("info", &format!("no {} login for {}", label(b), host(&url)))
@@ -733,14 +804,8 @@ pub fn fill_command(otp: bool) -> Result<(), String> {
                 pick_item(0);
             }
             Ok(v) => {
-                show(seq, v);
-                FIELD.with_borrow_mut(|f| {
-                    if let Some(f) = f.as_mut() {
-                        f.sel = Some(0);
-                        let (r, j) = rows(f);
-                        window::suggest(r, &j);
-                    }
-                });
+                show(seq, Some(v));
+                select_first(seq);
             }
             Err(e) => window::message("error", &e),
         });
@@ -793,22 +858,52 @@ pub fn on_submit(browser: &Browser, frame: &Frame, json: &str) {
     LAST_SUBMIT.set(Some((Instant::now(), st, user.clone(), pass.clone())));
     let browser = browser.clone();
     std::thread::spawn(move || {
-        // Known already? Compare against entries with this username (or all, if unknown).
-        let r = matching(b, &url).and_then(|v| {
-            let mut same_user = None;
-            for e in v.iter().filter(|e| user.is_empty() || e.user == user) {
-                let (_, p) = secret(b, e)?;
-                if p == pass {
-                    return Ok(None);
-                }
-                same_user.get_or_insert(e.clone());
-            }
-            Ok(Some(same_user))
-        });
+        if locked(b) {
+            return crate::on_ui(move || ask_locked(&browser, b, &url, user, pass));
+        }
+        let r = known(b, &url, &user, &pass);
         crate::on_ui(move || match r {
             Ok(None) => {}
             Ok(Some(existing)) => ask(&browser, b, &url, user, pass, existing),
             Err(e) => window::message("error", &e),
+        });
+    });
+}
+
+/// None = this password is stored already; Some(entry) = same user, other password
+/// (update); Some(None) = new login (save).
+fn known(b: Backend, url: &str, user: &str, pass: &str) -> Result<Option<Option<Entry>>, String> {
+    let mut same_user = None;
+    for e in matching(b, url)?.iter().filter(|e| user.is_empty() || e.user == user) {
+        if secret(b, e)?.1 == pass {
+            return Ok(None);
+        }
+        same_user.get_or_insert(e.clone());
+    }
+    Ok(Some(same_user))
+}
+
+/// Locked vault after a submit: we can't tell save from update without unlocking,
+/// and we don't pop the unlock dialog unasked. One question; yes = unlock, then do it.
+fn ask_locked(browser: &Browser, b: Backend, url: &str, user: String, pass: String) {
+    let who = if user.is_empty() { String::new() } else { format!(" for {user}") };
+    let text = format!("Save this login{who} on {} to {}? (unlocks the vault) [y]es [n]o", host(url), label(b));
+    let url = url.to_string();
+    crate::permissions::ask(browser, text, move |yes| {
+        if !yes {
+            return;
+        }
+        let (url, user, pass) = (url.clone(), user.clone(), pass.clone());
+        std::thread::spawn(move || {
+            let r = unlock(b).and_then(|_| match known(b, &url, &user, &pass)? {
+                None => Ok("already saved"),
+                Some(Some(e)) => update(b, &e, &pass).map(|_| "updated"),
+                Some(None) => save(b, &url, &user, &pass).map(|_| "saved"),
+            });
+            crate::on_ui(move || match r {
+                Ok(what) => window::message("info", &format!("login {what} in {}", label(b))),
+                Err(e) => window::message("error", &e),
+            });
         });
     });
 }

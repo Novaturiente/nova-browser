@@ -206,12 +206,21 @@ pub fn filter(rows: Vec<(String, String)>, pattern: &str) -> Vec<(String, String
 fn set(quick: bool, old: Option<&str>, key: &str, val: &str) -> Result<(), String> {
     let (key, val) = (key.trim(), val.trim());
     if key.is_empty() || (quick && (val.is_empty() || key.contains(char::is_whitespace))) {
-        return Err(if quick { "quickmark needs a name (no spaces) and a URL" } else { "bookmark needs a URL" }.into());
+        return Err(if quick {
+            "quickmark needs a name (no spaces) and a URL"
+        } else {
+            "bookmark needs a URL"
+        }
+        .into());
     }
     let (path, rows) = with(|m| {
         let rows = if quick { &mut m.quick } else { &mut m.book };
         let at = old.and_then(|o| rows.iter().position(|(k, _)| k == o));
-        if rows.iter().enumerate().any(|(i, (k, _))| k == key && Some(i) != at) {
+        if rows
+            .iter()
+            .enumerate()
+            .any(|(i, (k, _))| k == key && Some(i) != at)
+        {
             return Err(format!("'{key}' already exists"));
         }
         match at {
@@ -239,7 +248,12 @@ pub fn on_page(msg: &serde_json::Value) -> Result<(), String> {
     let quick = msg["q"].as_bool().unwrap_or(false);
     let k = msg["k"].as_str().unwrap_or("");
     match msg["a"].as_str() {
-        Some("set") => set(quick, msg["old"].as_str(), k, msg["v"].as_str().unwrap_or("")),
+        Some("set") => set(
+            quick,
+            msg["old"].as_str(),
+            k,
+            msg["v"].as_str().unwrap_or(""),
+        ),
         Some("del") => del(quick, k),
         _ => Err("unknown page action".into()),
     }
@@ -249,7 +263,14 @@ pub fn on_page(msg: &serde_json::Value) -> Result<(), String> {
 /// filter, open. Actions go back over nova.send with the per-run page token.
 pub fn page() -> String {
     let data = serde_json::json!({ "token": crate::page_token(), "quick": quickmarks(), "book": bookmarks() });
-    crate::theme::themed_page(PAGE.replace("/*DATA*/{}", &serde_json::to_string(&data).unwrap().replace('<', "\\u003c")))
+    crate::theme::themed_page(
+        PAGE.replace(
+            "/*DATA*/{}",
+            &serde_json::to_string(&data)
+                .unwrap()
+                .replace('<', "\\u003c"),
+        ),
+    )
 }
 
 const PAGE: &str = r##"<!doctype html><meta charset=utf-8><title>Bookmarks</title>

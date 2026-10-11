@@ -111,7 +111,9 @@ impl Cur {
 /// Slot of the window owning browser `id` (a tab, a closing tab or one of its UI pages).
 fn owner(id: i32) -> Option<usize> {
     let has = |v: &Option<BrowserView>| v.as_ref().and_then(browser_id) == Some(id);
-    let has2 = |v: &Option<(BrowserView, OverlayController)>| v.as_ref().and_then(|p| browser_id(&p.0)) == Some(id);
+    let has2 = |v: &Option<(BrowserView, OverlayController)>| {
+        v.as_ref().and_then(|p| browser_id(&p.0)) == Some(id)
+    };
     WINS.with_borrow(|w| {
         w.iter().position(|s| {
             s.tabs.iter().any(|t| browser_id(&t.view) == Some(id))
@@ -259,7 +261,10 @@ fn create_window(start_url: Option<String>, restore: Option<serde_json::Value>) 
 
 /// `open -w [url]`.
 pub fn open_window(url: Option<String>) {
-    create_window(Some(url.unwrap_or_else(|| config::get().str("url.default_page"))), None);
+    create_window(
+        Some(url.unwrap_or_else(|| config::get().str("url.default_page"))),
+        None,
+    );
 }
 
 fn add_tab(view: BrowserView, url: String, title: String, foreground: bool) {
@@ -304,8 +309,12 @@ pub fn tabbar_browser() -> Option<Browser> {
 
 /// Every open window, in session.rs's shape.
 pub fn session_json() -> Option<serde_json::Value> {
-    let slots: Vec<usize> = WINS.with_borrow(|w| (0..w.len()).filter(|i| w[*i].window.is_some()).collect());
-    let wins: Vec<serde_json::Value> = slots.iter().filter_map(|i| in_slot(*i, window_json)).collect();
+    let slots: Vec<usize> =
+        WINS.with_borrow(|w| (0..w.len()).filter(|i| w[*i].window.is_some()).collect());
+    let wins: Vec<serde_json::Value> = slots
+        .iter()
+        .filter_map(|i| in_slot(*i, window_json))
+        .collect();
     if wins.is_empty() {
         return None;
     }
@@ -336,7 +345,10 @@ fn window_json() -> Option<serde_json::Value> {
 /// closes the tabs that were there), every other window opens as a new window.
 pub fn restore(v: &serde_json::Value, clear: bool) {
     // sessions before multi-window: {tabs, active, closed} at the top level
-    let wins = v["windows"].as_array().cloned().unwrap_or_else(|| vec![v.clone()]);
+    let wins = v["windows"]
+        .as_array()
+        .cloned()
+        .unwrap_or_else(|| vec![v.clone()]);
     let closed: Vec<String> = v["closed"]
         .as_array()
         .into_iter()
@@ -584,24 +596,26 @@ pub fn set_url(browser: &Browser, url: String) {
 fn apply_dark(browser: &Browser) {
     let id = browser.identifier();
     let cfg = config::get();
-    let send = in_owner(browser, || S.with_borrow_mut(|s| {
-        let global = s.dark_global;
-        let t = s
-            .tabs
-            .iter_mut()
-            .find(|t| browser_id(&t.view) == Some(id))?;
-        // our own data: pages follow the UI theme, never force-dark
-        let want = !t.url.starts_with("data:")
-            && cfg
-                .get_for("colors.webpage.darkmode.enabled", &t.url)
-                .as_bool()
-                .unwrap_or(false);
-        let over = (want != global).then_some(want);
-        // Resend overrides every time: one sent before the renderer exists is lost
-        // (first page of a new tab). Clear only once.
-        let prev = t.dark.replace(over);
-        (over.is_some() || matches!(prev, Some(Some(_)))).then_some(over)
-    }));
+    let send = in_owner(browser, || {
+        S.with_borrow_mut(|s| {
+            let global = s.dark_global;
+            let t = s
+                .tabs
+                .iter_mut()
+                .find(|t| browser_id(&t.view) == Some(id))?;
+            // our own data: pages follow the UI theme, never force-dark
+            let want = !t.url.starts_with("data:")
+                && cfg
+                    .get_for("colors.webpage.darkmode.enabled", &t.url)
+                    .as_bool()
+                    .unwrap_or(false);
+            let over = (want != global).then_some(want);
+            // Resend overrides every time: one sent before the renderer exists is lost
+            // (first page of a new tab). Clear only once.
+            let prev = t.dark.replace(over);
+            (over.is_some() || matches!(prev, Some(Some(_)))).then_some(over)
+        })
+    });
     match send {
         Some(Some(on)) => devtools::send(
             browser,
@@ -777,7 +791,9 @@ pub fn active_browser() -> Option<Browser> {
 /// active one (userscripts act on the tab that started them). False if it's gone.
 pub fn run_in_tab(id: i32, f: impl FnOnce()) -> bool {
     let Some(slot) = owner(id) else { return false };
-    if !in_slot(slot, || S.with_borrow(|s| s.tabs.iter().any(|t| browser_id(&t.view) == Some(id)))) {
+    if !in_slot(slot, || {
+        S.with_borrow(|s| s.tabs.iter().any(|t| browser_id(&t.view) == Some(id)))
+    }) {
         return false;
     }
     in_slot(slot, || {
@@ -839,9 +855,15 @@ pub fn close_others() {
 
 /// Close every tab but `keep`.
 fn close_others_than(keep: usize) {
-    let Some(id) = S.with_borrow(|s| s.tabs.get(keep).and_then(|t| browser_id(&t.view))) else { return };
+    let Some(id) = S.with_borrow(|s| s.tabs.get(keep).and_then(|t| browser_id(&t.view))) else {
+        return;
+    };
     loop {
-        let n = S.with_borrow(|s| s.tabs.iter().position(|t| browser_id(&t.view) != Some(id) && s.tabs.len() > 1));
+        let n = S.with_borrow(|s| {
+            s.tabs
+                .iter()
+                .position(|t| browser_id(&t.view) != Some(id) && s.tabs.len() > 1)
+        });
         let Some(n) = n else { break };
         remove(n);
     }
@@ -892,7 +914,8 @@ pub fn close_window() {
 pub fn quit() {
     crate::session::save_now();
     QUITTING.set(true);
-    let wins: Vec<Window> = WINS.with_borrow(|w| w.iter().filter_map(|s| s.window.clone()).collect());
+    let wins: Vec<Window> =
+        WINS.with_borrow(|w| w.iter().filter_map(|s| s.window.clone()).collect());
     for w in wins {
         w.close();
     }
@@ -1093,14 +1116,39 @@ fn tab_rect(arg: &str) -> Option<(usize, i32, i32, i32)> {
 
 /// "tip i left bottom right" from the tab bar: show title + URL under (or beside) tab i.
 pub fn tab_tip(arg: &str) {
-    let Some((view, overlay)) = S.with_borrow(|s| s.tip.clone()) else { return };
-    let Some((i, left, bottom, right)) = tab_rect(arg) else { return overlay.set_visible(0) };
-    let Some((title, url)) = S.with_borrow(|s| s.tabs.get(i).map(|t| (t.title.clone(), t.url.clone()))) else { return };
+    let Some((view, overlay)) = S.with_borrow(|s| s.tip.clone()) else {
+        return;
+    };
+    let Some((i, left, bottom, right)) = tab_rect(arg) else {
+        return overlay.set_visible(0);
+    };
+    let Some((title, url)) =
+        S.with_borrow(|s| s.tabs.get(i).map(|t| (t.title.clone(), t.url.clone())))
+    else {
+        return;
+    };
     let (ox, oy) = tabbar_origin();
-    let vertical = matches!(config::get().str("tabs.position").as_str(), "left" | "right");
+    let vertical = matches!(
+        config::get().str("tabs.position").as_str(),
+        "left" | "right"
+    );
     let (w, h) = (480, 30 + 20 * (url.len() as i32 / 60 + 1).min(4));
-    let (x, y) = if vertical { (ox + right + 6, oy + bottom - 24) } else { (ox + left, oy + bottom + 4) };
-    popup_at(&view, &overlay, Rect { x, y, width: w, height: h }, &format!("nova.tip({}, {})", js_str(&title), js_str(&url)));
+    let (x, y) = if vertical {
+        (ox + right + 6, oy + bottom - 24)
+    } else {
+        (ox + left, oy + bottom + 4)
+    };
+    popup_at(
+        &view,
+        &overlay,
+        Rect {
+            x,
+            y,
+            width: w,
+            height: h,
+        },
+        &format!("nova.tip({}, {})", js_str(&title), js_str(&url)),
+    );
 }
 
 const MENU: &[(&str, &str, &str)] = &[
@@ -1115,15 +1163,29 @@ const MENU: &[(&str, &str, &str)] = &[
 
 /// "menu i x bottom right": the tab's right-click menu at the mouse.
 pub fn tab_menu(arg: &str) {
-    let Some((view, overlay)) = S.with_borrow(|s| s.menu.clone()) else { return };
-    let Some((i, x, bottom, _)) = tab_rect(arg) else { return };
+    let Some((view, overlay)) = S.with_borrow(|s| s.menu.clone()) else {
+        return;
+    };
+    let Some((i, x, bottom, _)) = tab_rect(arg) else {
+        return;
+    };
     if let Some((_, o)) = S.with_borrow(|s| s.tip.clone()) {
         o.set_visible(0);
     }
     let (ox, oy) = tabbar_origin();
     let items: Vec<_> = MENU.iter().map(|(a, l, k)| [a, l, k]).collect();
-    let r = Rect { x: ox + x, y: oy + bottom + 2, width: 230, height: MENU.len() as i32 * 28 + 14 };
-    popup_at(&view, &overlay, r, &format!("nova.menu({i}, {})", serde_json::json!(items)));
+    let r = Rect {
+        x: ox + x,
+        y: oy + bottom + 2,
+        width: 230,
+        height: MENU.len() as i32 * 28 + 14,
+    };
+    popup_at(
+        &view,
+        &overlay,
+        r,
+        &format!("nova.menu({i}, {})", serde_json::json!(items)),
+    );
     // a just-shown overlay ignores request_focus (same as the palette)
     post_task(ThreadId::UI, Some(&mut FocusMenu::new()));
 }
@@ -1153,7 +1215,12 @@ pub fn suggest(field: Rect, data: &serde_json::Value) {
     };
     let (m, c) = (mid.bounds(), content.bounds());
     let n = data["rows"].as_array().map_or(0, |a| a.len()) as i32;
-    let r = Rect { x: m.x + c.x + field.x, y: m.y + c.y + field.y + field.height + 4, width: 360, height: 34 + n.min(8) * 28 };
+    let r = Rect {
+        x: m.x + c.x + field.x,
+        y: m.y + c.y + field.y + field.height + 4,
+        width: 360,
+        height: 34 + n.min(8) * 28,
+    };
     popup_at(&view, &overlay, r, &format!("nova.suggest({data})"));
 }
 
@@ -1176,8 +1243,15 @@ pub fn close_popup() {
 /// "i action" from the menu: run it on tab i (not necessarily the active one).
 pub fn tab_menu_action(arg: &str) {
     close_popup();
-    let Some((i, action)) = arg.split_once(' ').and_then(|(i, a)| Some((i.parse::<usize>().ok()?, a))) else { return };
-    let Some(id) = S.with_borrow(|s| s.tabs.get(i).and_then(|t| browser_id(&t.view))) else { return };
+    let Some((i, action)) = arg
+        .split_once(' ')
+        .and_then(|(i, a)| Some((i.parse::<usize>().ok()?, a)))
+    else {
+        return;
+    };
+    let Some(id) = S.with_borrow(|s| s.tabs.get(i).and_then(|t| browser_id(&t.view))) else {
+        return;
+    };
     let cmd = match action {
         "close" => return close(i),
         "others" => return close_others_than(i),
@@ -1234,10 +1308,19 @@ fn show_keyhint(generation: u64) {
     let (m, c) = (mid.bounds(), content.bounds());
     let h = (rows.len() as i32 * row_h + 18).min(c.height - 24);
     let w = 380.min(c.width - 24);
-    overlay.set_bounds(Some(&Rect { x: m.x + c.x + c.width - w - 12, y: m.y + c.y + c.height - h - 12, width: w, height: h }));
+    overlay.set_bounds(Some(&Rect {
+        x: m.x + c.x + c.width - w - 12,
+        y: m.y + c.y + c.height - h - 12,
+        width: w,
+        height: h,
+    }));
     overlay.set_visible(1);
     if let Some(f) = view.browser().and_then(|b| b.main_frame()) {
-        let js = format!("nova.keyhint({}, {})", js_str(&prefix), serde_json::json!(rows));
+        let js = format!(
+            "nova.keyhint({}, {})",
+            js_str(&prefix),
+            serde_json::json!(rows)
+        );
         f.execute_java_script(Some(&CefString::from(js.as_str())), None, 0);
     }
 }
@@ -1408,11 +1491,23 @@ fn push_theme() {
         },
     })
     .to_string();
-    let views = S.with_borrow(|s| [s.tabbar.clone(), s.palette.as_ref().map(|c| c.0.clone()), s.keyhint.as_ref().map(|c| c.0.clone()), s.tip.as_ref().map(|c| c.0.clone()), s.menu.as_ref().map(|c| c.0.clone())]);
+    let views = S.with_borrow(|s| {
+        [
+            s.tabbar.clone(),
+            s.palette.as_ref().map(|c| c.0.clone()),
+            s.keyhint.as_ref().map(|c| c.0.clone()),
+            s.tip.as_ref().map(|c| c.0.clone()),
+            s.menu.as_ref().map(|c| c.0.clone()),
+        ]
+    });
     for v in views.into_iter().flatten() {
         let Some(b) = v.browser() else { continue };
         // force-dark (colors.webpage.darkmode) is for web pages; it would invert a light theme
-        devtools::send(&b, "Emulation.setAutoDarkModeOverride", serde_json::json!({ "enabled": false }));
+        devtools::send(
+            &b,
+            "Emulation.setAutoDarkModeOverride",
+            serde_json::json!({ "enabled": false }),
+        );
         if let Some(f) = b.main_frame() {
             let js = format!("window.nova && nova.theme && nova.theme({json})");
             f.execute_java_script(Some(&CefString::from(js.as_str())), None, 0);
@@ -1432,7 +1527,8 @@ pub fn config_changed() {
     crate::net::apply_cookie_policy();
     crate::apply_spellcheck();
     // every window, not just the one that ran :set
-    let slots: Vec<usize> = WINS.with_borrow(|w| (0..w.len()).filter(|&i| w[i].window.is_some()).collect());
+    let slots: Vec<usize> =
+        WINS.with_borrow(|w| (0..w.len()).filter(|&i| w[i].window.is_some()).collect());
     for i in slots {
         in_slot(i, || {
             apply_layout();

@@ -71,7 +71,16 @@ fn complete(text: &str) {
             let rows = crate::profiles::list()
                 .into_iter()
                 .filter(|n| n.to_lowercase().contains(&rest.trim().to_lowercase()))
-                .map(|n| (format!(":profile-open {n}"), if Some(n.as_str()) == crate::profile().or(Some("default")) { "this profile (new window)".into() } else { String::new() }))
+                .map(|n| {
+                    (
+                        format!(":profile-open {n}"),
+                        if Some(n.as_str()) == crate::profile().or(Some("default")) {
+                            "this profile (new window)".into()
+                        } else {
+                            String::new()
+                        },
+                    )
+                })
                 .collect();
             set(String::new(), "Profiles", rows);
             render();
@@ -97,10 +106,25 @@ fn complete(text: &str) {
                 }
             }
             // one block per category (stable: keeps the binding order inside each)
-            let order = |c: &str| ["Your bindings", "Your bindings · insert mode", "Your bindings · passthrough mode", "Normal mode", "Insert mode", "Passthrough mode"].iter().position(|x| *x == c);
+            let order = |c: &str| {
+                [
+                    "Your bindings",
+                    "Your bindings · insert mode",
+                    "Your bindings · passthrough mode",
+                    "Normal mode",
+                    "Insert mode",
+                    "Passthrough mode",
+                ]
+                .iter()
+                .position(|x| *x == c)
+            };
             rows.sort_by_key(|r| order(r.0));
             let cats = rows.iter().map(|r| r.0).collect();
-            set(String::new(), "", rows.into_iter().map(|(_, k, c)| (k, c)).collect());
+            set(
+                String::new(),
+                "",
+                rows.into_iter().map(|(_, k, c)| (k, c)).collect(),
+            );
             S.with_borrow_mut(|s| s.cats = cats);
             render();
         }

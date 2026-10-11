@@ -27,10 +27,19 @@ pub fn write(text: &str, primary: bool) {
 fn tools(primary: bool, copy: bool) -> [(&'static str, Vec<&'static str>); 2] {
     let sel = if primary { "primary" } else { "clipboard" };
     match (copy, primary) {
-        (true, true) => [("wl-copy", vec!["--primary"]), ("xclip", vec!["-selection", sel])],
+        (true, true) => [
+            ("wl-copy", vec!["--primary"]),
+            ("xclip", vec!["-selection", sel]),
+        ],
         (true, false) => [("wl-copy", vec![]), ("xclip", vec!["-selection", sel])],
-        (false, true) => [("wl-paste", vec!["--no-newline", "--primary"]), ("xclip", vec!["-o", "-selection", sel])],
-        (false, false) => [("wl-paste", vec!["--no-newline"]), ("xclip", vec!["-o", "-selection", sel])],
+        (false, true) => [
+            ("wl-paste", vec!["--no-newline", "--primary"]),
+            ("xclip", vec!["-o", "-selection", sel]),
+        ],
+        (false, false) => [
+            ("wl-paste", vec!["--no-newline"]),
+            ("xclip", vec!["-o", "-selection", sel]),
+        ],
     }
 }
 
@@ -40,8 +49,18 @@ fn wayland() -> bool {
 
 fn write_external(text: String, primary: bool) {
     std::thread::spawn(move || {
-        for (prog, args) in tools(primary, true).into_iter().skip(usize::from(!wayland())) {
-            let Ok(mut c) = Command::new(prog).args(args).stdin(Stdio::piped()).stdout(Stdio::null()).spawn() else { continue };
+        for (prog, args) in tools(primary, true)
+            .into_iter()
+            .skip(usize::from(!wayland()))
+        {
+            let Ok(mut c) = Command::new(prog)
+                .args(args)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::null())
+                .spawn()
+            else {
+                continue;
+            };
             if let Some(mut stdin) = c.stdin.take() {
                 let _ = stdin.write_all(text.as_bytes());
             }
@@ -53,7 +72,10 @@ fn write_external(text: String, primary: bool) {
 }
 
 fn read(primary: bool) -> String {
-    for (prog, args) in tools(primary, false).into_iter().skip(usize::from(!wayland())) {
+    for (prog, args) in tools(primary, false)
+        .into_iter()
+        .skip(usize::from(!wayland()))
+    {
         if let Ok(o) = Command::new(prog).args(args).stderr(Stdio::null()).output() {
             return String::from_utf8_lossy(&o.stdout).into_owned();
         }

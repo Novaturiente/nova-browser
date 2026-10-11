@@ -42,11 +42,20 @@ fn all_binds(cfg: &config::Config) -> Vec<(String, String, Option<String>, bool)
             for (key, cmd) in map.as_object().into_iter().flatten() {
                 // an empty/null command in bindings.commands unbinds (qutebrowser)
                 let cmd = cmd.as_str().filter(|c| !c.is_empty()).map(str::to_string);
-                binds.push((mode.clone(), key.clone(), cmd, setting == "bindings.commands"));
+                binds.push((
+                    mode.clone(),
+                    key.clone(),
+                    cmd,
+                    setting == "bindings.commands",
+                ));
             }
         }
     }
-    binds.extend(cfg.binds.iter().map(|(m, k, c)| (m.clone(), k.clone(), c.clone(), true)));
+    binds.extend(
+        cfg.binds
+            .iter()
+            .map(|(m, k, c)| (m.clone(), k.clone(), c.clone(), true)),
+    );
     binds
 }
 
@@ -55,7 +64,9 @@ fn all_binds(cfg: &config::Config) -> Vec<(String, String, Option<String>, bool)
 pub fn bindings() -> Vec<(String, String, String, bool)> {
     let mut out: Vec<(String, String, String, bool)> = Vec::new();
     for (mode, keystr, cmd, user) in all_binds(&config::get()) {
-        let Ok(seq) = keys::parse_keystring(&keystr) else { continue };
+        let Ok(seq) = keys::parse_keystring(&keystr) else {
+            continue;
+        };
         let key: String = seq.iter().map(|k| k.to_string()).collect();
         let at = out.iter().position(|(m, k, _, _)| *m == mode && *k == key);
         match (at, cmd) {
@@ -72,8 +83,10 @@ pub fn bindings() -> Vec<(String, String, String, bool)> {
 
 pub fn init() {
     let cfg = config::get();
-    let binds: Vec<(String, String, Option<String>)> =
-        all_binds(&cfg).into_iter().map(|(m, k, c, _)| (m, k, c)).collect();
+    let binds: Vec<(String, String, Option<String>)> = all_binds(&cfg)
+        .into_iter()
+        .map(|(m, k, c, _)| (m, k, c))
+        .collect();
     S.with_borrow_mut(|s| {
         s.parser.clear();
         s.normal = Keymap::new();
@@ -108,7 +121,10 @@ pub fn keyhint() -> (String, Vec<(String, String)>) {
         if s.mode != Mode::Normal || seq.is_empty() {
             return (String::new(), vec![]);
         }
-        (seq.iter().map(|k| k.to_string()).collect(), s.normal.continuations(seq))
+        (
+            seq.iter().map(|k| k.to_string()).collect(),
+            s.normal.continuations(seq),
+        )
     })
 }
 

@@ -354,7 +354,11 @@ const PRESETS: &[(&str, [&str; 12])] = &[
 
 /// CSS `color-scheme` for our own pages (settings, downloads, bookmarks).
 pub fn scheme() -> &'static str {
-    if crate::config::get().str("theme") == "light" { "light" } else { "dark" }
+    if crate::config::get().str("theme") == "light" {
+        "light"
+    } else {
+        "dark"
+    }
 }
 
 /// Our own page's HTML with its colour scheme following the UI theme.
