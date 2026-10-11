@@ -5,33 +5,51 @@
 use rusqlite::Connection;
 use std::path::{Path, PathBuf};
 
-/// Profile parents searched by `--import` with no path.
-const CHROMIUM: &[&str] = &[
-    ".config/google-chrome",
-    ".config/chromium",
-    ".config/net.imput.helium",
-    ".config/BraveSoftware/Brave-Browser",
-    ".config/vivaldi",
-    ".config/microsoft-edge",
+/// (name for `--import <name>`, profile parent dir under $HOME).
+const CHROMIUM: &[(&str, &str)] = &[
+    ("chrome", ".config/google-chrome"),
+    ("chromium", ".config/chromium"),
+    ("helium", ".config/net.imput.helium"),
+    ("brave", ".config/BraveSoftware/Brave-Browser"),
+    ("vivaldi", ".config/vivaldi"),
+    ("edge", ".config/microsoft-edge"),
 ];
-const FIREFOX: &[&str] = &[
-    ".mozilla/firefox",
-    ".config/zen",
-    ".zen",
-    ".librewolf",
-    ".floorp",
+const FIREFOX: &[(&str, &str)] = &[
+    ("firefox", ".mozilla/firefox"),
+    ("zen", ".config/zen"),
+    ("zen", ".zen"),
+    ("librewolf", ".librewolf"),
+    ("floorp", ".floorp"),
 ];
+
+/// `--import zen` etc.: that browser's profile with the biggest history file
+/// (browsers keep empty leftover profiles next to the real one).
+fn by_name(name: &str) -> Option<PathBuf> {
+    if name == "qutebrowser" {
+        return found().into_iter().find(|(n, _)| *n == "qutebrowser").map(|(_, p)| p);
+    }
+    found()
+        .into_iter()
+        .filter(|(n, _)| *n == name)
+        .max_by_key(|(_, p)| history_file(p).and_then(|f| f.metadata().ok()).map_or(0, |m| m.len()))
+        .map(|(_, p)| p)
+}
 
 pub fn main(arg: Option<&str>, history_db: &Path) -> Result<(), String> {
     let Some(arg) = arg else {
-        println!("Usage: novabrowser --import <profile dir or history file>\nFound:");
-        for p in found() {
-            println!("  {}", p.display());
+        println!("Usage: novabrowser --import <browser name | profile dir | history file>\nFound:");
+        for (name, p) in found() {
+            let mb = history_file(&p).and_then(|f| f.metadata().ok()).map_or(0.0, |m| m.len() as f64 / 1e6);
+            println!("  {name:<12} {mb:>7.1} MB  {}", p.display());
         }
+        println!("A name picks that browser's profile with the most history, e.g. `--import zen`.");
         return Ok(());
     };
-    let file = history_file(Path::new(arg))
-        .ok_or_else(|| format!("no History, places.sqlite or history.sqlite in {arg}"))?;
+    let dir = if arg.contains('/') { Some(PathBuf::from(arg)) } else { by_name(arg) };
+    let file = dir
+        .as_deref()
+        .and_then(history_file)
+        .ok_or_else(|| format!("no History, places.sqlite or history.sqlite for {arg} (run --import alone to list profiles)"))?;
     let (kind, rows, book) = read(&file).map_err(|e| format!("{}: {e}", file.display()))?;
     let db = crate::history::open(history_db).map_err(|e| e.to_string())?;
     let total = crate::history::import(&db, &rows).map_err(|e| e.to_string())?;
@@ -144,10 +162,10 @@ fn parse_qb_session(text: &str) -> Vec<(String, String)> {
     tabs
 }
 
-fn found() -> Vec<PathBuf> {
+fn found() -> Vec<(&'static str, PathBuf)> {
     let home = PathBuf::from(std::env::var_os("HOME").unwrap_or_default());
     let mut out = vec![];
-    for base in CHROMIUM.iter().chain(FIREFOX).map(|b| home.join(b)) {
+    for (name, base) in CHROMIUM.iter().chain(FIREFOX).map(|(n, b)| (*n, home.join(b))) {
         let Ok(dirs) = std::fs::read_dir(&base) else {
             continue;
         };
@@ -157,11 +175,11 @@ fn found() -> Vec<PathBuf> {
             .filter(|p| p.is_dir() && history_file(p).is_some())
             .collect();
         profiles.sort();
-        out.extend(profiles);
+        out.extend(profiles.into_iter().map(|p| (name, p)));
     }
-    let qb = home.join(".local/share/qutebrowser/history.sqlite");
-    if qb.exists() {
-        out.push(qb);
+    let qb = home.join(".local/share/qutebrowser");
+    if qb.join("history.sqlite").exists() {
+        out.push(("qutebrowser", qb));
     }
     out
 }

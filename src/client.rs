@@ -71,13 +71,29 @@ wrap_client! {
         fn on_process_message_received(
             &self,
             browser: Option<&mut Browser>,
-            _frame: Option<&mut Frame>,
+            frame: Option<&mut Frame>,
             _source: ProcessId,
             message: Option<&mut ProcessMessage>,
         ) -> ::std::os::raw::c_int {
-            // Only focus reports from renderer.rs; worst a page can do is toggle insert mode.
             let (Some(b), Some(m)) = (browser, message) else { return 0 };
-            if CefString::from(&m.name()).to_string() != "nova.focus" { return 0; }
+            let name = CefString::from(&m.name()).to_string();
+            if name == "nova.send" {
+                // Our manager pages (bookmarks): main-frame data: page holding this run's token.
+                let text = m.argument_list().map(|l| CefString::from(&l.string(0)).to_string()).unwrap_or_default();
+                let main_data = frame.is_some_and(|f| f.is_main() != 0 && CefString::from(&f.url()).to_string().starts_with("data:"));
+                let msg = text.strip_prefix("page ").and_then(|t| t.split_once(' ')).filter(|(tok, _)| main_data && *tok == crate::page_token());
+                if let Some(msg) = msg.and_then(|(_, j)| serde_json::from_str::<serde_json::Value>(j).ok()) {
+                    match crate::marks::on_page(&msg) {
+                        Ok(()) => {
+                            if let Some(f) = b.main_frame() { f.load_url(Some(&window::data_url(&crate::marks::page()))); }
+                        }
+                        Err(e) => window::message("error", &e),
+                    }
+                }
+                return 1;
+            }
+            // Focus reports from renderer.rs; worst a page can do is toggle insert mode.
+            if name != "nova.focus" { return 0; }
             let active = window::active_browser().is_some_and(|a| a.identifier() == b.identifier());
             if active {
                 modes::on_focus(m.argument_list().is_some_and(|l| l.bool(0) != 0));

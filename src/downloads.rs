@@ -64,7 +64,11 @@ fn with<R>(f: impl FnOnce(&mut Vec<Dl>) -> R) -> R {
                     id: None,
                     url: e["url"].as_str().unwrap_or("").into(),
                     path: e["path"].as_str().unwrap_or("").into(),
-                    st: if e["ok"].as_bool().unwrap_or(false) { St::Done } else { St::Failed },
+                    st: if e["ok"].as_bool().unwrap_or(false) {
+                        St::Done
+                    } else {
+                        St::Failed
+                    },
                     received: e["size"].as_i64().unwrap_or(0),
                     total: e["size"].as_i64().unwrap_or(0),
                     start: e["start"].as_u64().unwrap_or(0),
@@ -137,8 +141,12 @@ pub fn before(item: &DownloadItem, suggested: &str, cb: &BeforeDownloadCallback)
     if let Err(e) = std::fs::create_dir_all(&d) {
         return window::message("error", &format!("download: {}: {e}", d.display()));
     }
-    let taken: Vec<PathBuf> =
-        with(|l| l.iter().filter(|x| x.st == St::Running).map(|x| x.path.clone()).collect());
+    let taken: Vec<PathBuf> = with(|l| {
+        l.iter()
+            .filter(|x| x.st == St::Running)
+            .map(|x| x.path.clone())
+            .collect()
+    });
     let path = unique(&d, &sanitize(suggested), &taken);
     with(|l| {
         l.push(Dl {
@@ -153,7 +161,10 @@ pub fn before(item: &DownloadItem, suggested: &str, cb: &BeforeDownloadCallback)
             cb: None,
         })
     });
-    cb.cont(Some(&CefString::from(path.to_str().unwrap_or("download"))), 0);
+    cb.cont(
+        Some(&CefString::from(path.to_str().unwrap_or("download"))),
+        0,
+    );
     window::refresh();
 }
 
@@ -183,7 +194,11 @@ pub fn updated(item: &DownloadItem, cb: Option<&DownloadItemCallback>) {
         let (ok, bad) = UNSEEN.get();
         UNSEEN.set(if failed { (ok, bad + 1) } else { (ok + 1, bad) });
         save();
-        let (level, what) = if failed { ("error", "Download failed") } else { ("info", "Downloaded") };
+        let (level, what) = if failed {
+            ("error", "Download failed")
+        } else {
+            ("info", "Downloaded")
+        };
         window::message(level, &format!("{what}: {}", p.display()));
     } else {
         window::refresh();
@@ -194,12 +209,26 @@ pub fn updated(item: &DownloadItem, cb: Option<&DownloadItemCallback>) {
 /// finished ones, "" otherwise. Second value = CSS class.
 pub fn summary() -> (String, &'static str) {
     let (n, got, total) = with(|l| {
-        l.iter().filter(|d| d.st == St::Running).fold((0, 0i64, 0i64), |(n, g, t), d| {
-            (n + 1, g + d.received, if d.total > 0 && t >= 0 { t + d.total } else { -1 })
-        })
+        l.iter()
+            .filter(|d| d.st == St::Running)
+            .fold((0, 0i64, 0i64), |(n, g, t), d| {
+                (
+                    n + 1,
+                    g + d.received,
+                    if d.total > 0 && t >= 0 {
+                        t + d.total
+                    } else {
+                        -1
+                    },
+                )
+            })
     });
     if n > 0 {
-        let pct = if total > 0 { format!(" · {}%", got * 100 / total) } else { String::new() };
+        let pct = if total > 0 {
+            format!(" · {}%", got * 100 / total)
+        } else {
+            String::new()
+        };
         return (format!("↓ {n}{pct}"), "run");
     }
     match UNSEEN.get() {
@@ -211,7 +240,12 @@ pub fn summary() -> (String, &'static str) {
 
 /// Newest first, as numbered on the history page.
 fn nth(n: usize) -> Option<(PathBuf, St)> {
-    with(|l| l.iter().rev().nth(n.checked_sub(1)?).map(|d| (d.path.clone(), d.st)))
+    with(|l| {
+        l.iter()
+            .rev()
+            .nth(n.checked_sub(1)?)
+            .map(|d| (d.path.clone(), d.st))
+    })
 }
 
 /// `download-open [N] [cmd…]`: entry N of the history page (default: newest finished),
@@ -224,8 +258,13 @@ pub fn open(args: &[String]) -> Result<(), String> {
             None => return Err(format!("No download {n}")),
         },
         None => (
-            with(|l| l.iter().rev().find(|d| d.st == St::Done).map(|d| d.path.clone()))
-                .ok_or("No finished download")?,
+            with(|l| {
+                l.iter()
+                    .rev()
+                    .find(|d| d.st == St::Done)
+                    .map(|d| d.path.clone())
+            })
+            .ok_or("No finished download")?,
             args,
         ),
     };
@@ -251,8 +290,16 @@ pub fn open(args: &[String]) -> Result<(), String> {
 /// `download-cancel [N]`: entry N, or the newest running download.
 pub fn cancel(n: Option<usize>) -> Result<(), String> {
     let cb = with(|l| match n {
-        Some(n) => l.iter().rev().nth(n.checked_sub(1)?).and_then(|d| d.cb.clone()),
-        None => l.iter().rev().find(|d| d.st == St::Running).and_then(|d| d.cb.clone()),
+        Some(n) => l
+            .iter()
+            .rev()
+            .nth(n.checked_sub(1)?)
+            .and_then(|d| d.cb.clone()),
+        None => l
+            .iter()
+            .rev()
+            .find(|d| d.st == St::Running)
+            .and_then(|d| d.cb.clone()),
     });
     cb.ok_or("No such running download")?.cancel();
     Ok(())
@@ -283,7 +330,9 @@ pub fn page() -> String {
             })
             .collect()
     });
-    let data = serde_json::to_string(&rows).unwrap().replace('<', "\\u003c");
+    let data = serde_json::to_string(&rows)
+        .unwrap()
+        .replace('<', "\\u003c");
     PAGE.replace("/*DATA*/[]", &data)
 }
 

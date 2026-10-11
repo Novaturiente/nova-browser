@@ -470,6 +470,7 @@ pub const NAMES: &[&str] = &[
     "bookmark-del",
     "bookmark-list",
     "bookmark-load",
+    "bookmarks",
     "clear-keychain",
     "close",
     "config-cycle",
@@ -764,8 +765,9 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
             };
             crate::marks::bookmark_del(&url)?
         }
+        "bookmarks" => window::open(&window::data_url(&crate::marks::page()).to_string(), true),
         "bookmark-list" => {
-            let page = window::data_url(&crate::marks::list_page()).to_string();
+            let page = window::data_url(&crate::marks::page()).to_string();
             if cmd.flag("-j", "--jump") {
                 open_in(&page, cmd)?
             } else {

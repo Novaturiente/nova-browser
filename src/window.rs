@@ -200,9 +200,11 @@ fn open_titled(url: &str, title: String, foreground: bool) {
 pub fn session_json() -> Option<serde_json::Value> {
     S.with_borrow(|s| {
         s.window.as_ref()?;
+        // data: tabs are our snapshot pages (downloads, bookmarks): stale after a restart
         let tabs = s
             .tabs
             .iter()
+            .filter(|t| !t.url.starts_with("data:"))
             .map(|t| {
                 (
                     t.crashed.clone().unwrap_or_else(|| t.url.clone()),

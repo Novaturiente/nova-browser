@@ -167,6 +167,18 @@ fn start_url() -> Option<String> {
     )
 }
 
+/// Random per-run secret our manager pages (data: URLs) put in their nova.send
+/// messages: other data: frames (e.g. a site's data: iframe) can't know it.
+pub(crate) fn page_token() -> &'static str {
+    static T: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    T.get_or_init(|| {
+        let mut b = [0u8; 16];
+        use std::io::Read;
+        std::fs::File::open("/dev/urandom").and_then(|mut f| f.read_exact(&mut b)).expect("/dev/urandom");
+        b.iter().map(|x| format!("{x:02x}")).collect()
+    })
+}
+
 /// Set a Chromium profile preference; failures go to the log.
 pub(crate) fn set_pref(ctx: &RequestContext, name: &str, mut v: Value) {
     // cef-rs passes an empty CefString out-param as NULL and CEF then fails the call: pre-fill it.

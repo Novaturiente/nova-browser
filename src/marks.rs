@@ -192,30 +192,99 @@ pub fn filter(rows: Vec<(String, String)>, pattern: &str) -> Vec<(String, String
         .collect()
 }
 
-/// `bookmark-list`: a local page with every quickmark and bookmark as a link.
-pub fn list_page() -> String {
-    let esc = |s: &str| {
-        s.replace('&', "&amp;")
-            .replace('<', "&lt;")
-            .replace('"', "&quot;")
-    };
-    let link = |u: &str, t: &str| {
-        let safe = u.starts_with("http") || u.starts_with("file:") || u.starts_with("about:");
-        let href = if safe { esc(u) } else { "#".into() };
-        format!(
-            "<li><a href=\"{href}\">{}</a> <small>{}</small></li>",
-            esc(if t.is_empty() { u } else { t }),
-            esc(u)
-        )
-    };
-    let q: String = quickmarks().iter().map(|(n, u)| link(u, n)).collect();
-    let b: String = bookmarks().iter().map(|(u, t)| link(u, t)).collect();
-    format!(
-        "<!doctype html><meta charset=utf-8><title>Bookmarks</title>\
-         <style>body{{font:14px sans-serif;max-width:60em;margin:2em auto}}small{{opacity:.6}}li{{margin:.3em 0}}</style>\
-         <h2>Quickmarks</h2><ul>{q}</ul><h2>Bookmarks</h2><ul>{b}</ul>"
-    )
+/// `quickmark-add`/`bookmark-add` from the manager page, replacing `old` (the
+/// previous name / URL) when editing. Empty name or URL is refused.
+fn set(quick: bool, old: Option<&str>, key: &str, val: &str) -> Result<(), String> {
+    let (key, val) = (key.trim(), val.trim());
+    if key.is_empty() || (quick && (val.is_empty() || key.contains(char::is_whitespace))) {
+        return Err(if quick { "quickmark needs a name (no spaces) and a URL" } else { "bookmark needs a URL" }.into());
+    }
+    let (path, rows) = with(|m| {
+        let rows = if quick { &mut m.quick } else { &mut m.book };
+        let at = old.and_then(|o| rows.iter().position(|(k, _)| k == o));
+        if rows.iter().enumerate().any(|(i, (k, _))| k == key && Some(i) != at) {
+            return Err(format!("'{key}' already exists"));
+        }
+        match at {
+            Some(i) => rows[i] = (key.to_string(), val.to_string()),
+            None => rows.push((key.to_string(), val.to_string())),
+        }
+        Ok((if quick { quick_file() } else { book_file() }, rows.clone()))
+    })?;
+    // quickmarks file is `name url`, bookmarks `url title`: same (key, val) order
+    save(path, &rows)
 }
+
+fn del(quick: bool, key: &str) -> Result<(), String> {
+    let (path, rows) = with(|m| {
+        let rows = if quick { &mut m.quick } else { &mut m.book };
+        rows.retain(|(k, _)| k != key);
+        (if quick { quick_file() } else { book_file() }, rows.clone())
+    });
+    save(path, &rows)
+}
+
+/// A message from the manager page (client.rs checked frame + token):
+/// {"a": "set"|"del", "q": quickmark?, "old": key?, "k": key, "v": value}.
+pub fn on_page(msg: &serde_json::Value) -> Result<(), String> {
+    let quick = msg["q"].as_bool().unwrap_or(false);
+    let k = msg["k"].as_str().unwrap_or("");
+    match msg["a"].as_str() {
+        Some("set") => set(quick, msg["old"].as_str(), k, msg["v"].as_str().unwrap_or("")),
+        Some("del") => del(quick, k),
+        _ => Err("unknown page action".into()),
+    }
+}
+
+/// `:bookmarks` (`bookmark-list`): manage quickmarks and bookmarks — add, edit, delete,
+/// filter, open. Actions go back over nova.send with the per-run page token.
+pub fn page() -> String {
+    let data = serde_json::json!({ "token": crate::page_token(), "quick": quickmarks(), "book": bookmarks() });
+    PAGE.replace("/*DATA*/{}", &serde_json::to_string(&data).unwrap().replace('<', "\\u003c"))
+}
+
+const PAGE: &str = r##"<!doctype html><meta charset=utf-8><title>Bookmarks</title>
+<style>
+body{font:14px system-ui,sans-serif;max-width:64em;margin:2em auto;padding:0 1em;color-scheme:light dark}
+h1{font-size:1.3em;font-weight:600;display:flex;gap:1em;align-items:center}h2{font-size:1.05em;margin:1.6em 0 .5em}
+input{font:inherit;padding:.35em .6em;border-radius:8px;border:1px solid color-mix(in srgb,currentColor 25%,transparent);background:transparent;color:inherit;min-width:0}
+button{font:inherit;padding:.3em .8em;border-radius:8px;border:0;cursor:pointer;background:color-mix(in srgb,currentColor 12%,transparent);color:inherit}
+button.del:hover{background:#c0303066}
+#filter{flex:1;max-width:24em;font-size:.8em}
+form,.r{display:flex;gap:.5em;align-items:center;padding:.45em .6em;border-radius:10px;margin:.3em 0}
+form{background:color-mix(in srgb,currentColor 4%,transparent)}
+.r{background:color-mix(in srgb,currentColor 6%,transparent)}
+.r .main{flex:1;min-width:0;display:flex;flex-direction:column}
+.r a{font-weight:600;color:inherit;text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.r a:hover{text-decoration:underline}
+.r small{opacity:.6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.k{flex:0 0 9em}.v{flex:1}.empty{opacity:.6}
+</style>
+<h1>Bookmarks <input id=filter placeholder="Filter…"></h1>
+<h2>Quickmarks</h2><form id=qf><input class=k name=k placeholder=name><input class=v name=v placeholder=URL><button>Add</button></form><div id=ql></div>
+<h2>Bookmarks</h2><form id=bf><input class=v name=k placeholder=URL><input class=v name=v placeholder=title><button>Add</button></form><div id=bl></div>
+<script>
+const D=/*DATA*/{};
+const send=(m)=>window.nova&&nova.send("page "+D.token+" "+JSON.stringify(m));
+const el=(t,p,...c)=>{const e=document.createElement(t);Object.assign(e,p);e.append(...c);return e;};
+const row=(q,[k,v])=>{
+  const url=q?v:k,label=q?k:(v||k);
+  const r=el("div",{className:"r"});
+  r.dataset.text=(k+" "+v).toLowerCase();
+  const view=()=>{r.replaceChildren(
+    el("div",{className:"main"},el("a",{href:/^(https?|file|about):/.test(url)?url:"#",textContent:label}),el("small",{textContent:q?url:(v?k:"")})),
+    el("button",{textContent:"Edit",onclick:edit}),
+    el("button",{className:"del",textContent:"Delete",onclick:()=>send({a:"del",q,k})}));};
+  const edit=()=>{
+    const a=el("input",{className:q?"k":"v",value:k}),b=el("input",{className:"v",value:v});
+    const f=el("form",{onsubmit:(e)=>{e.preventDefault();send({a:"set",q,old:k,k:a.value,v:b.value});}},a,b,el("button",{textContent:"Save"}),el("button",{type:"button",textContent:"Cancel",onclick:view}));
+    r.replaceChildren(f);a.focus();};
+  view();return r;};
+const fill=(id,q,rows)=>{const l=document.getElementById(id);l.replaceChildren(...rows.map(x=>row(q,x)));if(!rows.length)l.append(el("p",{className:"empty",textContent:"None yet."}));};
+fill("ql",true,D.quick);fill("bl",false,D.book.slice().reverse());
+for(const[id,q]of[["qf",true],["bf",false]])document.getElementById(id).onsubmit=(e)=>{e.preventDefault();const f=e.target;send({a:"set",q,k:f.k.value,v:f.v.value});};
+document.getElementById("filter").oninput=(e)=>{const w=e.target.value.toLowerCase().split(/\s+/).filter(Boolean);for(const r of document.querySelectorAll(".r"))r.hidden=!w.every(x=>r.dataset.text.includes(x));};
+</script>"##;
 
 #[cfg(test)]
 mod tests {
