@@ -1561,6 +1561,9 @@ wrap_window_delegate! {
                 (None, Some(w), _) => restore_tabs(&w, false),
                 (None, None, url) => open(&url.unwrap_or_else(start_page), true),
             }
+            if crate::welcome::first_run() {
+                open(&data_url(&crate::welcome::page()).to_string(), true);
+            }
             apply_layout(); // tabs.show = multiple depends on the tab count
             if let Some((level, text)) = startup {
                 message(&level, &text);

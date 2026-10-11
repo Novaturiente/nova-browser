@@ -487,6 +487,7 @@ pub const NAMES: &[&str] = &[
     "download-clear",
     "download-open",
     "downloads",
+    "help",
     "https-toggle",
     "fake-key",
     "forward",
@@ -809,6 +810,7 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
         "download-cancel" => crate::downloads::cancel(cmd.args.first().and_then(|a| a.parse().ok()))?,
         "download-clear" => crate::downloads::clear(),
         "password-fill" => crate::passwords::fill_command(cmd.flag("-o", "--otp"))?,
+        "help" => window::open(&window::data_url(&crate::welcome::page()).to_string(), true),
         "downloads" => window::open(&window::data_url(&crate::downloads::page()).to_string(), true),
         "download" => {
             let url = if cmd.args.is_empty() {

@@ -25,6 +25,7 @@ mod settings;
 mod settings_page;
 mod spawn;
 mod theme;
+mod welcome;
 mod urlmatch;
 mod window;
 
@@ -52,8 +53,11 @@ wrap_app! {
         fn on_before_command_line_processing(&self, process_type: Option<&CefString>, command_line: Option<&mut CommandLine>) {
             let (Some(cmd), true) = (command_line, process_type.is_none_or(|t| t.to_string().is_empty())) else { return };
             let ozone = CefString::from("ozone-platform");
-            if std::env::var_os("WAYLAND_DISPLAY").is_some() && cmd.has_switch(Some(&ozone)) == 0 {
-                cmd.append_switch_with_value(Some(&ozone), Some(&CefString::from("wayland")));
+            // explicit both ways: Chromium's own guess follows XDG_SESSION_TYPE, which
+            // says wayland even when only X11 is reachable (and then fails to start)
+            if cmd.has_switch(Some(&ozone)) == 0 {
+                let p = if std::env::var_os("WAYLAND_DISPLAY").is_some() { "wayland" } else { "x11" };
+                cmd.append_switch_with_value(Some(&ozone), Some(&CefString::from(p)));
             }
             for (name, value) in switches(&config::get()) {
                 let name = CefString::from(name.as_str());

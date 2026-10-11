@@ -6,6 +6,7 @@ set -u
 bin=$(realpath "${1:-target/release/novabrowser}")
 tmp=$(mktemp -d /tmp/nova-smoke.XXXXXX)
 export XDG_CONFIG_HOME=$tmp/config XDG_DATA_HOME=$tmp/data XDG_STATE_HOME=$tmp/state XDG_CACHE_HOME=$tmp/cache
+mkdir -p $XDG_DATA_HOME/novabrowser && touch $XDG_DATA_HOME/novabrowser/welcomed   # returning user: no welcome tab
 fails=0
 ok()   { echo "ok   $1"; }
 fail() { echo "FAIL $1"; fails=$((fails + 1)); }

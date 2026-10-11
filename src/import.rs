@@ -162,7 +162,7 @@ fn parse_qb_session(text: &str) -> Vec<(String, String)> {
     tabs
 }
 
-fn found() -> Vec<(&'static str, PathBuf)> {
+pub fn found() -> Vec<(&'static str, PathBuf)> {
     let home = PathBuf::from(std::env::var_os("HOME").unwrap_or_default());
     let mut out = vec![];
     for (name, base) in CHROMIUM.iter().chain(FIREFOX).map(|(n, b)| (*n, home.join(b))) {
