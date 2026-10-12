@@ -1,3 +1,4 @@
 target/
 *.png
 target-own/
+!packaging/icons/*.png
