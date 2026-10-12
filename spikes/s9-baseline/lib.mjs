@@ -76,6 +76,9 @@ BROWSERS.cft154 = chromeLike("/tmp/cft154/chrome-linux64/chrome", "/tmp/s9-cft15
 // cefsimple with Chrome-style window (no --use-alloy-style)
 BROWSERS.cefcs = { ...BROWSERS.cef, args: (url) => BROWSERS.cef.args(url).filter((a) => a !== "--use-alloy-style") };
 
+// own CEF build (2026-10-12): same cefsimple binary, runtime from ~/.local/share/cef-own
+BROWSERS.cefown = { ...BROWSERS.cef, bin: `${homedir()}/cef-build/cefsimple-own/cefsimple`, env: { LD_LIBRARY_PATH: `${homedir()}/cef-build/cefsimple-own` } };
+
 const live = new Set();
 function killAll() {
   for (const b of live) b.killSync();
@@ -182,7 +185,7 @@ export function hyprClients(root) {
   return all.filter((c) => pids.has(c.pid));
 }
 // Window sizes chosen so both get a 1400x913 page viewport: Chrome's toolbar is 87 px, cefsimple (Alloy) has none.
-export const WIN = { cef: [1400, 913], s2: [1400, 913], chrome: [1400, 1000], chromenf: [1400, 1000], cft154: [1400, 1000], cefcs: [1400, 1000] };
+export const WIN = { cef: [1400, 913], s2: [1400, 913], chrome: [1400, 1000], chromenf: [1400, 1000], cft154: [1400, 1000], cefcs: [1400, 1000], cefown: [1400, 913] };
 export function hyprPlace(root, w = 1400, h = 1000) {
   const cs = hyprClients(root);
   for (const [i, c] of cs.entries()) {
