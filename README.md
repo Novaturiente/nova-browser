@@ -121,6 +121,6 @@ Other tools can drive the browser: `novabrowser --cmd ':open -t example.com'`,
 
 ## Not supported
 
-Chrome extensions, Widevine DRM (Netflix etc.), macOS/Windows. The prebuilt
-CEF has no H.264/AAC, so some sites' video won't play until novabrowser ships
-its own CEF build.
+Chrome extensions, Widevine DRM (Netflix etc.), macOS/Windows. On CPUs without
+AVX2 the official prebuilt CEF is used, which has no H.264/AAC, so some
+sites' video won't play there.
