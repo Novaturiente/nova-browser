@@ -238,6 +238,7 @@ impl Config {
             "content.cookies.accept",
             "content.headers.custom",
             "content.headers.do_not_track",
+            "tabs.hibernate_after",
         ];
         let mut names: Vec<String> = self
             .patterns

@@ -1076,11 +1076,12 @@ pub fn start_hibernation() {
 }
 
 fn hibernate_idle() {
-    let mins = config::get().int("tabs.hibernate_after");
-    if mins <= 0 {
-        return;
-    }
-    let after = std::time::Duration::from_secs(mins as u64 * 60);
+    let cfg = config::get();
+    // per site via pattern(): 0 there exempts the site, a number there overrides the global one
+    let due = |t: &Tab| {
+        let mins = cfg.get_for("tabs.hibernate_after", &t.url).as_i64().unwrap_or(0);
+        mins > 0 && t.seen.elapsed() >= std::time::Duration::from_secs(mins as u64 * 60)
+    };
     let candidates: Vec<Browser> = WINS.with_borrow(|w| {
         w.iter()
             .filter(|s| s.window.is_some())
@@ -1092,7 +1093,7 @@ fn hibernate_idle() {
                         && !t.loading
                         && t.crashed.is_none()
                         && !t.url.starts_with("data:")
-                        && t.seen.elapsed() >= after
+                        && due(t)
                 })
             })
             .filter_map(|(_, t)| t.view.browser())

@@ -82,7 +82,9 @@ right-click a tab for its menu.
   memory and shown dimmed; it reloads where you left it (scroll, back/forward)
   when you return. Tabs playing media or with text typed into a form are
   skipped. `:tab-keep-awake` (also in the tab menu) exempts a tab, and it
-  stays exempt across restarts; `:tab-hibernate` unloads one now.
+  stays exempt across restarts; `:tab-hibernate` unloads one now. Per site in
+  config.ts: `pattern("*://mail.google.com/*", (p) => { p.tabs.hibernate_after = 0; })`
+  (0 = never, or another number of minutes).
 - `:set <setting> <value>` — any setting; saved. `:set -t` only until restart.
 - `:profile-new` — create a profile (asks for a name) and open it in its own
   window; `:profile-open <name>` opens one. Each profile has its own history,
