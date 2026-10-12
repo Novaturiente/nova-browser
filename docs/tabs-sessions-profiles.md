@@ -29,9 +29,9 @@ is unloaded to free memory. It stays in the tab bar, dimmed, and loads again
 when you switch to it, at the same scroll position and with its back/forward
 history.
 
-A tab is never unloaded if it is the active tab, is loading or crashed, or —
-checked just before unloading — is playing audio/video or has text typed into
-a form field. Limits: media inside a frame (e.g. an embedded YouTube player)
+A tab is never unloaded while it is active, loading or crashed. Just before
+unloading, novabrowser also checks whether it is playing audio or video or
+has text typed into a form field, and leaves it alone if so. Limits: media inside a frame (e.g. an embedded YouTube player)
 and text typed into rich editors (`contenteditable`, like webmail compose)
 aren't detected.
 
@@ -44,7 +44,7 @@ aren't detected.
 
 If a tab's renderer crashes, the tab shows a crash page; press `r` to reload.
 If a page stops responding for a while, the tab bar asks *"This page isn't
-responding. Kill it?"* — `y` ends it (then `r` reloads), `n` keeps waiting.
+responding. Kill it?"* Press `y` to end it (then `r` reloads) or `n` to keep waiting.
 
 ## Windows
 
@@ -95,7 +95,7 @@ runs as its own process, so profiles never share cookies.
 
 Settings:
 
-- `config.ts` is **shared** by all profiles. Branch on the profile name if
+- `config.ts` is shared by all profiles. Branch on the profile name if
   needed: `import { profile } from "nova"; if (profile === "work") { … }`.
 - `:set` and `:settings` changes apply to the current profile only. A new
   profile starts from the default profile's choices.

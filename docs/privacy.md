@@ -6,11 +6,11 @@ Built in and on by default, using Brave's
 [adblock-rust](https://github.com/brave/adblock-rust) engine with
 EasyList/uBlock Origin filter syntax:
 
-- **Network blocking** of ads and trackers.
-- **Cosmetic filtering**: hides ad containers, including generic class/id
+- Network blocking of ads and trackers.
+- Cosmetic filtering, which hides ad containers, including generic class/id
   rules.
-- **Scriptlets** (uBlock Origin's `+js(...)` rules), injected before page
-  scripts run. This is what removes YouTube ads.
+- Scriptlets (uBlock Origin's `+js(...)` rules), injected before page
+  scripts run. They remove YouTube ads.
 
 Default lists: EasyList and EasyPrivacy. Add more:
 
@@ -44,7 +44,7 @@ briefly on slow pages.
 | Value | Effect |
 |---|---|
 | `all` (default) | accept everything |
-| `no-3rdparty` | block third-party cookies **and** third-party JavaScript storage |
+| `no-3rdparty` | block third-party cookies and third-party JavaScript storage |
 | `never` | block all cookies and site storage |
 
 Per site, e.g. allow everything for a site that needs third-party login
@@ -67,7 +67,7 @@ Tailscale (`100.64.0.0/10`). For other sites that only work over HTTP press
 ## Permissions
 
 Camera, microphone, screen sharing, location, notifications, clipboard
-reading, persistent storage, pointer lock and protocol handlers all **ask**
+reading, persistent storage, pointer lock and protocol handlers all ask
 by default. Answer in the tab bar with `y`, `n`, `A` (always for this site)
 or `N` (never). Always/Never answers are stored in
 `~/.local/share/novabrowser/permissions.json`; delete a line there to be
@@ -112,5 +112,5 @@ kept components. Spell-check dictionaries are downloaded when you enable
 With the official prebuilt CEF (CPUs without AVX2) the runtime switches still
 apply, but the account check and the component downloads remain.
 
-**Trade-off:** with Safe Browsing off, novabrowser does not warn about known
+With Safe Browsing off, novabrowser does not warn about known
 phishing or malware sites. Ad-blocking lists catch some of them.

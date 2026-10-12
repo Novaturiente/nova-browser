@@ -4,7 +4,7 @@ novabrowser borrows qutebrowser's ideas, key notation, command names and
 setting names, so most of what you know carries over. This page lists what
 changes.
 
-## Why switch
+## How the two compare
 
 Both browsers render pages with Chromium: qutebrowser through QtWebEngine,
 novabrowser through CEF (the Chromium Embedded Framework, used by Spotify,
@@ -103,13 +103,13 @@ probably don't need one anymore: see [passwords](passwords.md).
 
 ## Things that work differently
 
-- **One floating box** replaces the bottom status bar and completion: `o`,
+- One floating box replaces the bottom status bar and completion: `o`,
   `:` and `/` open a rounded palette at the top. Mode, keys and messages
   show at the right end of the tab bar.
-- **HTTPS-only is always on** (local addresses excepted); `<Space>th` makes
+- HTTPS-only is always on (local addresses excepted); `<Space>th` makes
   an exception.
-- **Tabs unload when idle** (`tabs.hibernate_after`, 30 minutes). Set it to
+- Tabs unload when idle (`tabs.hibernate_after`, 30 minutes). Set it to
   `0` if you don't want that.
-- **Downloads never ask** where to save.
+- Downloads never ask where to save.
 - `:set` saves to `autoconfig.json` immediately, like qutebrowser's
   autoconfig, and `config.ts` wins over it.

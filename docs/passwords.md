@@ -8,7 +8,7 @@ manager you already use, through its command-line tool:
 | `rbw` (default) | [rbw](https://github.com/doy/rbw), an unofficial Bitwarden / Vaultwarden client | Recommended for Bitwarden. Unlocks with rbw's own pinentry. |
 | `bw` | the official Bitwarden CLI | Run `bw unlock` and start novabrowser with `BW_SESSION` set. |
 | `pass` | [pass](https://www.passwordstore.org/) | Entries named `<site>/<username>`, password on the first line. TOTP needs pass-otp. Unlocks through gpg-agent. |
-| `none` | — | Turns the feature off. |
+| `none` | | Turns the feature off. |
 
 ```ts
 c.passwords.backend = "pass";
@@ -23,10 +23,10 @@ c.passwords.backend = "pass";
 Or press `<Space>pp` anywhere on the page to fill the best match, and
 `<Space>po` to fill the current TOTP code.
 
-- **Matching** uses the site's registrable domain, like Bitwarden's default:
+- Matching uses the site's registrable domain, like Bitwarden's default:
   a login saved for `example.com` is offered on `login.example.com`. Logins
   for the exact host are listed first.
-- **Nothing is filled on page load** — only when you pick an entry.
+- Nothing is filled on page load, only when you pick an entry.
 - Frames from a different site than the page get nothing.
 - Sign-up and "new password" fields offer a generated 20-character password
   (made locally from `/dev/urandom`) that is filled into both fields.

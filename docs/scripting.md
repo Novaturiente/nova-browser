@@ -60,7 +60,7 @@ qutebrowser userscripts work unchanged:
 Commands written to `$QUTE_FIFO` run in the tab the script was started from
 (dropped if that tab was closed meanwhile).
 
-A small example — save the page's URL to a reading list:
+This one saves the page's URL to a reading list:
 
 ```sh
 #!/bin/sh

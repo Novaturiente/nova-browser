@@ -6,12 +6,12 @@ Unknown names and wrong types are errors.
 
 Set them in any of these ways (later ones in this list are overridden by earlier ones):
 
-1. `config.ts`: `c.tabs.position = "left";` — always wins.
-2. `:set tabs.position left` or the `:settings` page — saved to `autoconfig.json`.
+1. `config.ts`: `c.tabs.position = "left";`. This always wins.
+2. `:set tabs.position left` or the `:settings` page, saved to `autoconfig.json`.
 3. The `theme` preset (colours only).
 4. The defaults below.
 
-**Per site** means the setting also works inside
+"Per site" means the setting also works inside
 [`pattern()`](configuration.md#per-site-settings) and `:set -u <pattern>`.
 Permission settings (`content.geolocation`, `content.media.*`,
 `content.notifications.enabled`, …) are per site too. Other settings inside
@@ -20,8 +20,8 @@ Permission settings (`content.geolocation`, `content.media.*`,
 "Restart needed" settings are passed to Chromium at start; everything else
 applies at once.
 
-Value types: **bool** `true`/`false`; **bool or "ask"** adds `"ask"` (prompt);
-**percent** like `"40%"`; **list** / **dict** are JSON arrays / objects. On the
+Value types: bool is `true`/`false`; bool or "ask" also allows `"ask"` (prompt);
+percent looks like `"40%"`; list and dict are JSON arrays and objects. On the
 `:set` command line write lists and dicts as JSON:
 `:set zoom.levels '["50%", "100%", "150%"]'`.
 

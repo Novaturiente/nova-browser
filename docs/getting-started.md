@@ -34,9 +34,9 @@ session as `:session-load qutebrowser`). Importing twice doesn't create
 duplicates. Passwords are not imported: novabrowser uses your
 [password manager](passwords.md) directly.
 
-## Five minutes of keys
+## The basic keys
 
-novabrowser starts in **normal mode**: letters are commands, not text.
+novabrowser starts in normal mode: letters are commands, not text.
 
 1. `o`, type `wikipedia.org`, `Enter`. Typing something that isn't a URL
    searches for it.
@@ -45,7 +45,7 @@ novabrowser starts in **normal mode**: letters are commands, not text.
    a new tab.
 4. `J` / `K` switch tabs, `d` closes one, `u` brings it back.
 5. `H` / `L` go back / forward.
-6. Click a search box (or press `gi`): you're in **insert mode** and can
+6. Click a search box (or press `gi`): you're in insert mode and can
    type. `Escape` goes back to normal mode.
 7. `/word` finds text, `n` / `N` jump between matches.
 8. `yy` copies the URL, `pp` opens the URL in your clipboard.
@@ -55,7 +55,7 @@ novabrowser starts in **normal mode**: letters are commands, not text.
 
 The mouse works everywhere too.
 
-## Make it yours
+## Changing settings
 
 - `Ss` opens the settings page: theme, search engine, start page, tab bar
   position, dark mode, ad blocking, cookies, downloads, password manager.

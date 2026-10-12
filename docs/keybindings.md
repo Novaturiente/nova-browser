@@ -1,7 +1,7 @@
 # Key bindings
 
-novabrowser is modal, like Vim and qutebrowser: in **normal mode** keys run
-commands, in **insert mode** they type into the page. Press **F1** at any
+novabrowser is modal, like Vim and qutebrowser: in normal mode keys run
+commands, in insert mode they type into the page. Press F1 at any
 time for a filterable list of every binding that is active right now,
 including yours.
 
@@ -12,7 +12,7 @@ corner shows which keys can follow.
 
 | Mode | How you get there | Keys do | Leave with |
 |---|---|---|---|
-| Normal | default | run commands (table below) | — |
+| Normal | default | run commands | |
 | Insert | `i`, or focusing a text field | type into the page | `Escape` (or clicking outside the field) |
 | Passthrough | `Ctrl-v` | everything goes to the page, even `Escape` | `Shift-Escape` |
 | Command | `:`, `o`, `O`, `/`, `?` | edit the command line | `Escape`, `Ctrl-[`, or Backspace on an empty line |
@@ -226,7 +226,7 @@ Permission requests (camera, notifications, clipboard…) and page dialogs
 
 `f` puts a short label on every clickable element; type the label to click it.
 Labels use `hints.chars` (home row by default). The `:hint` command takes a
-**group** and a **target**:
+group and a target:
 
 ```
 :hint [--rapid] [--first] [group] [target] [args…]
@@ -253,7 +253,7 @@ Labels use `hints.chars` (home row by default). The `:hint` command takes a
 | `spawn <program> [args]` | start a program with `{hint-url}` replaced |
 
 `--rapid` keeps hint mode open after each pick; `--first` picks the first
-match without asking (used by `gi`). Example — play a video link in mpv:
+match without asking (used by `gi`). To play a video link in mpv:
 
 ```ts
 bind(";v", "hint links spawn mpv {hint-url}");

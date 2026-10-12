@@ -9,7 +9,7 @@ it, and you can mix them:
 | `:set name value` | any setting, quickly | `autoconfig.json` |
 | `config.ts` | everything: bindings, per-site rules, aliases, logic | your file |
 
-If both set the same setting, **`config.ts` wins**. A `:set` on a setting
+If both set the same setting, `config.ts` wins. A `:set` on a setting
 from `config.ts` lasts only until restart, and you get a warning saying so.
 
 The full list of settings is in the [settings reference](settings.md).
@@ -145,10 +145,10 @@ until restart.
 `<Space>td` (`:dark-toggle`) and `<Space>th` (`:https-toggle`) flip a setting
 for the current site and remember it in a plain text file, one host per line:
 
-- `~/.config/novabrowser/https_excludes` — hosts (or `host:port`) that may use
-  plain HTTP. Read automatically.
-- `~/.config/novabrowser/darkmode_excludes` — hosts where forced dark mode is
-  off. To keep these across restarts, read the file in `config.ts`:
+- `~/.config/novabrowser/https_excludes` lists hosts (or `host:port`) that
+  may use plain HTTP. novabrowser reads it by itself.
+- `~/.config/novabrowser/darkmode_excludes` lists hosts where forced dark
+  mode is off. To keep these across restarts, read the file in `config.ts`:
 
 ```ts
 c.colors.webpage.darkmode.enabled = true;
@@ -182,7 +182,7 @@ Paths below are for the default profile. Named profiles keep their data in
 `~/.config/novabrowser/profiles/<name>/` (see [profiles](tabs-sessions-profiles.md#profiles)).
 `$XDG_CONFIG_HOME`, `$XDG_DATA_HOME` and `$XDG_STATE_HOME` are respected.
 
-**`~/.config/novabrowser/`** — yours to edit or back up:
+Your own files, safe to edit and worth backing up, are in `~/.config/novabrowser/`:
 
 | File | Contents |
 |---|---|
@@ -193,7 +193,7 @@ Paths below are for the default profile. Named profiles keep their data in
 | `https_excludes`, `darkmode_excludes` | Site exceptions, one host per line. |
 | `userscripts/` | Your [userscripts](scripting.md#userscripts). |
 
-**`~/.local/share/novabrowser/`** — browser data:
+Browser data is in `~/.local/share/novabrowser/`:
 
 | File | Contents |
 |---|---|
@@ -207,7 +207,7 @@ Paths below are for the default profile. Named profiles keep their data in
 | `Default/`, other Chromium files | Cookies, cache, site storage, zoom levels. |
 | `ipc` | Control socket of the running instance. |
 
-**`~/.local/state/novabrowser/`** — `log` (browser log) and `aria2.log`.
+Logs are in `~/.local/state/novabrowser/`: `log` for the browser and `aria2.log` for downloads.
 
-All files novabrowser writes itself are replaced atomically, so a crash never
-leaves half a file.
+novabrowser replaces the files it writes atomically, so a crash can't leave
+half a file behind.

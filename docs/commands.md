@@ -11,9 +11,9 @@ Run commands from the command line (`:`), from key bindings, from
 
 - Quote arguments with spaces: `:message-info 'hello world'`. A backslash
   escapes the next character.
-- **Placeholders** are replaced before running: `{url}`, `{url:host}`,
+- Placeholders are replaced before running: `{url}`, `{url:host}`,
   `{url:pretty}`, `{title}`, `{clipboard}`, `{primary}` (primary selection).
-- **Aliases** from the `aliases` setting expand first. Defaults: `:w` =
+- Aliases from the `aliases` setting expand first. Defaults: `:w` =
   `session-save`, `:q` = `close`, `:qa` = `quit`, `:wq` / `:wqa` = `quit --save`.
 - `Tab` completes command names, then URLs (history, bookmarks, quickmarks,
   search engines) for `:open`.

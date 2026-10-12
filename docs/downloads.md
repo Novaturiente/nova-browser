@@ -22,11 +22,11 @@ for the downloads page: name, size, folder, times, source URL and state.
 If [aria2](https://aria2.github.io/) is installed (`pacman -S aria2`),
 novabrowser uses it for downloads automatically:
 
-- **8 connections per file**, which is much faster on servers that limit
-  each connection.
-- **Resume after restart**: quitting the browser stops aria2 and keeps a list
-  of unfinished downloads; they continue at the next start.
-- **Torrents**: clicking a `magnet:` link, opening a `.torrent` file, or
+- Each file downloads over 8 connections, which is much faster on servers
+  that limit each connection.
+- Quitting the browser stops aria2 and keeps a list of unfinished
+  downloads, which continue at the next start.
+- Clicking a `magnet:` link, opening a `.torrent` file, or
   `:download magnet:?xt=…` downloads the torrent. Seeding stops as soon as it
   finishes.
 - The page's cookies, user agent and referrer are passed on, so downloads

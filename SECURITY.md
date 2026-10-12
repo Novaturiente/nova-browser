@@ -3,7 +3,7 @@
 ## Reporting a vulnerability
 
 Please report security problems privately through GitHub's
-**Security → Report a vulnerability** on this repository, not in a public
+Security → Report a vulnerability on this repository, not in a public
 issue. Include steps to reproduce and the version (`pacman -Q novabrowser-git`
 or the git commit).
 

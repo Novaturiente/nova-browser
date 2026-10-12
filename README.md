@@ -9,27 +9,26 @@ built on current Chromium (CEF) with a Rust core.
 
 ---
 
-novabrowser is for people who like qutebrowser's way of browsing — Vim-style
-modes, link hints, a command line, a plain-text config — but want the site
-compatibility and video support of a current Chromium, and fewer moving
-parts underneath. It works with no configuration at all, and qutebrowser
-users will recognise the keys, commands and setting names.
+novabrowser browses the way qutebrowser does: Vim-style modes, link hints,
+a command line and a plain-text config. It runs on Chromium 154 through CEF,
+so sites behave as they do in Chrome, the default build plays H.264/AAC
+video, and Widevine (DRM) works. qutebrowser's QtWebEngine is also Chromium,
+but usually several versions older.
 
-- **Current Chromium.** Chromium 154 through CEF, not an older QtWebEngine.
-  Sites behave as they do in Chrome. The default build plays H.264/AAC video,
-  and Widevine (DRM) works.
-- **Native and separated.** One Rust binary, no Python or Qt. Tabs, the GPU
-  process and the browser are separate processes; a crashed tab shows a
-  reload page instead of taking the browser down.
-- **Keyboard first, mouse welcome.** Modal keys, hints for every clickable
-  thing, and a command palette with completion. Mouse, tab menus and a
-  settings page work too.
+The browser itself is one Rust binary with no Python or Qt. Tabs, the GPU
+process and the browser run as separate processes, and a crashed tab shows
+a reload page while the rest keeps running.
+
+It needs no configuration. qutebrowser users will recognise the keys,
+commands and setting names, and anyone who prefers the mouse gets tab menus
+and a settings page.
 
 License: GPL-3.0-or-later. Platform: Linux (Wayland and X11), x86-64.
 
 ## Features
 
-**Browsing**
+### Browsing
+
 - Normal, insert, passthrough, command and hint modes; counts (`5j`, `3J`);
   `;;` command chaining; aliases.
 - Link hints (`f`, `F`, `;y`, `gi`, …) with groups and targets, e.g.
@@ -39,26 +38,29 @@ License: GPL-3.0-or-later. Platform: Linux (Wayland and X11), x86-64.
 - Find in page, zoom remembered per site, fullscreen, DevTools.
 - A key popup after prefix keys, and `F1` for every binding.
 
-**Tabs and sessions**
+### Tabs and sessions
+
 - Horizontal or vertical tab bar, pinned tabs, move a tab to a new window,
   undo close (across restarts).
 - Session restore with back/forward history and scroll position; named
   sessions.
 - Idle tab hibernation to save memory, with automatic exemptions for media
   and typed forms.
-- Multiple windows and fully separate **profiles** (work / personal).
+- Multiple windows and fully separate profiles (work / personal).
 
-**Privacy and content**
-- Built-in ad and tracker blocking with Brave's engine: network rules,
-  cosmetic filtering and uBlock scriptlets (blocks YouTube ads). Lists
-  update in the background.
+### Privacy and content
+
+- Ad and tracker blocking with Brave's engine: network rules, cosmetic
+  filtering and uBlock scriptlets, which remove YouTube ads. Lists update
+  in the background.
 - HTTPS-only by default, third-party cookie blocking, permission prompts
   with per-site memory, Do Not Track.
 - Chromium's background calls to Google removed or turned off
   ([details](docs/privacy.md#calls-to-google)).
 - Per-site forced dark mode.
 
-**Integration**
+### Integration
+
 - Passwords from your existing manager: Bitwarden (`rbw` or `bw`) or `pass`.
   Suggestions appear under login fields, plus TOTP codes, generated
   passwords and a save/update prompt. No built-in vault.
@@ -69,7 +71,8 @@ License: GPL-3.0-or-later. Platform: Linux (Wayland and X11), x86-64.
 - Control from outside (`novabrowser --cmd`, `--query`), qutebrowser-style
   userscripts with `QUTE_*` variables and `$QUTE_FIFO`.
 
-**Configuration**
+### Configuration
+
 - A `:settings` page, `:set` (saved), and an optional
   `~/.config/novabrowser/config.ts` with `bind()`, `pattern()` per-site
   rules, aliases and full TypeScript.

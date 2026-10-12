@@ -17,7 +17,7 @@ Which Chromium engine (CEF) the package uses:
 | Your CPU | CEF used | H.264/AAC video | Google background calls |
 |---|---|---|---|
 | x86-64-v3 (AVX2: Intel Haswell 2013+, AMD Excavator 2015+) | novabrowser's own build, downloaded from this repo's Releases (~50 MB) | yes | removed (see [privacy](privacy.md#calls-to-google)) |
-| older x86-64 | the official prebuilt CEF (~1.5 GB download, a warning is printed) | **no** | not removed |
+| older x86-64 | the official prebuilt CEF (~1.5 GB download, a warning is printed) | no | not removed |
 
 Check your CPU: `/lib/ld-linux-x86-64.so.2 --help | grep x86-64-v3`. Set
 `NOVA_CEF=/path/to/unpacked/cef` to use a CEF you already have.
