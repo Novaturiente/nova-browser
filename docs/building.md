@@ -89,5 +89,5 @@ use the official prebuilt CEF (`NOVA_CEF`), which has no proprietary codecs.
 /usr/lib/novabrowser/libcef.so …        CEF runtime, locales, resources
 /usr/bin/novabrowser                    symlink
 /usr/share/applications/novabrowser.desktop
-/usr/share/icons/hicolor/scalable/apps/novabrowser.svg
+/usr/share/icons/hicolor/scalable/apps/novabrowser.svg   (+ PNGs, 16–512 px)
 ```

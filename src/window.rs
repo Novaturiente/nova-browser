@@ -2056,6 +2056,25 @@ wrap_window_delegate! {
         // cef-rs defaults every int return to 0; CEF's C++ defaults for these are true.
         // shortcut: closing the window skips beforeunload (tab-close asks); add confirm_quit if missed.
         fn can_close(&self, _window: Option<&mut Window>) -> ::std::os::raw::c_int { 1 }
+
+        /// Wayland app_id / X11 WM_CLASS = the .desktop file name, so docks, task
+        /// switchers and Alt-Tab find novabrowser.desktop and its icon.
+        fn linux_window_properties(&self, _window: Option<&mut Window>, properties: Option<&mut LinuxWindowProperties>) -> ::std::os::raw::c_int {
+            let Some(p) = properties else { return 0 };
+            // cef-rs only writes back "borrowed" raw strings (an owned CefString becomes
+            // empty, try_set refuses struct fields): allocate a raw one with CEF's
+            // allocator; CEF frees it when it clears the struct.
+            let raw = || {
+                let mut r: sys::_cef_string_utf16_t = unsafe { std::mem::zeroed() };
+                let id = "novabrowser";
+                unsafe { sys::cef_string_utf8_to_utf16(id.as_ptr().cast(), id.len(), &mut r) };
+                CefString::from(r)
+            };
+            p.wayland_app_id = raw();
+            p.wm_class_class = raw();
+            p.wm_class_name = raw();
+            1
+        }
         fn can_resize(&self, _window: Option<&mut Window>) -> ::std::os::raw::c_int { 1 }
         fn can_maximize(&self, _window: Option<&mut Window>) -> ::std::os::raw::c_int { 1 }
         fn can_minimize(&self, _window: Option<&mut Window>) -> ::std::os::raw::c_int { 1 }
