@@ -13,8 +13,11 @@ git clone https://github.com/Novaturiente/nova-browser
 cd nova-browser/packaging && makepkg -si
 ```
 
-This builds `novabrowser-git`. The build downloads the matching CEF
-(about 1.5 GB unpacked, so build on a real disk, not a small `/tmp`). It
+This builds `novabrowser-git`. On CPUs with AVX2 (x86-64-v3) the build
+downloads novabrowser's own CEF build (~140 MB, from this repo's Releases):
+H.264/AAC video, no Google background calls, faster allocator. Older CPUs get
+the official prebuilt CEF instead (about 1.5 GB unpacked, no H.264/AAC), so
+build on a real disk, not a small `/tmp`. It
 installs into `/usr/lib/novabrowser` (about 360 MB) with `/usr/bin/novabrowser`,
 a desktop entry and an icon.
 

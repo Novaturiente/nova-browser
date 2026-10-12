@@ -11,7 +11,7 @@ back to `~/cef-build/cef/tools/` so a CEF re-copy keeps it):
 
 - `allocator.patch` — PartitionAlloc-as-malloc + BackupRefPtr on; ThinLTO link jobs 8.
 - `privacy.patch` — component allowlist (Widevine, CRLSet, PKI metadata, hyphenation); no Gaia ListAccounts.
-- `x86-64-v3.patch` — personal builds only (SIGILL on pre-AVX2 CPUs). Skip for public builds.
+- `x86-64-v3.patch` — AVX2 CPUs only (SIGILL elsewhere). The published build uses it; `packaging/PKGBUILD` falls back to the official prebuilt CEF on CPUs without x86-64-v3.
 
 Configure and build:
 
@@ -22,3 +22,14 @@ Configure and build:
     cd cef/tools && ./make_distrib.sh --ninja-build --minimal --x64-build --no-docs --no-symbols --no-archive
 
 `concurrent_links` can't be set with ThinLTO (one link at a time already).
+
+Publish (the PKGBUILD downloads this):
+
+    D=cef/binary_distrib/cef_binary_*_minimal; mkdir cef-own
+    cp -a $D/Release/. $D/Resources/. cef-own/; cp -a $D/{include,cmake,libcef_dll,CMakeLists.txt,CREDITS.html} cef-own/
+    cp ~/.local/share/cef/archive.json cef-own/   # from export-cef-dir of the same version; cef-dll-sys checks it
+    tar -cf - cef-own | zstd -19 -T0 -o cef-<ver>-novabrowser-x86_64-v3.tar.zst
+    gh release create cef-<ver>-novaN cef-<ver>-novabrowser-x86_64-v3.tar.zst
+
+Then update `_cef`, the release tag in `source` and the sha256 in `packaging/PKGBUILD`.
+Current: release `cef-154.0.34-nova1`.
