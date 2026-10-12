@@ -129,6 +129,8 @@ Newest first. Settled — don't reopen without new evidence.
 
 Newest first. One entry per session: date, what changed, evidence, what's next.
 
+- 2026-10-12 (IST, 16:10) — publishing docs: README rewritten (qutebrowser-style browser on current Chromium), docs/ with getting-started, keybindings (tables from src/bindings.rs), commands, configuration, settings (all 147 from src/settings.rs), tabs/sessions/profiles, passwords, downloads, privacy, scripting, migrating-from-qutebrowser, building, troubleshooting; LICENSE (GPL-3.0-or-later text), CONTRIBUTING, SECURITY, CHANGELOG; PKGBUILD installs docs + LICENSE. Docs reference tables are hand-synced: update docs when adding a setting/command/key.
+
 - 2026-10-12 (IST, 15:40) — aria2 download backend (auto when installed) incl. magnets/torrents, resume across restarts; per-site hibernation. 88 tests + smoke pass.
 
 - 2026-10-12 (IST, 15:00) — `Ctrl-Shift-v` → `:paste` (right-click Paste) for web terminals. 88 tests pass.

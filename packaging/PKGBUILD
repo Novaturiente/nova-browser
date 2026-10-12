@@ -79,5 +79,7 @@ package() {
   install -Dm644 packaging/novabrowser.desktop "$pkgdir/usr/share/applications/novabrowser.desktop"
   install -Dm644 packaging/novabrowser.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/novabrowser.svg"
   install -Dm644 README.md "$pkgdir/usr/share/doc/novabrowser/README.md"
+  install -Dm644 docs/*.md -t "$pkgdir/usr/share/doc/novabrowser/docs/"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 $r/CREDITS.html "$pkgdir/usr/share/licenses/$pkgname/CEF-CREDITS.html"
 }

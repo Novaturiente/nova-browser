@@ -1,146 +1,165 @@
-# novabrowser
+<p align="center"><img src="packaging/novabrowser.svg" width="96" alt=""></p>
 
-A keyboard-driven web browser for Linux: Vim-style modes, link hints, a
-floating command palette, built-in ad blocking. Rust on top of CEF
-(Chromium). Works with no config at all; everything can be changed later.
+<h1 align="center">novabrowser</h1>
 
-License: GPL-3.0-or-later.
+<p align="center">
+A keyboard-driven web browser for Linux, in the spirit of qutebrowser,<br>
+built on current Chromium (CEF) with a Rust core.
+</p>
 
-## Install (Arch Linux)
+---
+
+novabrowser is for people who like qutebrowser's way of browsing — Vim-style
+modes, link hints, a command line, a plain-text config — but want the site
+compatibility and video support of a current Chromium, and fewer moving
+parts underneath. It works with no configuration at all, and qutebrowser
+users will recognise the keys, commands and setting names.
+
+- **Current Chromium.** Chromium 154 through CEF, not an older QtWebEngine.
+  Sites behave as they do in Chrome. The default build plays H.264/AAC video,
+  and Widevine (DRM) works.
+- **Native and separated.** One Rust binary, no Python or Qt. Tabs, the GPU
+  process and the browser are separate processes; a crashed tab shows a
+  reload page instead of taking the browser down.
+- **Keyboard first, mouse welcome.** Modal keys, hints for every clickable
+  thing, and a command palette with completion. Mouse, tab menus and a
+  settings page work too.
+
+License: GPL-3.0-or-later. Platform: Linux (Wayland and X11), x86-64.
+
+## Features
+
+**Browsing**
+- Normal, insert, passthrough, command and hint modes; counts (`5j`, `3J`);
+  `;;` command chaining; aliases.
+- Link hints (`f`, `F`, `;y`, `gi`, …) with groups and targets, e.g.
+  `:hint links spawn mpv {hint-url}`.
+- A floating palette for `o`, `:` and `/`: URL, history, bookmark,
+  quickmark and search-engine completion; readline keys; command history.
+- Find in page, zoom remembered per site, fullscreen, DevTools.
+- A key popup after prefix keys, and `F1` for every binding.
+
+**Tabs and sessions**
+- Horizontal or vertical tab bar, pinned tabs, move a tab to a new window,
+  undo close (across restarts).
+- Session restore with back/forward history and scroll position; named
+  sessions.
+- Idle tab hibernation to save memory, with automatic exemptions for media
+  and typed forms.
+- Multiple windows and fully separate **profiles** (work / personal).
+
+**Privacy and content**
+- Built-in ad and tracker blocking with Brave's engine: network rules,
+  cosmetic filtering and uBlock scriptlets (blocks YouTube ads). Lists
+  update in the background.
+- HTTPS-only by default, third-party cookie blocking, permission prompts
+  with per-site memory, Do Not Track.
+- Chromium's background calls to Google removed or turned off
+  ([details](docs/privacy.md#calls-to-google)).
+- Per-site forced dark mode.
+
+**Integration**
+- Passwords from your existing manager: Bitwarden (`rbw` or `bw`) or `pass`.
+  Suggestions appear under login fields, plus TOTP codes, generated
+  passwords and a save/update prompt. No built-in vault.
+- Downloads without dialogs; optional aria2 backend for 8-connection
+  downloads, resume after restart, magnet links and torrents.
+- Import history and bookmarks from Chrome, Firefox, Brave, Zen, qutebrowser
+  and others.
+- Control from outside (`novabrowser --cmd`, `--query`), qutebrowser-style
+  userscripts with `QUTE_*` variables and `$QUTE_FIFO`.
+
+**Configuration**
+- A `:settings` page, `:set` (saved), and an optional
+  `~/.config/novabrowser/config.ts` with `bind()`, `pattern()` per-site
+  rules, aliases and full TypeScript.
+- Theme presets: dark, light, Tokyo Night, Catppuccin; every UI colour and
+  font can be changed.
+
+## Install
+
+Arch Linux:
 
 ```sh
 git clone https://github.com/Novaturiente/nova-browser
-cd nova-browser/packaging && makepkg -si
+cd nova-browser/packaging
+makepkg -si
+xdg-settings set default-web-browser novabrowser.desktop   # optional
 ```
 
-This builds `novabrowser-git`. On CPUs with AVX2 (x86-64-v3) the build
-downloads novabrowser's own CEF build (~140 MB, from this repo's Releases):
-H.264/AAC video, no Google background calls, faster allocator. Older CPUs get
-the official prebuilt CEF instead (about 1.5 GB unpacked, no H.264/AAC), so
-build on a real disk, not a small `/tmp`. It
-installs into `/usr/lib/novabrowser` (about 360 MB) with `/usr/bin/novabrowser`,
-a desktop entry and an icon.
+On CPUs with AVX2 (most from 2013 on) this uses novabrowser's own CEF build
+with H.264/AAC and the privacy patches. Older CPUs get the official prebuilt
+CEF without those codecs. Other distributions:
+[build from source](docs/building.md#from-source-any-distribution).
 
-To make it the default browser:
+Optional extras: `aria2` (faster downloads, torrents), `rbw` or `pass`
+(passwords), `wl-clipboard` / `xclip` (primary selection).
 
-```sh
-xdg-settings set default-web-browser novabrowser.desktop
-```
+## Quick start
 
-## Build and run from source
-
-Needs Rust, cmake and ninja. `cargo build` downloads the CEF version that
-matches the `cef` crate and copies it next to the binary, so this is all:
-
-```sh
-cargo build --release
-target/release/novabrowser [url]
-tests/smoke.sh            # start, tabs over IPC, :set, quit (needs a desktop session)
-```
-
-To reuse an unpacked CEF instead, set `CEF_PATH` to it (the version must match).
-
-Starting it again while it runs opens a new window (or the URL as a tab) in
-the running instance.
-
-## Keys
-
-Press **F1** for every key binding (type to filter). After a prefix key such
-as `g` or `;`, a popup at the bottom right shows what can follow.
-
-| Key | Does |
+| Key | Action |
 |---|---|
-| `o` / `O` | open URL or search (this tab / new tab) |
-| `go` / `gO` | edit the current URL (this tab / new tab) |
-| `f` / `F` | follow a link by hint (this tab / new tab) |
-| `j` `k` `h` `l`, `gg` `G` | scroll; top / bottom |
-| `Ctrl-d` / `Ctrl-u` | half page down / up |
-| `H` / `L` | back / forward |
-| `J` / `K` | next / previous tab |
-| `d` / `u` | close tab / undo close |
-| `/` `?` `n` `N` | find in page |
-| `yy` / `pp` | copy URL / open the clipboard |
-| `Ctrl-Shift-v` | paste (same as right-click Paste; works in web terminals that swallow `Ctrl-v`) |
-| `i`, `Escape` | insert mode (type into the page), back to normal |
-| `Ctrl-n` | new window |
-| `:` | command line (Tab completes) |
+| `o` / `O` | Open a URL or search, in this tab / a new tab |
+| `f` / `F` | Click a link by its label / open it in a new tab |
+| `j` `k` `gg` `G` | Scroll down, up, to the top, to the bottom |
+| `H` / `L` | Back / forward |
+| `J` / `K`, `d` / `u` | Next / previous tab, close / reopen tab |
+| `/` `n` `N` | Find in page |
+| `yy` / `pp` | Copy URL / open the clipboard |
+| `i`, `Escape` | Type into the page, back to commands |
+| `:` | Command line (`Tab` completes) |
+| `Ss`, `Sb`, `Sd`, `Sh` | Settings, bookmarks, downloads, history |
+| `F1` | Every key binding |
 
-Mouse works too: click and middle-click tabs, hover a tab for its full URL,
-right-click a tab for its menu.
+Bring your data along (with the browser closed):
 
-## Commands worth knowing
+```sh
+novabrowser --import            # list what was found
+novabrowser --import firefox    # or chrome, brave, zen, qutebrowser, …
+```
 
-- `:settings` — the common settings as a form (theme, search engine, start
-  page, tab bar, dark mode, ad blocking, cookies, downloads…).
-- `:bookmarks` — add, edit and delete quickmarks and bookmarks.
-- `:downloads` — finished and running downloads.
-- **Downloads via aria2** — if `aria2c` is installed (`pacman -S aria2`),
-  every download goes to it: 8 connections per file, the page's cookies and
-  referer are passed along, unfinished downloads resume after a restart, and
-  `magnet:` links / `.torrent` files download as torrents (no seeding after
-  they finish). Without aria2, or for form (POST) and page-generated (blob:)
-  downloads, Chromium downloads them. `downloads.backend` = `auto` (default),
-  `aria2` or `chromium`. `:download magnet:?xt=…` works too. Note: a resumed
-  download's cookies sit in `<data>/aria2.session` until it finishes.
-- `:history [words]` (`Sh`) — browse, search and delete history.
-- `:tab-pin` (`Ctrl-p`) pins a tab (kept first, `d` won't close it);
-  `:tab-give` (`gD`) moves a tab into a new window.
-- **Tab hibernation** — a tab you haven't looked at for
-  `tabs.hibernate_after` minutes (default 30, `0` = off) is unloaded to free
-  memory and shown dimmed; it reloads where you left it (scroll, back/forward)
-  when you return. Tabs playing media or with text typed into a form are
-  skipped. `:tab-keep-awake` (also in the tab menu) exempts a tab, and it
-  stays exempt across restarts; `:tab-hibernate` unloads one now. Per site in
-  config.ts: `pattern("*://mail.google.com/*", (p) => { p.tabs.hibernate_after = 0; })`
-  (0 = never, or another number of minutes).
-- `:set <setting> <value>` — any setting; saved. `:set -t` only until restart.
-- `:profile-new` — create a profile (asks for a name) and open it in its own
-  window; `:profile-open <name>` opens one. Each profile has its own history,
-  cookies, logins, bookmarks and sessions. `:set` and `:settings` changes apply
-  to the current profile only (a new profile starts from the default profile's
-  choices); config.ts is shared and can branch with
-  `import { profile } from "nova"; if (profile === "work") …`. The name shows
-  at the start of the tab bar.
-- **Passwords** — no built-in store; uses your password manager's CLI, set by
-  `passwords.backend`: `rbw` (Bitwarden, default), `bw` (official Bitwarden CLI,
-  needs `BW_SESSION` in the browser's environment), `pass` (`<site>/<user>`
-  entries, OTP via pass-otp) or `none`. Focusing a login, one-time-code or
-  sign-up field lists matching logins (same registrable domain, like
-  Bitwarden's default) under it: Down/Up pick, Enter fills, Escape hides.
-  `<Space>pp` fills without focusing a field, `<Space>po` fills the TOTP code.
-  Sign-up fields offer a generated password. After you submit a login form
-  novabrowser asks to save it or update the stored password. Nothing is filled
-  on page load, and frames from another site get nothing.
-- `:dark-toggle` / `:https-toggle` (`<Space>td` / `<Space>th`) — per-site dark
-  mode and HTTPS-only exceptions.
-- `--import [browser]` — import history and bookmarks from Chrome, Chromium,
-  Brave, Helium, Vivaldi, Edge, Firefox, Zen, LibreWolf, Floorp or qutebrowser
-  (`novabrowser --import` lists what it finds).
-
-## Configuration
-
-Optional. `~/.config/novabrowser/config.ts` (TypeScript) is loaded at start
-and by `:config-source`; values set there win over `:set` / `:settings`.
+A minimal `~/.config/novabrowser/config.ts`:
 
 ```ts
 import { c, bind, pattern } from "nova";
 
-c.theme = "catppuccin";              // dark, light, tokyo-night, catppuccin
-c.url.searchengines = { DEFAULT: "https://duckduckgo.com/?q={}" };
+c.theme = "tokyo-night";
 c.tabs.position = "left";
-bind("<Space>?", "bindings");
-pattern("*://*.example.com/*", (p) => { p.colors.webpage.darkmode.enabled = false; });
+c.auto_save.session = true;
+c.url.searchengines = { DEFAULT: "https://duckduckgo.com/?q={}", gh: "https://github.com/search?q={}" };
+bind("<Alt-l>", "tab-next");
+pattern("*://*.example.com/*", (p) => { p.content.blocking.enabled = false; });
 ```
 
-Setting names follow qutebrowser's, so most qutebrowser configs port over.
-`novabrowser --check-config` checks the file without starting the browser.
+## Documentation
 
-Other tools can drive the browser: `novabrowser --cmd ':open -t example.com'`,
-`novabrowser --query state`, and `:spawn --userscript` with qutebrowser's
-`QUTE_*` environment.
+| Guide | |
+|---|---|
+| [Getting started](docs/getting-started.md) | Install, first start, importing, the first five minutes |
+| [Key bindings](docs/keybindings.md) | Modes, every default key, hints, key notation, rebinding |
+| [Commands](docs/commands.md) | Every command and its flags |
+| [Configuration](docs/configuration.md) | `config.ts`, `:set`, per-site rules, themes, files |
+| [Settings reference](docs/settings.md) | Every setting with its type and default |
+| [Tabs, sessions and profiles](docs/tabs-sessions-profiles.md) | Pinning, hibernation, sessions, windows, profiles |
+| [Passwords](docs/passwords.md) | Bitwarden / pass integration |
+| [Downloads](docs/downloads.md) | Downloads page, aria2, torrents |
+| [Privacy](docs/privacy.md) | Ad blocking, cookies, HTTPS-only, permissions, Google calls |
+| [Scripting](docs/scripting.md) | `--cmd`, userscripts, spawn, fake-key |
+| [Migrating from qutebrowser](docs/migrating-from-qutebrowser.md) | What carries over, porting `config.py` |
+| [Building](docs/building.md) | Packaging, building from source, the custom CEF |
+| [Troubleshooting](docs/troubleshooting.md) | Common problems, known limits, bug reports |
 
 ## Not supported
 
-Chrome extensions, Widevine DRM (Netflix etc.), macOS/Windows. On CPUs without
-AVX2 the official prebuilt CEF is used, which has no H.264/AAC, so some
-sites' video won't play there.
+Chrome extensions, sync, printing, private windows, macOS and Windows. Some
+qutebrowser features are missing too: caret mode, marks, macros and
+Greasemonkey scripts.
+
+## Contributing and license
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
+novabrowser is free software under the
+[GNU General Public License v3.0 or later](LICENSE). It uses ideas and some
+ported code from [qutebrowser](https://qutebrowser.org) (GPL-3.0-or-later).
+CEF and Chromium are under their own BSD-style licenses; see
+`CEF-CREDITS.html` in the package.
