@@ -41,6 +41,7 @@
   }
 
   function fill(user, pass, what) {
+    arm();
     const a = D.activeElement;
     if (what === "otp") {
       const t = a && kind(a) === "otp" ? a : [...D.querySelectorAll("input")].find((e) => vis(e) && isOtp(e));
@@ -66,29 +67,38 @@
   // On submit / Enter / submit-ish click: send what a password manager would save.
   function grab(scope) {
     scope = scope || D;
-    const pws = pwIn(scope).filter((e) => e.value);
+    // cheap checks before vis(): it forces a layout, and this runs on every Enter/click
+    const pws = [...scope.querySelectorAll("input[type=password]")].filter((e) => e.value && input(e) && vis(e));
     if (pws.length) {
       const pw = pws[pws.length - 1]; // change-password forms: the new one comes last
       const u = userFor(pws[0], scope);
       report(JSON.stringify({ user: u ? u.value : "", pass: pw.value }));
     } else {
-      const u = [...scope.querySelectorAll("input")].find((e) => vis(e) && isUser(e) && e.value);
+      const u = [...scope.querySelectorAll("input")].find((e) => e.value && isUser(e) && vis(e));
       if (u) report(JSON.stringify({ user: u.value }));
     }
   }
   const formOf = (e) => (e && (e.form || (e.closest && e.closest("form")))) || null;
-  addEventListener("submit", (e) => grab(e.target), true);
-  addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target instanceof HTMLInputElement) grab(formOf(e.target)); }, true);
-  addEventListener("click", (e) => {
-    const b = e.target && e.target.closest && e.target.closest("button,input[type=submit],[role=button]");
-    if (b) grab(formOf(b));
-  }, true);
+  // Armed only once a login field was focused or filled: listeners on every page
+  // cost ~15% on Speedometer-style apps (every Enter/click runs grab()).
+  let armed = false;
+  function arm() {
+    if (armed) return;
+    armed = true;
+    addEventListener("submit", (e) => grab(e.target), true);
+    addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target instanceof HTMLInputElement) grab(formOf(e.target)); }, true);
+    addEventListener("click", (e) => {
+      const b = e.target && e.target.closest && e.target.closest("button,input[type=submit],[role=button]");
+      if (b) grab(formOf(b));
+    }, true);
+  }
 
   return {
     // kind of the focused element + its rect (frame CSS px) as "kind x y w h"
     focus() {
       const e = D.activeElement, k = kind(e);
       if (!k) return "";
+      arm();
       const r = e.getBoundingClientRect();
       return [k, r.left, r.top, r.width, r.height].map((x) => (typeof x === "number" ? Math.round(x) : x)).join(" ");
     },

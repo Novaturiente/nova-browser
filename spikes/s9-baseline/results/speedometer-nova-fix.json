@@ -1,0 +1,246 @@
+{
+ "conditions": {
+  "at": "2026-10-12T05:42:20.291Z",
+  "loadavg": "2.95 2.31 2.83 3/1195 1702852",
+  "acOnline": "0",
+  "battery": "Discharging",
+  "governor": "performance",
+  "epp": "default",
+  "platformProfile": "performance",
+  "memAvailableKB": 9050200
+ },
+ "url": "https://browserbench.org/Speedometer3.1/",
+ "runs": {
+  "novadev": [
+   {
+    "kind": "novadev",
+    "conditions": {
+     "at": "2026-10-12T05:42:20.315Z",
+     "loadavg": "2.95 2.31 2.83 2/1196 1702854",
+     "acOnline": "0",
+     "battery": "Discharging",
+     "governor": "performance",
+     "epp": "default",
+     "platformProfile": "performance",
+     "memAvailableKB": 9032128
+    },
+    "extraFlags": [
+     "--disable-renderer-backgrounding",
+     "--disable-background-timer-throttling",
+     "--disable-backgrounding-occluded-windows"
+    ],
+    "windows": [
+     {
+      "class": "",
+      "title": "Speedometer 3.1 - novabrowser",
+      "size": [
+       1400,
+       937
+      ],
+      "at": [
+       260,
+       100
+      ],
+      "floating": true,
+      "workspace": "Work"
+     }
+    ],
+    "before": {
+     "w": 1400,
+     "h": 920,
+     "dpr": 1,
+     "vis": "visible",
+     "focus": true,
+     "sizeWarning": "none"
+    },
+    "during": [
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#summary",
+      "vis": "visible",
+      "focus": false,
+      "res": "22.0"
+     }
+    ],
+    "durationS": 40.043,
+    "score": 22,
+    "confidence": "± 1.0",
+    "summaryClass": "valid",
+    "valid": true,
+    "invalidTextShown": false,
+    "after": {
+     "vis": "visible",
+     "focus": false
+    }
+   },
+   {
+    "kind": "novadev",
+    "conditions": {
+     "at": "2026-10-12T05:43:08.670Z",
+     "loadavg": "2.33 2.22 2.77 2/1208 1711193",
+     "acOnline": "0",
+     "battery": "Discharging",
+     "governor": "performance",
+     "epp": "default",
+     "platformProfile": "performance",
+     "memAvailableKB": 9154276
+    },
+    "extraFlags": [
+     "--disable-renderer-backgrounding",
+     "--disable-background-timer-throttling",
+     "--disable-backgrounding-occluded-windows"
+    ],
+    "windows": [
+     {
+      "class": "",
+      "title": "Speedometer 3.1 - novabrowser",
+      "size": [
+       1400,
+       937
+      ],
+      "at": [
+       260,
+       100
+      ],
+      "floating": true,
+      "workspace": "Work"
+     }
+    ],
+    "before": {
+     "w": 1400,
+     "h": 920,
+     "dpr": 1,
+     "vis": "visible",
+     "focus": true,
+     "sizeWarning": "none"
+    },
+    "during": [
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#running",
+      "vis": "visible",
+      "focus": true,
+      "res": ""
+     },
+     {
+      "hash": "#summary",
+      "vis": "visible",
+      "focus": false,
+      "res": "22.3"
+     }
+    ],
+    "durationS": 40.057,
+    "score": 22.3,
+    "confidence": "± 0.98",
+    "summaryClass": "valid",
+    "valid": true,
+    "invalidTextShown": false,
+    "after": {
+     "vis": "visible",
+     "focus": false
+    }
+   }
+  ]
+ },
+ "medians": {
+  "novadev": 22.15
+ },
+ "conditionsEnd": {
+  "at": "2026-10-12T05:43:56.862Z",
+  "loadavg": "2.30 2.22 2.74 1/1206 1719435",
+  "acOnline": "0",
+  "battery": "Discharging",
+  "governor": "performance",
+  "epp": "default",
+  "platformProfile": "performance",
+  "memAvailableKB": 9087792
+ }
+}

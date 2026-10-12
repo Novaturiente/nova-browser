@@ -284,3 +284,32 @@ export async function connect(port) {
   };
   return c;
 }
+
+// installed novabrowser (2026-10-12): throwaway XDG dirs; novauser = copy of ~/.config/novabrowser, novabare = no config.
+// adblock cache copied so a fresh profile doesn't rebuild the engine mid-benchmark.
+const novaKind = (dir, withCfg) => ({
+  bin: "/usr/bin/novabrowser", port: 9309, dir, fresh: true,
+  args: (url) => {
+    mkdirSync(`${dir}/data/novabrowser`, { recursive: true });
+    writeFileSync(`${dir}/data/novabrowser/welcomed`, "");
+    execFileSync("cp", ["-r", `${homedir()}/.local/share/novabrowser/adblock`, `${dir}/data/novabrowser/`]);
+    if (withCfg) { mkdirSync(`${dir}/config`, { recursive: true }); execFileSync("cp", ["-r", `${homedir()}/.config/novabrowser`, `${dir}/config/`]); }
+    return ["--remote-debugging-port=9309", url];
+  },
+  env: { XDG_CONFIG_HOME: `${dir}/config`, XDG_DATA_HOME: `${dir}/data`, XDG_STATE_HOME: `${dir}/state` },
+});
+BROWSERS.novauser = novaKind("/tmp/s9-nova-user", true);
+BROWSERS.novabare = novaKind("/tmp/s9-nova-bare", false);
+WIN.novauser = WIN.novabare = [1400, 937];
+// bisect: bare profile with one config.ts
+const novaWith = (dir, ts) => ({ ...novaKind(dir, false), args: (url) => {
+  const a = novaKind(dir, false).args(url);
+  mkdirSync(`${dir}/config/novabrowser`, { recursive: true });
+  writeFileSync(`${dir}/config/novabrowser/config.ts`, `import { c } from "nova";\n${ts}\n`);
+  return a;
+} });
+BROWSERS.novanoblock = novaWith("/tmp/s9-nova-nb", "c.content.blocking.enabled = false;");
+WIN.novanoblock = [1400, 937];
+// dev build against own CEF (target-own), bare profile
+BROWSERS.novadev = { ...novaKind("/tmp/s9-nova-dev", false), bin: new URL("../../target-own/release/novabrowser", import.meta.url).pathname };
+WIN.novadev = [1400, 937];

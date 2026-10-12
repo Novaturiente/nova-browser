@@ -48,6 +48,8 @@ Each done item links its evidence (file, commit, or session-log date).
 
 Newest first. Settled — don't reopen without new evidence.
 
+- 2026-10-12 — Page-world hooks must stay idle on non-login pages. `passwords.js` ran `grab()` on every Enter/click, and `vis()` (getClientRects/getComputedStyle) on every `<input>` forced a sync layout: Speedometer 16 vs 26 for bare cefsimple on the same CEF. Fix: submit/Enter/click listeners are attached only after a login field was focused or filled; cheap checks before `vis()`. Known limit: a login form submitted without ever focusing a field (script-filled) gets no save prompt. Rule: anything injected into every frame gets a Speedometer A/B (`spikes/s9-baseline`, kinds `novadev`/`cefown`).
+
 - 2026-10-11 — Privacy (user): idle net-log on `about:blank` must show no Google hosts. Runtime (main.rs, works on prebuilt CEF): disable-features NetworkTimeServiceQuerying, AimEnabled, AimServerEligibilityEnabled, PreconnectToSearch, PreconnectFromKeyedService, BrowsingTopics; `--no-pings`; prefs `signin.allowed`/`safebrowsing.enabled` false (Safe Browsing gets HTTP 400 without an API key anyway). Build patch (`packaging/cef-patches/privacy.patch`): component allowlist = Widevine, CRLSet, PKI metadata (CT), hyphenation; `TriggerListAccounts` no-op. `--disable-background-networking` does nothing here; whole-sale ungoogled patches rejected (CEF conflicts). WebRTC policy left at all-interfaces (Chromium already hides local IPs via mDNS).
 - 2026-10-11 — Own CEF build options (research + user): `is_official_build` + `--with-pgo-profiles` (CEF measured ~15% Speedometer), `proprietary_codecs ffmpeg_branding=Chrome`, `symbol_level=0` (blink/v8 too), `use_sysroot=true`; patch CEF `gn_args.py`, which forces `use_partition_alloc_as_malloc=false`/BRP off on Linux after GN_DEFINES (reason: issue #3095, jemalloc hosts; doesn't apply to us). User chose `-march=x86-64-v3` for own builds — risk: SIGILL on pre-AVX2 CPUs, so never ship that libcef in the public package (needs a baseline build). Rejected: -O3, optimize_for_size, unwind-table removal, ungoogled feature trimming, system libs, dropping PGO/ThinLTO.
 
@@ -114,6 +116,8 @@ Newest first. Settled — don't reopen without new evidence.
 ## Session log
 
 Newest first. One entry per session: date, what changed, evidence, what's next.
+
+- 2026-10-12 (IST, 11:30) — User saw Speedometer <17 in novabrowser vs Zen >25. A/B on battery, performance profile (`results/speedometer-nova-*.json`): installed novabrowser 16.2 with user config, 16.0 bare, ad blocking off 16.3, password helper off 26.0, cefsimple on own CEF 26.3. Fixed in `passwords.js` (lazy listeners): 26.3/25.8. Save prompt re-checked (focus + submit → prompt; no focus → none), 88 tests + smoke pass. Own CEF published as release `cef-154.0.34-nova1`; PKGBUILD uses it on x86-64-v3 CPUs. Next: user reinstalls and re-runs Speedometer.
 
 - 2026-10-12 (IST, 05:30) — Own CEF compiled on the laptop (~4.6 h incl. one restart: privacy.patch tripped `-Werror,-Wunreachable-code`, fixed by emptying the function; `make_distrib` needs the `chrome_sandbox` target too). Package laid out like `export-cef-dir` in `~/.local/share/cef-own`; build novabrowser with `CEF_PATH=$HOME/.local/share/cef-own CARGO_TARGET_DIR=target-own`. Checks above passed. Speedometer: own +5% vs prebuilt, still ~17% behind Chrome (results/speedometer-own*.json).
 
