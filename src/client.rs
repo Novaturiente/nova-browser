@@ -83,16 +83,25 @@ wrap_client! {
                 let main_data = frame.is_some_and(|f| f.is_main() != 0 && CefString::from(&f.url()).to_string().starts_with("data:"));
                 let msg = text.strip_prefix("page ").and_then(|t| t.split_once(' ')).filter(|(tok, _)| main_data && *tok == crate::page_token());
                 if let Some(msg) = msg.and_then(|(_, j)| serde_json::from_str::<serde_json::Value>(j).ok()) {
-                    let settings = msg["page"].as_str() == Some("settings");
-                    let r = if settings { crate::settings_page::on_page(&msg) } else { crate::marks::on_page(&msg) };
-                    match r {
+                    let (on_page, page): (fn(&serde_json::Value) -> Result<(), String>, fn() -> String) = match msg["page"].as_str() {
+                        Some("settings") => (crate::settings_page::on_page, crate::settings_page::page),
+                        Some("history") => (crate::history::on_page, || crate::history::page(None)),
+                        _ => (crate::marks::on_page, crate::marks::page),
+                    };
+                    match on_page(&msg) {
                         Ok(()) => {
-                            let page = if settings { crate::settings_page::page() } else { crate::marks::page() };
+                            let page = page();
                             if let Some(f) = b.main_frame() { f.load_url(Some(&window::data_url(&page))); }
                         }
                         Err(e) => window::message("error", &e),
                     }
                 }
+                return 1;
+            }
+            if name == "nova.scroll" {
+                // main frame only (renderer.rs); a page can only misreport its own scroll
+                let y = m.argument_list().map(|l| CefString::from(&l.string(0)).to_string()).unwrap_or_default();
+                if let Ok(y) = y.parse() { window::set_scroll(b, y); }
                 return 1;
             }
             if name == "nova.creds" {
@@ -142,7 +151,7 @@ wrap_client! {
             window::in_owner(b, || match (cmd, arg.parse::<i64>()) {
                 ("ready", _) => window::ui_ready(),
                 ("tab", Ok(n)) if n >= 0 => window::show(n as usize),
-                ("close", Ok(n)) if n >= 0 => window::close(n as usize),
+                ("close", Ok(n)) if n >= 0 => window::close_user(n as usize, false),
                 ("run", _) => { completion::record(arg); window::close_cmdline(); commands::run(arg, None); }
                 ("text", _) => completion::on_text(arg),
                 ("complete", Ok(by)) => completion::select(by),
@@ -215,6 +224,14 @@ wrap_request_handler! {
         }
         fn resource_request_handler(&self, _browser: Option<&mut Browser>, _frame: Option<&mut Frame>, _request: Option<&mut Request>, _is_navigation: ::std::os::raw::c_int, _is_download: ::std::os::raw::c_int, _request_initiator: Option<&CefString>, _disable_default_handling: Option<&mut ::std::os::raw::c_int>) -> Option<ResourceRequestHandler> {
             Some(TabResource::new())
+        }
+        fn on_render_process_unresponsive(&self, browser: Option<&mut Browser>, callback: Option<&mut UnresponsiveProcessCallback>) -> ::std::os::raw::c_int {
+            let (Some(b), Some(cb)) = (browser, callback) else { return 0 };
+            crate::permissions::hung(b, cb);
+            1
+        }
+        fn on_render_process_responsive(&self, browser: Option<&mut Browser>) {
+            if let Some(b) = browser { crate::permissions::responsive(b); }
         }
         fn on_render_process_terminated(&self, browser: Option<&mut Browser>, status: TerminationStatus, error_code: ::std::os::raw::c_int, _error_string: Option<&CefString>) {
             let Some(b) = browser else { return };

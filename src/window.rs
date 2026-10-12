@@ -27,7 +27,20 @@ struct Tab {
     muted: bool,
     /// Dark-mode override sent to this tab: None = none sent, Some(None) = cleared.
     dark: Option<Option<bool>>,
+    /// History from a restored session that CEF can't hold (it can't restore
+    /// navigation entries): `back` oldest first, `fwd` nearest last. Used once
+    /// the real history runs out, via `location.replace` (see `go`).
+    back: Vec<String>,
+    fwd: Vec<String>,
+    /// Last reported scroll position (renderer.rs) and one to restore after load.
+    scroll: i64,
+    scroll_to: Option<i64>,
+    /// Pinned tabs sit first, use `tabs.title.format_pinned` and need `--force` to close.
+    pinned: bool,
 }
+
+/// Entries kept per direction in a saved session.
+const HIST_MAX: usize = 50;
 
 #[derive(Default)]
 struct State {
@@ -280,6 +293,11 @@ fn add_tab(view: BrowserView, url: String, title: String, foreground: bool) {
             can_fwd: false,
             muted: false,
             dark: None,
+            back: Vec::new(),
+            fwd: Vec::new(),
+            scroll: 0,
+            scroll_to: None,
+            pinned: false,
         });
         s.tabs.len() - 1
     });
@@ -330,14 +348,37 @@ fn window_json() -> Option<serde_json::Value> {
             .tabs
             .iter()
             .filter(|t| !t.url.starts_with("data:"))
-            .map(|t| {
-                (
-                    t.crashed.clone().unwrap_or_else(|| t.url.clone()),
-                    t.title.clone(),
-                )
-            })
+            .map(tab_json)
             .collect();
         Some(crate::session::window(tabs, s.active))
+    })
+}
+
+/// One tab in session.rs's shape: URL, title, back/forward URLs, scroll, pinned.
+fn tab_json(t: &Tab) -> serde_json::Value {
+    let (real, cur) = t
+        .view
+        .browser()
+        .map(|b| nav_entries(&b))
+        .unwrap_or_default();
+    let mut back = t.back.clone();
+    let mut fwd = Vec::new();
+    if cur < real.len() {
+        back.extend_from_slice(&real[..cur]);
+        fwd.extend_from_slice(&real[cur + 1..]);
+    }
+    fwd.extend(t.fwd.iter().rev().cloned());
+    back.retain(|u| !u.starts_with("data:"));
+    fwd.retain(|u| !u.starts_with("data:"));
+    let skip = back.len().saturating_sub(HIST_MAX);
+    fwd.truncate(HIST_MAX);
+    serde_json::json!({
+        "url": t.crashed.clone().unwrap_or_else(|| t.url.clone()),
+        "title": t.title,
+        "back": back[skip..],
+        "fwd": fwd,
+        "scroll": t.scroll_to.unwrap_or(t.scroll),
+        "pinned": t.pinned,
     })
 }
 
@@ -373,9 +414,23 @@ pub fn restore(v: &serde_json::Value, clear: bool) {
 fn restore_tabs(v: &serde_json::Value, clear: bool) {
     let before = S.with_borrow(|s| s.tabs.len());
     let tabs = v["tabs"].as_array().cloned().unwrap_or_default();
+    let strs = |v: &serde_json::Value| -> Vec<String> {
+        v.as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|u| u.as_str().map(str::to_string))
+            .collect()
+    };
     for t in &tabs {
         let url = t["url"].as_str().unwrap_or("about:blank");
         open_titled(url, t["title"].as_str().unwrap_or("").to_string(), false);
+        S.with_borrow_mut(|s| {
+            let tab = s.tabs.last_mut().unwrap();
+            tab.back = strs(&t["back"]);
+            tab.fwd = strs(&t["fwd"]).into_iter().rev().collect();
+            tab.scroll_to = t["scroll"].as_i64().filter(|y| *y > 0);
+            tab.pinned = t["pinned"].as_bool().unwrap_or(false);
+        });
     }
     if !tabs.is_empty() {
         show(before + (v["active"].as_u64().unwrap_or(0) as usize).min(tabs.len() - 1));
@@ -585,7 +640,8 @@ pub fn set_url(browser: &Browser, url: String) {
     update(browser, |t| {
         if t.crashed.is_none() && t.url != url {
             history::visit(&url);
-            t.url = url
+            t.url = url;
+            t.scroll = 0;
         }
     });
     apply_dark(browser);
@@ -642,12 +698,108 @@ pub fn set_progress(browser: &Browser, p: f64) {
     update(browser, |t| t.progress = p);
 }
 pub fn set_loading(browser: &Browser, loading: bool, back: bool, fwd: bool) {
+    let mut scroll = None;
     update(browser, |t| {
         t.loading = loading;
         t.can_back = back;
         t.can_fwd = fwd;
+        // a new page on top of the restored one: its saved forward entries are gone
+        if back {
+            t.fwd.clear();
+        }
+        if !loading {
+            scroll = t.scroll_to.take();
+        }
     });
+    if let (Some(y), Some(f)) = (scroll, browser.main_frame()) {
+        // again after 1 s for pages that grow after load
+        let js = format!("scrollTo(0,{y});setTimeout(()=>scrollY||scrollTo(0,{y}),1000)");
+        f.execute_java_script(Some(&CefString::from(js.as_str())), None, 0);
+    }
     apply_dark(browser);
+}
+
+pub fn set_scroll(browser: &Browser, y: i64) {
+    let id = browser.identifier();
+    in_owner(browser, || {
+        S.with_borrow_mut(|s| {
+            if let Some(t) = s.tabs.iter_mut().find(|t| browser_id(&t.view) == Some(id)) {
+                t.scroll = y;
+            }
+        })
+    });
+    crate::session::dirty();
+}
+
+/// Real navigation entries and the current index (CEF visits synchronously).
+fn nav_entries(b: &Browser) -> (Vec<String>, usize) {
+    let out = std::rc::Rc::new(RefCell::new((Vec::new(), 0)));
+    if let Some(h) = b.host() {
+        h.navigation_entries(Some(&mut NavCollect::new(out.clone())), 0);
+    }
+    out.take()
+}
+
+wrap_navigation_entry_visitor! {
+    struct NavCollect { out: std::rc::Rc<RefCell<(Vec<String>, usize)>> }
+    impl NavigationEntryVisitor {
+        fn visit(&self, entry: Option<&mut NavigationEntry>, current: ::std::os::raw::c_int, index: ::std::os::raw::c_int, _total: ::std::os::raw::c_int) -> ::std::os::raw::c_int {
+            let url = entry.map(|e| CefString::from(&e.url()).to_string()).unwrap_or_default();
+            let mut o = self.out.borrow_mut();
+            o.0.push(url);
+            if current != 0 { o.1 = index as usize; }
+            1
+        }
+    }
+}
+
+/// `back`/`forward` (n < 0 = back): the page's own history first, then the
+/// entries a restored session saved, swapped in with `location.replace` so
+/// the real history doesn't grow.
+pub fn go(browser: &Browser, n: i32) {
+    let id = browser.identifier();
+    let target = S.with_borrow_mut(|s| {
+        let t = s
+            .tabs
+            .iter_mut()
+            .find(|t| browser_id(&t.view) == Some(id))?;
+        let real = if n < 0 { t.can_back } else { t.can_fwd };
+        if real {
+            return Some(Err(()));
+        }
+        let cur = t.url.clone();
+        let (from, to) = if n < 0 {
+            (&mut t.back, &mut t.fwd)
+        } else {
+            (&mut t.fwd, &mut t.back)
+        };
+        let k = (n.unsigned_abs() as usize).min(from.len());
+        if k == 0 {
+            return None;
+        }
+        to.push(cur);
+        let mut moved = from.split_off(from.len() - k);
+        let target = moved.remove(0);
+        to.extend(moved.into_iter().rev());
+        Some(Ok(target))
+    });
+    let js = match target {
+        Some(Err(())) => format!("history.go({n})"),
+        Some(Ok(url)) => format!("location.replace({})", js_str(&url)),
+        None => {
+            return message(
+                "warning",
+                if n < 0 {
+                    "At beginning of history."
+                } else {
+                    "At end of history."
+                },
+            )
+        }
+    };
+    if let Some(f) = browser.main_frame() {
+        f.execute_java_script(Some(&CefString::from(js.as_str())), None, 0);
+    }
 }
 
 pub fn set_muted(browser: &Browser, muted: bool) {
@@ -701,20 +853,22 @@ pub fn refresh() {
     update_keyhint();
     let cfg = config::get();
     let tab_fmt = cfg.str("tabs.title.format");
+    let pin_fmt = cfg.str("tabs.title.format_pinned");
     let Some((tabbar, window, bar_json, title)) = S.with_borrow(|s| {
         let tabs: Vec<String> = s
             .tabs
             .iter()
             .enumerate()
             .map(|(i, t)| {
-                let label = theme::format_title(&tab_fmt, &fields(i, t));
+                let label = theme::format_title(if t.pinned { &pin_fmt } else { &tab_fmt }, &fields(i, t));
                 format!(
-                    "{{\"t\":{},\"a\":{},\"l\":{},\"p\":{},\"e\":{}}}",
+                    "{{\"t\":{},\"a\":{},\"l\":{},\"p\":{},\"e\":{},\"n\":{}}}",
                     js_str(&label),
                     i == s.active,
                     t.loading,
                     t.progress,
-                    t.crashed.is_some()
+                    t.crashed.is_some(),
+                    t.pinned
                 )
             })
             .collect();
@@ -844,9 +998,66 @@ pub fn content_size() -> (f64, f64) {
     })
 }
 
-pub fn close_active() {
+pub fn close_active(force: bool) {
     let n = S.with_borrow(|s| s.active);
+    close_user(n, force);
+}
+
+/// `d`, middle click, tab menu: pinned tabs only with `force` (qutebrowser).
+pub fn close_user(n: usize, force: bool) {
+    if !force && S.with_borrow(|s| s.tabs.get(n).is_some_and(|t| t.pinned)) {
+        return message("error", "Tab is pinned! Unpin it or use tab-close --force.");
+    }
     close(n);
+}
+
+/// `tab-pin [index]`: toggle; pinned tabs move to the end of the pinned group,
+/// unpinned ones to just after it.
+pub fn pin(n: Option<usize>) {
+    S.with_borrow_mut(|s| {
+        let n = n.unwrap_or(s.active);
+        if n >= s.tabs.len() {
+            return;
+        }
+        let active = browser_id_or_index(s, s.active);
+        let mut tab = s.tabs.remove(n);
+        tab.pinned = !tab.pinned;
+        let to = s.tabs.iter().take_while(|t| t.pinned).count();
+        s.tabs.insert(to, tab);
+        // keep the same tab active
+        s.active = match active {
+            Ok(id) => s
+                .tabs
+                .iter()
+                .position(|t| browser_id(&t.view) == Some(id))
+                .unwrap_or(to),
+            Err(i) if i == n => to,
+            Err(i) => {
+                let i = i - (i > n) as usize;
+                i + (i >= to) as usize
+            }
+        };
+    });
+    refresh();
+}
+
+/// The tab's browser id, or its index for a tab that has no browser yet.
+fn browser_id_or_index(s: &State, i: usize) -> Result<i32, usize> {
+    s.tabs.get(i).and_then(|t| browser_id(&t.view)).ok_or(i)
+}
+
+/// `tab-give` / `gD`: move tab `n` (URL, back/forward, scroll) into a new window.
+/// The page reloads there: CEF can't move a live browser between windows.
+pub fn give(n: Option<usize>) {
+    let Some((n, mut tj)) = S.with_borrow(|s| {
+        let n = n.unwrap_or(s.active);
+        Some((n, tab_json(s.tabs.get(n)?)))
+    }) else {
+        return;
+    };
+    tj["pinned"] = false.into();
+    create_window(None, Some(serde_json::json!({ "tabs": [tj], "active": 0 })));
+    remove(n);
 }
 
 pub fn close_others() {
@@ -862,7 +1073,7 @@ fn close_others_than(keep: usize) {
         let n = S.with_borrow(|s| {
             s.tabs
                 .iter()
-                .position(|t| browser_id(&t.view) != Some(id) && s.tabs.len() > 1)
+                .position(|t| !t.pinned && browser_id(&t.view) != Some(id) && s.tabs.len() > 1)
         });
         let Some(n) = n else { break };
         remove(n);
@@ -1157,6 +1368,8 @@ const MENU: &[(&str, &str, &str)] = &[
     ("yank", "Copy URL", "yy"),
     ("mute", "Mute / unmute", "Alt-m"),
     ("bookmark", "Bookmark", "M"),
+    ("pin", "Pin / unpin", "Ctrl-p"),
+    ("give", "Move to new window", "gD"),
     ("close", "Close", "d"),
     ("others", "Close other tabs", "co"),
 ];
@@ -1253,8 +1466,10 @@ pub fn tab_menu_action(arg: &str) {
         return;
     };
     let cmd = match action {
-        "close" => return close(i),
+        "close" => return close_user(i, false),
         "others" => return close_others_than(i),
+        "pin" => return pin(Some(i)),
+        "give" => return give(Some(i)),
         "reload" => "reload",
         "clone" => "tab-clone -b",
         "yank" => "yank",

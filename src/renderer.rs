@@ -49,7 +49,7 @@ wrap_v8_handler! {
             exception: Option<&mut CefString>,
         ) -> ::std::os::raw::c_int {
             let name = name.map(|n| n.to_string()).unwrap_or_default();
-            if name != "send" && name != "report" {
+            if name != "send" && name != "report" && name != "scroll" {
                 return 0;
             }
             let arg = arguments.and_then(|a| a.first()).and_then(|a| a.as_ref()).filter(|a| a.is_string() != 0);
@@ -59,7 +59,7 @@ wrap_v8_handler! {
                 if let Some(e) = exception { e.try_set("nova.send(str): expected a string"); }
                 return 1;
             };
-            let kind = if name == "report" { "nova.creds" } else { "nova.send" };
+            let kind = match name.as_str() { "report" => "nova.creds", "scroll" => "nova.scroll", _ => "nova.send" };
             let msg = process_message_create(Some(&s(kind))).expect("process_message_create");
             msg.argument_list().expect("argument_list").set_string(0, Some(&CefString::from(&arg.string_value())));
             frame.send_process_message(ProcessId::BROWSER, Some(&mut msg.clone()));
@@ -143,5 +143,27 @@ fn install_helper(frame: &Frame, context: &mut V8Context) {
         if obj.is_object() != 0 {
             HELPERS.with_borrow_mut(|h| h.insert(frame_id(frame), obj));
         }
+    }
+    if frame.is_main() != 0 {
+        install_scroll(context);
+    }
+}
+
+/// Report the page's scroll position 800 ms after scrolling stops (session
+/// restore). Passive, no layout reads while scrolling.
+const SCROLL_JS: &str = "(function(r){let t;addEventListener('scroll',()=>{clearTimeout(t);t=setTimeout(()=>r(String(Math.round(scrollY))),800)},{passive:true})})";
+
+fn install_scroll(context: &mut V8Context) {
+    let (mut ret, mut exc) = (None, None);
+    context.eval(
+        Some(&s(SCROLL_JS)),
+        Some(&s("novabrowser://scroll.js")),
+        1,
+        Some(&mut ret),
+        Some(&mut exc),
+    );
+    if let Some(f) = ret {
+        let r = v8_value_create_function(Some(&s("scroll")), Some(&mut NovaV8Handler::new()));
+        f.execute_function_with_context(Some(context), None, Some(&[r]));
     }
 }

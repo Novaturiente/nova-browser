@@ -45,6 +45,8 @@ enum Callback {
     Dialog(JsdialogCallback, String),
     /// our own yes/no questions (passwords.rs save/update)
     Ask(std::rc::Rc<dyn Fn(bool)>),
+    /// hung renderer: yes = kill it (crash page, `r` reloads), no = keep waiting
+    Hang(UnresponsiveProcessCallback),
 }
 
 struct Pending {
@@ -135,7 +137,31 @@ fn answer(cb: &Callback, allow: bool) {
         Callback::Media(_, c) => c.cancel(),
         Callback::Dialog(c, input) => c.cont(allow as i32, Some(&input.as_str().into())),
         Callback::Ask(f) => f(allow),
+        Callback::Hang(c) if allow => c.terminate(),
+        Callback::Hang(c) => c.wait(),
     }
+}
+
+/// `on_render_process_unresponsive` (Chromium waits ~15 s of no input acks first).
+pub fn hung(browser: &Browser, cb: &UnresponsiveProcessCallback) {
+    QUEUE.with_borrow_mut(|q| {
+        q.push_back(Pending {
+            browser: browser.identifier(),
+            origin: String::new(),
+            settings: Vec::new(),
+            text: "This page isn't responding. Kill it? [y]es [n]o, keep waiting".into(),
+            cb: Callback::Hang(cb.clone()),
+        })
+    });
+    show_later();
+}
+
+/// The page recovered: its hang question is moot.
+pub fn responsive(browser: &Browser) {
+    let id = browser.identifier();
+    QUEUE
+        .with_borrow_mut(|q| q.retain(|p| !(p.browser == id && matches!(p.cb, Callback::Hang(_)))));
+    show_later();
 }
 
 /// `on_show_permission_prompt`. Always answers (now or after the prompt): a

@@ -75,6 +75,9 @@ pub const CORE: &[(&str, &str, &str)] = &[
     ("normal", "Sb", "bookmarks"),
     ("normal", "Ss", "settings"),
     ("normal", "Sd", "downloads"),
+    ("normal", "Sh", "history"),
+    ("normal", "<Ctrl-p>", "tab-pin"),
+    ("normal", "gD", "tab-give"),
     // zoom
     ("normal", "+", "zoom-in"),
     ("normal", "-", "zoom-out"),

@@ -2,7 +2,7 @@
 //! The default session autosaves (debounced) while `auto_save.session` is on and
 //! is restored at startup; restored tabs load on first focus (window.rs: CEF
 //! creates a tab's browser when its view first joins the window).
-//! shortcut: no scroll position or back/forward history (PLAN §5.4), add if missed.
+//! Each tab also keeps its back/forward URLs and scroll position (window.rs `go`).
 use crate::{config, window, xdg_dir};
 use cef::*;
 use serde_json::{json, Value};
@@ -121,16 +121,14 @@ pub fn startup() -> Option<Value> {
 }
 
 /// The JSON shape window.rs writes; kept here so both sides agree.
-/// {windows: [{tabs: [{url, title}], active}], closed}
+/// {windows: [{tabs: [{url, title, back, fwd, scroll}], active}], closed}
 pub fn shape(windows: Vec<Value>, closed: &[String]) -> Value {
     json!({ "windows": windows, "closed": closed })
 }
 
-pub fn window(tabs: Vec<(String, String)>, active: usize) -> Value {
-    json!({
-        "tabs": tabs.into_iter().map(|(url, title)| json!({ "url": url, "title": title })).collect::<Vec<_>>(),
-        "active": active,
-    })
+/// tabs: {url, title, back (oldest first), fwd (nearest first), scroll}
+pub fn window(tabs: Vec<Value>, active: usize) -> Value {
+    json!({ "tabs": tabs, "active": active })
 }
 
 #[cfg(test)]

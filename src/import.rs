@@ -143,6 +143,10 @@ fn qutebrowser_session(file: &Path) -> Result<Option<usize>, String> {
         return Ok(None);
     }
     let n = tabs.len();
+    let tabs = tabs
+        .into_iter()
+        .map(|(url, title)| serde_json::json!({ "url": url, "title": title }))
+        .collect();
     let v = crate::session::shape(vec![crate::session::window(tabs, 0)], &[]);
     crate::session::write("qutebrowser", &v)?;
     Ok(Some(n))

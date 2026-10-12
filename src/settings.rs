@@ -55,6 +55,7 @@ pub const SETTINGS: &[(&str, &str, bool, &str, &[&str])] = &[
     ("tabs.show", "str", false, "\"always\"", &["always", "never", "multiple", "switching"]),
     ("tabs.title.alignment", "str", false, "\"left\"", &["left", "right", "center"]),
     ("tabs.title.format", "str", true, "\"{audio}{index}: {current_title}\"", &[]),
+    ("tabs.title.format_pinned", "str", true, "\"{audio}{index}\"", &[]),
     ("tabs.width", "perc", false, "\"15%\"", &[]),
     ("tabs.min_width", "int", false, "-1", &[]),
     ("tabs.max_width", "int", false, "-1", &[]),

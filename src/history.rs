@@ -36,7 +36,10 @@ wrap_task! {
     }
 }
 
+static PATH: OnceLock<PathBuf> = OnceLock::new();
+
 pub fn start(path: PathBuf) {
+    PATH.set(path.clone()).ok();
     let (tx, rx) = mpsc::channel();
     TX.set(tx).ok();
     std::thread::Builder::new()
@@ -209,6 +212,18 @@ pub fn search(
     text: &str,
     limit: usize,
 ) -> rusqlite::Result<Vec<(String, String)>> {
+    Ok(search_rows(db, text, limit)?
+        .into_iter()
+        .map(|(u, t, _)| (u, t))
+        .collect())
+}
+
+/// `search` plus each row's last visit time (unix seconds).
+fn search_rows(
+    db: &Connection,
+    text: &str,
+    limit: usize,
+) -> rusqlite::Result<Vec<(String, String, i64)>> {
     let (long, short): (Vec<&str>, Vec<&str>) = text
         .split_whitespace()
         .partition(|w| w.chars().count() >= 3);
@@ -241,22 +256,126 @@ pub fn search(
             "h.id > (SELECT coalesce(max(id), 0) FROM history) - {SHORT_SCAN}"
         ));
         format!(
-            "SELECT h.url, h.title FROM history h WHERE {} ORDER BY h.id DESC LIMIT {limit}",
+            "SELECT h.url, h.title, h.last_atime FROM history h WHERE {} ORDER BY h.id DESC LIMIT {limit}",
             conds.join(" AND ")
         )
     } else {
         let more: String = conds.iter().map(|c| format!(" AND {c}")).collect();
         format!(
-            "SELECT h.url, h.title FROM history_fts f JOIN history h ON h.id = f.rowid
+            "SELECT h.url, h.title, h.last_atime FROM history_fts f JOIN history h ON h.id = f.rowid
              WHERE history_fts MATCH ?1{more} ORDER BY f.rowid DESC LIMIT {limit}"
         )
     };
     let mut st = db.prepare_cached(&sql)?;
     let rows = st.query_map(rusqlite::params_from_iter(&args), |r| {
-        Ok((r.get(0)?, r.get(1)?))
+        Ok((r.get(0)?, r.get(1)?, r.get(2)?))
     })?;
     rows.collect()
 }
+
+/// Rows shown on the history page per search.
+const PAGE_ROWS: usize = 500;
+
+thread_local! {
+    /// The history page's current search, kept across its reload after a delete.
+    static PAGE_QUERY: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+}
+
+/// Short-lived connection on the UI thread for the history page (a user action;
+/// WAL lets it read and delete next to the history thread).
+fn page_db() -> Result<Connection, String> {
+    let p = PATH.get().ok_or("history not started")?;
+    open(p).map_err(|e| e.to_string())
+}
+
+/// `:history [words]`: newest visits (matching the words), searchable, deletable.
+pub fn page(query: Option<&str>) -> String {
+    if let Some(q) = query {
+        PAGE_QUERY.set(q.to_string());
+    }
+    let q = PAGE_QUERY.with_borrow(|q| q.clone());
+    let rows = page_db()
+        .and_then(|db| search_rows(&db, &q, PAGE_ROWS).map_err(|e| e.to_string()))
+        .unwrap_or_else(|e| {
+            eprintln!("novabrowser: history page: {e}");
+            vec![]
+        });
+    let data =
+        serde_json::json!({ "token": crate::page_token(), "q": q, "rows": rows, "max": PAGE_ROWS });
+    crate::theme::themed_page(
+        PAGE.replace(
+            "/*DATA*/{}",
+            &serde_json::to_string(&data)
+                .unwrap()
+                .replace('<', "\\u003c"),
+        ),
+    )
+}
+
+/// History page actions: {a: "search", q} or {a: "del", urls: [...]}.
+pub fn on_page(msg: &serde_json::Value) -> Result<(), String> {
+    match msg["a"].as_str() {
+        Some("search") => {
+            PAGE_QUERY.set(msg["q"].as_str().unwrap_or("").to_string());
+            Ok(())
+        }
+        Some("del") => {
+            let db = page_db()?;
+            let mut st = db
+                .prepare("DELETE FROM history WHERE url = ?1")
+                .map_err(|e| e.to_string())?;
+            for u in msg["urls"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|u| u.as_str())
+            {
+                st.execute(params![u]).map_err(|e| e.to_string())?;
+            }
+            Ok(())
+        }
+        _ => Err("unknown page action".into()),
+    }
+}
+
+const PAGE: &str = r##"<!doctype html><meta charset=utf-8><title>History</title>
+<style>
+body{font:14px system-ui,sans-serif;max-width:64em;margin:2em auto;padding:0 1em;color-scheme:light dark}
+h1{font-size:1.3em;font-weight:600;display:flex;gap:1em;align-items:center}h2{font-size:1em;margin:1.4em 0 .4em;opacity:.7}
+input{font:inherit;padding:.35em .6em;border-radius:8px;border:1px solid color-mix(in srgb,currentColor 25%,transparent);background:transparent;color:inherit;min-width:0}
+button{font:inherit;padding:.3em .8em;border-radius:8px;border:0;cursor:pointer;background:color-mix(in srgb,currentColor 12%,transparent);color:inherit}
+button.del:hover{background:#c0303066}
+#q{flex:1;max-width:24em;font-size:.8em}
+.r{display:flex;gap:.6em;align-items:center;padding:.35em .6em;border-radius:10px;margin:.2em 0;background:color-mix(in srgb,currentColor 6%,transparent)}
+.r time{opacity:.6;flex:0 0 3.5em;font-variant-numeric:tabular-nums}
+.r .main{flex:1;min-width:0;display:flex;flex-direction:column}
+.r a{color:inherit;text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.r a:hover{text-decoration:underline}
+.r small{opacity:.6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.empty,.note{opacity:.6}
+</style>
+<h1>History <form id=f style="display:contents"><input id=q placeholder="Search all history…" autocomplete=off></form><button id=all class=del>Delete shown</button></h1>
+<p class=note id=note></p><div id=l></div>
+<script>
+const D=/*DATA*/{};
+const send=(m)=>window.nova&&nova.send("page "+D.token+" "+JSON.stringify({page:"history",...m}));
+const el=(t,p,...c)=>{const e=document.createElement(t);Object.assign(e,p);e.append(...c);return e;};
+const q=document.getElementById("q");q.value=D.q;
+document.getElementById("f").onsubmit=(e)=>{e.preventDefault();send({a:"search",q:q.value});};
+document.getElementById("all").onclick=()=>{if(D.rows.length&&confirm("Delete these "+D.rows.length+" entries from history?"))send({a:"del",urls:D.rows.map(r=>r[0])});};
+const note=document.getElementById("note");
+note.textContent=(D.q?"Matching “"+D.q+"”. ":"")+(D.rows.length>=D.max?"Showing the newest "+D.max+" — search to find older visits.":"");
+const l=document.getElementById("l");let day="";
+for(const[url,title,t]of D.rows){
+  const d=new Date(t*1000),k=d.toLocaleDateString(undefined,{weekday:"long",year:"numeric",month:"long",day:"numeric"});
+  if(k!==day){day=k;l.append(el("h2",{textContent:k}));}
+  l.append(el("div",{className:"r"},el("time",{textContent:d.toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"})}),
+    el("div",{className:"main"},el("a",{href:/^(https?|file):/.test(url)?url:"#",textContent:title||url}),el("small",{textContent:url})),
+    el("button",{className:"del",textContent:"Delete",onclick:()=>send({a:"del",urls:[url]})})));
+}
+if(!D.rows.length)l.append(el("p",{className:"empty",textContent:D.q?"Nothing matches.":"No history yet."}));
+if(!D.q)q.focus();
+</script>"##;
 
 #[cfg(test)]
 mod tests {

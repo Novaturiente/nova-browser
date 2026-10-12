@@ -488,6 +488,7 @@ pub const NAMES: &[&str] = &[
     "download-open",
     "downloads",
     "help",
+    "history",
     "https-toggle",
     "fake-key",
     "forward",
@@ -529,6 +530,8 @@ pub const NAMES: &[&str] = &[
     "tab-mute",
     "tab-next",
     "tab-only",
+    "tab-pin",
+    "tab-give",
     "tab-prev",
     "undo",
     "yank",
@@ -578,7 +581,9 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
             }
         }
         // shortcut: -o/-p/-n (which tab gets focus afterwards) ignored; add if missed
-        "tab-close" => window::close_active(),
+        "tab-close" => window::close_active(cmd.flag("-f", "--force")),
+        "tab-pin" => window::pin(count.map(|c| c.saturating_sub(1) as usize)),
+        "tab-give" => window::give(count.map(|c| c.saturating_sub(1) as usize)),
         "tab-only" => window::close_others(),
         "tab-next" => window::cycle(n as i64),
         "tab-prev" => window::cycle(-(n as i64)),
@@ -615,8 +620,8 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
             );
         }
         "undo" => window::undo_close(),
-        "back" => js(&need()?, &format!("history.go(-{n})")),
-        "forward" => js(&need()?, &format!("history.go({n})")),
+        "back" => window::go(&need()?, -(n as i32)),
+        "forward" => window::go(&need()?, n as i32),
         "dark-toggle" => dark_toggle()?,
         "https-toggle" => https_toggle()?,
         "reload" => {
@@ -818,6 +823,10 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
         }
         "download-clear" => crate::downloads::clear(),
         "password-fill" => crate::passwords::fill_command(cmd.flag("-o", "--otp"))?,
+        "history" => window::open(
+            &window::data_url(&crate::history::page(Some(&cmd.rest()))).to_string(),
+            true,
+        ),
         "help" => window::open(&window::data_url(&crate::welcome::page()).to_string(), true),
         "downloads" => window::open(
             &window::data_url(&crate::downloads::page()).to_string(),
