@@ -68,7 +68,13 @@ fn menu_items(p: &ContextMenuParams) -> Vec<(i32, String)> {
     let mut v = vec![];
     if flags & 4 != 0 && !s(p.link_url()).is_empty() {
         // CM_TYPEFLAG_LINK
-        for (id, l) in [(0, "Open link in new tab"), (1, "Open link in background tab"), (2, "Open link in new window"), (3, "Copy link address"), (4, "Save link")] {
+        for (id, l) in [
+            (0, "Open link in new tab"),
+            (1, "Open link in background tab"),
+            (2, "Open link in new window"),
+            (3, "Copy link address"),
+            (4, "Save link"),
+        ] {
             v.push((id, l.to_string()));
         }
     }
