@@ -11,7 +11,8 @@ depends=(sqlite gtk3 nss alsa-lib libxss libxkbcommon libdrm mesa libcups at-spi
 makedepends=(git cargo cmake ninja)
 optdepends=('wl-clipboard: primary selection and paste on Wayland'
             'xclip: primary selection and paste on X11'
-            'xdg-utils: download-open and default-browser setup')
+            'xdg-utils: download-open and default-browser setup'
+            'aria2: faster downloads (8 connections), resume after restart, magnet links and torrents')
 provides=(novabrowser)
 conflicts=(novabrowser)
 # libcef.so ships with debug info (~1.4 GB); strip keeps ~280 MB

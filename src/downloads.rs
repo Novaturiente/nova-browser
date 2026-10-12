@@ -21,6 +21,8 @@ enum St {
 struct Dl {
     /// CEF download id; None for entries loaded from disk.
     id: Option<u32>,
+    /// aria2 download (aria2.rs); None for Chromium ones.
+    gid: Option<String>,
     url: String,
     path: PathBuf,
     st: St,
@@ -62,6 +64,7 @@ fn with<R>(f: impl FnOnce(&mut Vec<Dl>) -> R) -> R {
                 .flatten()
                 .map(|e| Dl {
                     id: None,
+                    gid: None,
                     url: e["url"].as_str().unwrap_or("").into(),
                     path: e["path"].as_str().unwrap_or("").into(),
                     st: if e["ok"].as_bool().unwrap_or(false) {
@@ -95,7 +98,7 @@ fn save() {
     }
 }
 
-fn dir() -> PathBuf {
+pub fn dir() -> PathBuf {
     let home = PathBuf::from(std::env::var_os("HOME").unwrap_or_default());
     match config::get().str("downloads.location.directory") {
         d if d.is_empty() => home.join("Downloads"),
@@ -151,6 +154,7 @@ pub fn before(item: &DownloadItem, suggested: &str, cb: &BeforeDownloadCallback)
     with(|l| {
         l.push(Dl {
             id: Some(item.id()),
+            gid: None,
             url: CefString::from(&item.url()).to_string(),
             path: path.clone(),
             st: St::Running,
@@ -190,17 +194,171 @@ pub fn updated(item: &DownloadItem, cb: Option<&DownloadItemCallback>) {
         }
         None
     });
-    if let Some(p) = &report {
-        let (ok, bad) = UNSEEN.get();
-        UNSEEN.set(if failed { (ok, bad + 1) } else { (ok + 1, bad) });
-        save();
-        let (level, what) = if failed {
-            ("error", "Download failed")
-        } else {
-            ("info", "Downloaded")
-        };
-        window::message(level, &format!("{what}: {}", p.display()));
-    } else {
+    match report {
+        Some(p) => finished(&p, failed, None),
+        None => window::refresh(),
+    }
+}
+
+fn finished(p: &Path, failed: bool, why: Option<&str>) {
+    let (ok, bad) = UNSEEN.get();
+    UNSEEN.set(if failed { (ok, bad + 1) } else { (ok + 1, bad) });
+    save();
+    let msg = match (failed, why) {
+        (true, Some(w)) => format!("Download failed: {} ({w})", p.display()),
+        (true, None) => format!("Download failed: {}", p.display()),
+        (false, _) => format!("Downloaded: {}", p.display()),
+    };
+    window::message(if failed { "error" } else { "info" }, &msg);
+}
+
+thread_local! {
+    /// aria2 requests waiting for their gid: id → URL (to fall back to Chromium).
+    static ARIA_PENDING: RefCell<Vec<(u64, String)>> = const { RefCell::new(Vec::new()) };
+    static ARIA_NEXT: Cell<u64> = const { Cell::new(1) };
+    /// URLs aria2 refused: let Chromium download them (can_download sees them again).
+    static FORCE_CHROMIUM: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+}
+
+/// `DownloadHandler::can_download`: true = Chromium downloads it, false = we
+/// handed it to aria2 (GET http(s)/ftp only; POST/blob:/data: stay in Chromium).
+pub fn chromium_should_download(browser: &Browser, url: &str, method: &str) -> bool {
+    if FORCE_CHROMIUM.with_borrow_mut(|f| f.iter().position(|u| u == url).map(|i| f.remove(i))).is_some() {
+        return true;
+    }
+    let handoff = crate::aria2::enabled()
+        && method.eq_ignore_ascii_case("GET")
+        && ["http://", "https://", "ftp://"].iter().any(|s| url.starts_with(s));
+    if !handoff {
+        return true;
+    }
+    let id = ARIA_NEXT.replace(ARIA_NEXT.get() + 1);
+    ARIA_PENDING.with_borrow_mut(|p| p.push((id, url.to_string())));
+    crate::aria2::add(browser, url.to_string(), id);
+    false
+}
+
+/// A magnet: link (IO thread): aria2 only.
+pub fn magnet(url: String) -> bool {
+    if !crate::aria2::enabled() {
+        return false;
+    }
+    crate::aria2::add_magnet(url, 0);
+    true
+}
+
+/// aria2 took (gid) or refused a download we handed it.
+pub fn aria2_added(id: u64, result: Result<String, String>) {
+    let url = ARIA_PENDING.with_borrow_mut(|p| {
+        let i = p.iter().position(|(i, _)| *i == id)?;
+        Some(p.remove(i).1)
+    });
+    match result {
+        Ok(gid) => {
+            let known = with(|l| l.iter().any(|d| d.gid.as_deref() == Some(&gid)));
+            if !known {
+                with(|l| l.push(aria_entry(gid, url.clone().unwrap_or_default())));
+            }
+            window::message("info", "Download started (aria2).");
+        }
+        Err(e) => match url.filter(|_| id != 0) {
+            // fall back to Chromium for this URL
+            Some(u) => {
+                window::message("warning", &format!("aria2 refused the download ({e}); using Chromium."));
+                FORCE_CHROMIUM.with_borrow_mut(|f| f.push(u.clone()));
+                if let Some(h) = window::active_browser().and_then(|b| b.host()) {
+                    h.start_download(Some(&CefString::from(u.as_str())));
+                }
+            }
+            None => window::message("error", &format!("aria2: {e}")),
+        },
+    }
+}
+
+fn aria_entry(gid: String, url: String) -> Dl {
+    Dl {
+        id: None,
+        gid: Some(gid),
+        path: PathBuf::from(&url),
+        url,
+        st: St::Running,
+        received: 0,
+        total: 0,
+        start: now(),
+        end: 0,
+        cb: None,
+    }
+}
+
+/// aria2 status poll (aria2.rs): update, add resumed/unknown ones, finish.
+pub fn aria2_update(items: Vec<Value>) {
+    let mut done = Vec::new();
+    with(|l| {
+        // magnet / .torrent / metalink: the real download continues under a new gid;
+        // move our entry to it first, so the follow-up never shows up as a second one
+        for it in &items {
+            if let (Some(gid), Some(next)) = (it["gid"].as_str(), it["followedBy"][0].as_str()) {
+                if let Some(d) = l.iter_mut().find(|d| d.gid.as_deref() == Some(gid)) {
+                    d.gid = Some(next.to_string());
+                }
+            }
+        }
+        for it in &items {
+            let Some(gid) = it["gid"].as_str() else { continue };
+            let status = it["status"].as_str().unwrap_or("");
+            if it["followedBy"][0].is_string() {
+                continue; // handled above
+            }
+            let i = match l.iter().position(|d| d.gid.as_deref() == Some(gid)) {
+                Some(i) => i,
+                // resumed from aria2's session (also when it fails at once), or added by a magnet
+                None => {
+                    let url = it["files"][0]["uris"][0]["uri"].as_str().unwrap_or("").to_string();
+                    l.push(aria_entry(gid.to_string(), url));
+                    l.len() - 1
+                }
+            };
+            let d = &mut l[i];
+            if d.st != St::Running {
+                continue;
+            }
+            d.received = it["completedLength"].as_str().and_then(|s| s.parse().ok()).unwrap_or(0);
+            d.total = it["totalLength"].as_str().and_then(|s| s.parse().ok()).unwrap_or(0);
+            let dir = it["dir"].as_str().unwrap_or("");
+            // a torrent's name (folder or file), else the first file's path
+            if let Some(name) = it["bittorrent"]["info"]["name"].as_str() {
+                d.path = Path::new(dir).join(name);
+            } else if let Some(p) = it["files"][0]["path"].as_str().filter(|p| !p.is_empty()) {
+                d.path = PathBuf::from(p);
+            }
+            match status {
+                "complete" => {
+                    d.st = St::Done;
+                    d.end = now();
+                    done.push((d.path.clone(), false, None));
+                }
+                "removed" | "error" => {
+                    // cancelled (we only remove on download-cancel): drop the partial file, like Chromium
+                    // (a torrent folder is left alone: it may hold files the user already had)
+                    if status == "removed" {
+                        if d.path.is_file() {
+                            let _ = std::fs::remove_file(&d.path);
+                        }
+                        let _ = std::fs::remove_file(format!("{}.aria2", d.path.display()));
+                    }
+                    d.st = St::Failed;
+                    d.end = now();
+                    let why = it["errorMessage"].as_str().filter(|m| !m.is_empty()).map(str::to_string);
+                    done.push((d.path.clone(), true, why));
+                }
+                _ => {}
+            }
+        }
+    });
+    for (p, failed, why) in &done {
+        finished(p, *failed, why.as_deref());
+    }
+    if done.is_empty() {
         window::refresh();
     }
 }
@@ -289,19 +447,19 @@ pub fn open(args: &[String]) -> Result<(), String> {
 
 /// `download-cancel [N]`: entry N, or the newest running download.
 pub fn cancel(n: Option<usize>) -> Result<(), String> {
-    let cb = with(|l| match n {
-        Some(n) => l
-            .iter()
-            .rev()
-            .nth(n.checked_sub(1)?)
-            .and_then(|d| d.cb.clone()),
-        None => l
-            .iter()
-            .rev()
-            .find(|d| d.st == St::Running)
-            .and_then(|d| d.cb.clone()),
-    });
-    cb.ok_or("No such running download")?.cancel();
+    let (cb, gid) = with(|l| {
+        let d = match n {
+            Some(n) => l.iter().rev().nth(n.checked_sub(1)?),
+            None => l.iter().rev().find(|d| d.st == St::Running),
+        }?;
+        Some((d.cb.clone(), d.gid.clone()))
+    })
+    .unwrap_or_default();
+    match (cb, gid) {
+        (Some(cb), _) => cb.cancel(),
+        (None, Some(gid)) => crate::aria2::remove(&gid),
+        _ => return Err("No such running download".into()),
+    }
     Ok(())
 }
 

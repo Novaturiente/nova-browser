@@ -1079,7 +1079,10 @@ fn hibernate_idle() {
     let cfg = config::get();
     // per site via pattern(): 0 there exempts the site, a number there overrides the global one
     let due = |t: &Tab| {
-        let mins = cfg.get_for("tabs.hibernate_after", &t.url).as_i64().unwrap_or(0);
+        let mins = cfg
+            .get_for("tabs.hibernate_after", &t.url)
+            .as_i64()
+            .unwrap_or(0);
         mins > 0 && t.seen.elapsed() >= std::time::Duration::from_secs(mins as u64 * 60)
     };
     let candidates: Vec<Browser> = WINS.with_borrow(|w| {

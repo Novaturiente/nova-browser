@@ -1,5 +1,6 @@
 //! novabrowser: one binary; re-executes itself as the CEF subprocesses.
 mod adblock;
+mod aria2;
 mod bindings;
 mod client;
 mod clipboard;
@@ -50,6 +51,7 @@ wrap_browser_process_handler! {
             }
             history::start(xdg_dir("XDG_DATA_HOME", ".local/share").join("history.sqlite"));
             adblock::start();
+            aria2::start();
             ipc::start(); // after CEF init: its requests post_task to the UI thread
             window::create(self.start_url.clone());
             window::start_hibernation();
@@ -445,5 +447,6 @@ fn main() {
         }
     }
     run_message_loop();
+    aria2::stop();
     shutdown();
 }

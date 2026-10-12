@@ -850,13 +850,19 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
             true,
         ),
         "download" => {
-            let url = if cmd.args.is_empty() {
-                window::active_url_title().0
-            } else {
-                url_or_search(&cmd.rest())
+            let url = match cmd.rest() {
+                r if r.is_empty() => window::active_url_title().0,
+                r if r.starts_with("magnet:") => r,
+                r => url_or_search(&r),
             };
-            let h = need()?.host().ok_or("no active tab")?;
-            h.start_download(Some(&CefString::from(url.as_str())));
+            let b = need()?;
+            if url.starts_with("magnet:") {
+                if !crate::downloads::magnet(url) {
+                    return Err("magnet: links need aria2 (install aria2)".into());
+                }
+            } else if crate::downloads::chromium_should_download(&b, &url, "GET") {
+                b.host().ok_or("no active tab")?.start_download(Some(&CefString::from(url.as_str())));
+            }
         }
         "session-save" => crate::session::save(cmd.args.first().map(String::as_str))?,
         "session-load" => crate::session::load(

@@ -74,6 +74,14 @@ right-click a tab for its menu.
   page, tab bar, dark mode, ad blocking, cookies, downloads…).
 - `:bookmarks` — add, edit and delete quickmarks and bookmarks.
 - `:downloads` — finished and running downloads.
+- **Downloads via aria2** — if `aria2c` is installed (`pacman -S aria2`),
+  every download goes to it: 8 connections per file, the page's cookies and
+  referer are passed along, unfinished downloads resume after a restart, and
+  `magnet:` links / `.torrent` files download as torrents (no seeding after
+  they finish). Without aria2, or for form (POST) and page-generated (blob:)
+  downloads, Chromium downloads them. `downloads.backend` = `auto` (default),
+  `aria2` or `chromium`. `:download magnet:?xt=…` works too. Note: a resumed
+  download's cookies sit in `<data>/aria2.session` until it finishes.
 - `:history [words]` (`Sh`) — browse, search and delete history.
 - `:tab-pin` (`Ctrl-p`) pins a tab (kept first, `d` won't close it);
   `:tab-give` (`gD`) moves a tab into a new window.

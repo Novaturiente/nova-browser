@@ -45,7 +45,11 @@ wrap_task! {
 wrap_download_handler! {
     struct TabDownloads {}
     impl DownloadHandler {
-        fn can_download(&self, _browser: Option<&mut Browser>, _url: Option<&CefString>, _method: Option<&CefString>) -> ::std::os::raw::c_int { 1 }
+        fn can_download(&self, browser: Option<&mut Browser>, url: Option<&CefString>, method: Option<&CefString>) -> ::std::os::raw::c_int {
+            let (Some(b), Some(url)) = (browser, url) else { return 1 };
+            let method = method.map(|m| m.to_string()).unwrap_or_default();
+            crate::downloads::chromium_should_download(b, &url.to_string(), &method) as i32
+        }
         fn on_before_download(&self, _browser: Option<&mut Browser>, item: Option<&mut DownloadItem>, suggested_name: Option<&CefString>, callback: Option<&mut BeforeDownloadCallback>) -> ::std::os::raw::c_int {
             let (Some(item), Some(cb)) = (item, callback) else { return 0 };
             crate::downloads::before(item, &suggested_name.map(|s| s.to_string()).unwrap_or_default(), cb);
@@ -246,6 +250,14 @@ wrap_request_handler! {
 wrap_resource_request_handler! {
     struct TabResource {}
     impl ResourceRequestHandler {
+        /// magnet: links go to aria2 (if it runs); other unknown schemes stay blocked.
+        fn on_protocol_execution(&self, _browser: Option<&mut Browser>, _frame: Option<&mut Frame>, request: Option<&mut Request>, _allow: Option<&mut ::std::os::raw::c_int>) {
+            let Some(r) = request else { return };
+            let url = CefString::from(&r.url()).to_string();
+            if url.starts_with("magnet:") && !crate::downloads::magnet(url) {
+                eprintln!("novabrowser: magnet link ignored: aria2 isn't running");
+            }
+        }
         // IO thread.
         fn on_before_resource_load(&self, browser: Option<&mut Browser>, _frame: Option<&mut Frame>, request: Option<&mut Request>, _callback: Option<&mut Callback>) -> ReturnValue {
             let (Some(b), Some(r)) = (browser, request) else { return ReturnValue::CONTINUE };
