@@ -635,7 +635,10 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
         // what the right-click menu's Paste does: works where pages swallow Ctrl-V (web terminals)
         "paste" => {
             let b = need()?;
-            b.focused_frame().or_else(|| b.main_frame()).ok_or("no frame")?.paste();
+            b.focused_frame()
+                .or_else(|| b.main_frame())
+                .ok_or("no frame")?
+                .paste();
         }
         "back" => window::go(&need()?, -(n as i32)),
         "forward" => window::go(&need()?, n as i32),
@@ -861,7 +864,9 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
                     return Err("magnet: links need aria2 (install aria2)".into());
                 }
             } else if crate::downloads::chromium_should_download(&b, &url, "GET") {
-                b.host().ok_or("no active tab")?.start_download(Some(&CefString::from(url.as_str())));
+                b.host()
+                    .ok_or("no active tab")?
+                    .start_download(Some(&CefString::from(url.as_str())));
             }
         }
         "session-save" => crate::session::save(cmd.args.first().map(String::as_str))?,

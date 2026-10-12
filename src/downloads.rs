@@ -223,12 +223,17 @@ thread_local! {
 /// `DownloadHandler::can_download`: true = Chromium downloads it, false = we
 /// handed it to aria2 (GET http(s)/ftp only; POST/blob:/data: stay in Chromium).
 pub fn chromium_should_download(browser: &Browser, url: &str, method: &str) -> bool {
-    if FORCE_CHROMIUM.with_borrow_mut(|f| f.iter().position(|u| u == url).map(|i| f.remove(i))).is_some() {
+    if FORCE_CHROMIUM
+        .with_borrow_mut(|f| f.iter().position(|u| u == url).map(|i| f.remove(i)))
+        .is_some()
+    {
         return true;
     }
     let handoff = crate::aria2::enabled()
         && method.eq_ignore_ascii_case("GET")
-        && ["http://", "https://", "ftp://"].iter().any(|s| url.starts_with(s));
+        && ["http://", "https://", "ftp://"]
+            .iter()
+            .any(|s| url.starts_with(s));
     if !handoff {
         return true;
     }
@@ -264,7 +269,10 @@ pub fn aria2_added(id: u64, result: Result<String, String>) {
         Err(e) => match url.filter(|_| id != 0) {
             // fall back to Chromium for this URL
             Some(u) => {
-                window::message("warning", &format!("aria2 refused the download ({e}); using Chromium."));
+                window::message(
+                    "warning",
+                    &format!("aria2 refused the download ({e}); using Chromium."),
+                );
                 FORCE_CHROMIUM.with_borrow_mut(|f| f.push(u.clone()));
                 if let Some(h) = window::active_browser().and_then(|b| b.host()) {
                     h.start_download(Some(&CefString::from(u.as_str())));
@@ -304,7 +312,9 @@ pub fn aria2_update(items: Vec<Value>) {
             }
         }
         for it in &items {
-            let Some(gid) = it["gid"].as_str() else { continue };
+            let Some(gid) = it["gid"].as_str() else {
+                continue;
+            };
             let status = it["status"].as_str().unwrap_or("");
             if it["followedBy"][0].is_string() {
                 continue; // handled above
@@ -313,7 +323,10 @@ pub fn aria2_update(items: Vec<Value>) {
                 Some(i) => i,
                 // resumed from aria2's session (also when it fails at once), or added by a magnet
                 None => {
-                    let url = it["files"][0]["uris"][0]["uri"].as_str().unwrap_or("").to_string();
+                    let url = it["files"][0]["uris"][0]["uri"]
+                        .as_str()
+                        .unwrap_or("")
+                        .to_string();
                     l.push(aria_entry(gid.to_string(), url));
                     l.len() - 1
                 }
@@ -322,8 +335,14 @@ pub fn aria2_update(items: Vec<Value>) {
             if d.st != St::Running {
                 continue;
             }
-            d.received = it["completedLength"].as_str().and_then(|s| s.parse().ok()).unwrap_or(0);
-            d.total = it["totalLength"].as_str().and_then(|s| s.parse().ok()).unwrap_or(0);
+            d.received = it["completedLength"]
+                .as_str()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0);
+            d.total = it["totalLength"]
+                .as_str()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0);
             let dir = it["dir"].as_str().unwrap_or("");
             // a torrent's name (folder or file), else the first file's path
             if let Some(name) = it["bittorrent"]["info"]["name"].as_str() {
@@ -348,7 +367,10 @@ pub fn aria2_update(items: Vec<Value>) {
                     }
                     d.st = St::Failed;
                     d.end = now();
-                    let why = it["errorMessage"].as_str().filter(|m| !m.is_empty()).map(str::to_string);
+                    let why = it["errorMessage"]
+                        .as_str()
+                        .filter(|m| !m.is_empty())
+                        .map(str::to_string);
                     done.push((d.path.clone(), true, why));
                 }
                 _ => {}

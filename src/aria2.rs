@@ -21,7 +21,11 @@ struct Rpc {
 
 enum Job {
     /// id = our request number (for a fallback to Chromium if aria2 refuses it)
-    Add { id: u64, uris: Vec<String>, opts: Value },
+    Add {
+        id: u64,
+        uris: Vec<String>,
+        opts: Value,
+    },
     Remove(String),
 }
 
@@ -57,7 +61,9 @@ pub fn start() {
     }
     let Some(bin) = find_aria2c() else {
         if backend == "aria2" {
-            eprintln!("novabrowser: downloads.backend = aria2 but aria2c isn't installed; using Chromium");
+            eprintln!(
+                "novabrowser: downloads.backend = aria2 but aria2c isn't installed; using Chromium"
+            );
         }
         return;
     };
@@ -94,7 +100,9 @@ pub fn start() {
             "--quiet=true".into(),
             format!(
                 "--log={}",
-                xdg_dir("XDG_STATE_HOME", ".local/state").join("aria2.log").display()
+                xdg_dir("XDG_STATE_HOME", ".local/state")
+                    .join("aria2.log")
+                    .display()
             ),
             "--log-level=warn".into(),
         ])
@@ -176,7 +184,11 @@ fn run(rx: mpsc::Receiver<Job>) {
     }
     let mut busy = true;
     loop {
-        let wait = if busy { Duration::from_secs(1) } else { Duration::from_secs(30) };
+        let wait = if busy {
+            Duration::from_secs(1)
+        } else {
+            Duration::from_secs(30)
+        };
         match rx.recv_timeout(wait) {
             Ok(Job::Add { id, uris, opts }) => {
                 let r = call("aria2.addUri", vec![json!(uris), opts])
@@ -199,7 +211,10 @@ fn poll() -> bool {
     let mut items = Vec::new();
     for (m, p) in [
         ("aria2.tellActive", vec![keys.clone()]),
-        ("aria2.tellWaiting", vec![json!(0), json!(1000), keys.clone()]),
+        (
+            "aria2.tellWaiting",
+            vec![json!(0), json!(1000), keys.clone()],
+        ),
         ("aria2.tellStopped", vec![json!(0), json!(1000), keys]),
     ] {
         if let Ok(Value::Array(a)) = call(m, p) {
@@ -237,41 +252,55 @@ pub fn add(browser: &Browser, url: String, id: u64) {
         .map(|f| CefString::from(&f.url()).to_string())
         .unwrap_or_default();
     let b = browser.clone();
-    crate::devtools::call(browser, "Network.getCookies", json!({ "urls": [url] }), move |r| {
-        let cookies: Vec<String> = r
-            .as_ref()
-            .and_then(|r| r["cookies"].as_array())
-            .into_iter()
-            .flatten()
-            .filter_map(|c| Some(format!("{}={}", c["name"].as_str()?, c["value"].as_str()?)))
-            .collect();
-        let expr = json!({ "expression": "navigator.userAgent", "returnByValue": true });
-        crate::devtools::call(&b, "Runtime.evaluate", expr, move |ua| {
-            let ua = ua
+    crate::devtools::call(
+        browser,
+        "Network.getCookies",
+        json!({ "urls": [url] }),
+        move |r| {
+            let cookies: Vec<String> = r
                 .as_ref()
-                .and_then(|u| u["result"]["value"].as_str())
-                .unwrap_or("")
-                .to_string();
-            let mut header = Vec::new();
-            if !cookies.is_empty() {
-                header.push(format!("Cookie: {}", cookies.join("; ")));
-            }
-            if !referer.is_empty() && !referer.starts_with("data:") {
-                header.push(format!("Referer: {referer}"));
-            }
-            let mut opts = json!({ "dir": crate::downloads::dir().to_string_lossy(), "header": header });
-            if !ua.is_empty() {
-                opts["user-agent"] = json!(ua);
-            }
-            send(Job::Add { id, uris: vec![url], opts });
-        });
-    });
+                .and_then(|r| r["cookies"].as_array())
+                .into_iter()
+                .flatten()
+                .filter_map(|c| Some(format!("{}={}", c["name"].as_str()?, c["value"].as_str()?)))
+                .collect();
+            let expr = json!({ "expression": "navigator.userAgent", "returnByValue": true });
+            crate::devtools::call(&b, "Runtime.evaluate", expr, move |ua| {
+                let ua = ua
+                    .as_ref()
+                    .and_then(|u| u["result"]["value"].as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let mut header = Vec::new();
+                if !cookies.is_empty() {
+                    header.push(format!("Cookie: {}", cookies.join("; ")));
+                }
+                if !referer.is_empty() && !referer.starts_with("data:") {
+                    header.push(format!("Referer: {referer}"));
+                }
+                let mut opts =
+                    json!({ "dir": crate::downloads::dir().to_string_lossy(), "header": header });
+                if !ua.is_empty() {
+                    opts["user-agent"] = json!(ua);
+                }
+                send(Job::Add {
+                    id,
+                    uris: vec![url],
+                    opts,
+                });
+            });
+        },
+    );
 }
 
 /// A magnet: link (any thread).
 pub fn add_magnet(url: String, id: u64) {
     let opts = json!({ "dir": crate::downloads::dir().to_string_lossy() });
-    send(Job::Add { id, uris: vec![url], opts });
+    send(Job::Add {
+        id,
+        uris: vec![url],
+        opts,
+    });
 }
 
 pub fn remove(gid: &str) {
