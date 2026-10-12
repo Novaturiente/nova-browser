@@ -863,10 +863,8 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
                 if !crate::downloads::magnet(url) {
                     return Err("magnet: links need aria2 (install aria2)".into());
                 }
-            } else if crate::downloads::chromium_should_download(&b, &url, "GET") {
-                b.host()
-                    .ok_or("no active tab")?
-                    .start_download(Some(&CefString::from(url.as_str())));
+            } else {
+                crate::downloads::start(&b, &url);
             }
         }
         "session-save" => crate::session::save(cmd.args.first().map(String::as_str))?,

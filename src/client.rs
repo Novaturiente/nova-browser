@@ -61,6 +61,87 @@ wrap_download_handler! {
     }
 }
 
+/// Our right-click items: (id offset from MENU_ID_USER_FIRST, label), "" = separator.
+fn menu_items(p: &ContextMenuParams) -> Vec<(i32, String)> {
+    let s = |x: CefStringUserfree| CefString::from(&x).to_string();
+    let flags = p.type_flags().as_ref().0;
+    let mut v = vec![];
+    if flags & 4 != 0 && !s(p.link_url()).is_empty() {
+        // CM_TYPEFLAG_LINK
+        for (id, l) in [(0, "Open link in new tab"), (1, "Open link in background tab"), (2, "Open link in new window"), (3, "Copy link address"), (4, "Save link")] {
+            v.push((id, l.to_string()));
+        }
+    }
+    let src = s(p.source_url());
+    let noun = match p.media_type() {
+        ContextMenuMediaType::IMAGE => "image",
+        ContextMenuMediaType::VIDEO => "video",
+        ContextMenuMediaType::AUDIO => "audio",
+        _ => "",
+    };
+    if !noun.is_empty() && !src.is_empty() {
+        if !v.is_empty() {
+            v.push((-1, String::new()));
+        }
+        v.push((5, format!("Open {noun} in new tab")));
+        if !src.starts_with("blob:") {
+            v.push((6, format!("Save {noun}")));
+        }
+        v.push((7, format!("Copy {noun} address")));
+    }
+    let sel = s(p.selection_text());
+    let sel = sel.trim();
+    if !sel.is_empty() && p.is_editable() == 0 {
+        if !v.is_empty() {
+            v.push((-1, String::new()));
+        }
+        let short: String = sel.chars().take(30).collect();
+        let more = if sel.chars().count() > 30 { "…" } else { "" };
+        v.push((8, format!("Search for \"{short}{more}\"")));
+    }
+    v
+}
+
+const MENU_ID_USER_FIRST: i32 = 26500;
+
+wrap_context_menu_handler! {
+    struct TabMenu {}
+    impl ContextMenuHandler {
+        fn on_before_context_menu(&self, _browser: Option<&mut Browser>, _frame: Option<&mut Frame>, params: Option<&mut ContextMenuParams>, model: Option<&mut MenuModel>) {
+            let (Some(p), Some(m)) = (params, model) else { return };
+            let items = menu_items(p);
+            for (i, (id, label)) in items.iter().enumerate() {
+                if *id < 0 {
+                    m.insert_separator_at(i);
+                } else {
+                    m.insert_item_at(i, MENU_ID_USER_FIRST + id, Some(&CefString::from(label.as_str())));
+                }
+            }
+            if !items.is_empty() && m.count() > items.len() {
+                m.insert_separator_at(items.len());
+            }
+        }
+        fn on_context_menu_command(&self, browser: Option<&mut Browser>, _frame: Option<&mut Frame>, params: Option<&mut ContextMenuParams>, command_id: ::std::os::raw::c_int, _event_flags: EventFlags) -> ::std::os::raw::c_int {
+            let (Some(b), Some(p)) = (browser, params) else { return 0 };
+            if !(MENU_ID_USER_FIRST..MENU_ID_USER_FIRST + 9).contains(&command_id) { return 0; }
+            let s = |x: CefStringUserfree| CefString::from(&x).to_string();
+            let (link, src, sel) = (s(p.link_url()), s(p.source_url()), s(p.selection_text()));
+            window::in_owner(b, || match command_id - MENU_ID_USER_FIRST {
+                0 => window::open(&link, true),
+                1 => window::open(&link, false),
+                2 => window::open_window(Some(link)),
+                3 => crate::clipboard::write(&link, false),
+                4 => crate::downloads::start(b, &link),
+                5 => window::open(&src, true),
+                6 => crate::downloads::start(b, &src),
+                7 => crate::clipboard::write(&src, false),
+                _ => window::open(&commands::url_or_search(sel.trim()), true),
+            });
+            1
+        }
+    }
+}
+
 wrap_client! {
     pub struct TabClient {}
     impl Client {
@@ -72,6 +153,7 @@ wrap_client! {
         fn request_handler(&self) -> Option<RequestHandler> { Some(TabRequest::new()) }
         fn keyboard_handler(&self) -> Option<KeyboardHandler> { Some(TabKeys::new()) }
         fn download_handler(&self) -> Option<DownloadHandler> { Some(TabDownloads::new()) }
+        fn context_menu_handler(&self) -> Option<ContextMenuHandler> { Some(TabMenu::new()) }
         fn on_process_message_received(
             &self,
             browser: Option<&mut Browser>,

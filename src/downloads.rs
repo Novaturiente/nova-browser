@@ -243,6 +243,15 @@ pub fn chromium_should_download(browser: &Browser, url: &str, method: &str) -> b
     false
 }
 
+/// Download `url` from `browser`'s page (aria2 when enabled, else Chromium).
+pub fn start(browser: &Browser, url: &str) {
+    if chromium_should_download(browser, url, "GET") {
+        if let Some(h) = browser.host() {
+            h.start_download(Some(&CefString::from(url)));
+        }
+    }
+}
+
 /// A magnet: link (IO thread): aria2 only.
 pub fn magnet(url: String) -> bool {
     if !crate::aria2::enabled() {
