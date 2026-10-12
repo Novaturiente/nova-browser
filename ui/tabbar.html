@@ -21,6 +21,7 @@
   .t.l { border-left-color: var(--colors-tabs-indicator-start); }
   .t.d { border-left-color: var(--colors-tabs-indicator-stop); }
   .t.e { border-left-color: var(--colors-tabs-indicator-error); }
+  .t.z { opacity: .5; }
   body:not(.vertical) .t.n { flex: 0 0 auto; min-width: 0; }
   /* Status (no status bar): mode, pending keys, message at the end; load progress as a line. */
   #tabs { display: contents; }
@@ -78,7 +79,7 @@
     $("progress").style.width = st.loading ? Math.max(3, Math.round(st.p * 100)) + "%" : "0";
     $("tabs").replaceChildren(...s.tabs.map((tab, i) => {
       const d = document.createElement("div");
-      d.className = "t" + (tab.a ? " a" : "") + (tab.e ? " e" : tab.l ? " l" : " d") + (tab.n ? " n" : "");
+      d.className = "t" + (tab.a ? " a" : "") + (tab.e ? " e" : tab.l ? " l" : " d") + (tab.n ? " n" : "") + (tab.z ? " z" : "");
       d.textContent = tab.t;
       d.onmousedown = (e) => {
         clearTimeout(tipTimer);

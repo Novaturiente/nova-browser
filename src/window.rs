@@ -37,6 +37,11 @@ struct Tab {
     scroll_to: Option<i64>,
     /// Pinned tabs sit first, use `tabs.title.format_pinned` and need `--force` to close.
     pinned: bool,
+    /// Hibernation: when the tab was last in front, whether the user exempted it
+    /// (`tab-keep-awake`), and whether its page is unloaded right now.
+    seen: std::time::Instant,
+    keep: bool,
+    asleep: bool,
 }
 
 /// Entries kept per direction in a saved session.
@@ -298,6 +303,9 @@ fn add_tab(view: BrowserView, url: String, title: String, foreground: bool) {
             scroll: 0,
             scroll_to: None,
             pinned: false,
+            seen: std::time::Instant::now(),
+            keep: false,
+            asleep: false,
         });
         s.tabs.len() - 1
     });
@@ -379,7 +387,16 @@ fn tab_json(t: &Tab) -> serde_json::Value {
         "fwd": fwd,
         "scroll": t.scroll_to.unwrap_or(t.scroll),
         "pinned": t.pinned,
+        "keep": t.keep,
     })
+}
+
+fn strs(v: &serde_json::Value) -> Vec<String> {
+    v.as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|u| u.as_str().map(str::to_string))
+        .collect()
 }
 
 /// Open a saved session: its first window's tabs go into this window (`clear`
@@ -414,13 +431,6 @@ pub fn restore(v: &serde_json::Value, clear: bool) {
 fn restore_tabs(v: &serde_json::Value, clear: bool) {
     let before = S.with_borrow(|s| s.tabs.len());
     let tabs = v["tabs"].as_array().cloned().unwrap_or_default();
-    let strs = |v: &serde_json::Value| -> Vec<String> {
-        v.as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|u| u.as_str().map(str::to_string))
-            .collect()
-    };
     for t in &tabs {
         let url = t["url"].as_str().unwrap_or("about:blank");
         open_titled(url, t["title"].as_str().unwrap_or("").to_string(), false);
@@ -430,6 +440,7 @@ fn restore_tabs(v: &serde_json::Value, clear: bool) {
             tab.fwd = strs(&t["fwd"]).into_iter().rev().collect();
             tab.scroll_to = t["scroll"].as_i64().filter(|y| *y > 0);
             tab.pinned = t["pinned"].as_bool().unwrap_or(false);
+            tab.keep = t["keep"].as_bool().unwrap_or(false);
         });
     }
     if !tabs.is_empty() {
@@ -452,8 +463,10 @@ pub fn show(n: usize) {
             .flatten();
         if old.is_some() {
             s.last = s.active;
+            s.tabs[s.active].seen = std::time::Instant::now();
         }
         s.active = n;
+        s.tabs[n].asleep = false;
         Some((s.content.clone()?, old, new))
     }) else {
         return;
@@ -862,13 +875,14 @@ pub fn refresh() {
             .map(|(i, t)| {
                 let label = theme::format_title(if t.pinned { &pin_fmt } else { &tab_fmt }, &fields(i, t));
                 format!(
-                    "{{\"t\":{},\"a\":{},\"l\":{},\"p\":{},\"e\":{},\"n\":{}}}",
+                    "{{\"t\":{},\"a\":{},\"l\":{},\"p\":{},\"e\":{},\"n\":{},\"z\":{}}}",
                     js_str(&label),
                     i == s.active,
                     t.loading,
                     t.progress,
                     t.crashed.is_some(),
-                    t.pinned
+                    t.pinned,
+                    t.asleep
                 )
             })
             .collect();
@@ -1038,6 +1052,127 @@ pub fn pin(n: Option<usize>) {
             }
         };
     });
+    refresh();
+}
+
+/// True if the page plays media or has typed form text: never hibernate it.
+/// shortcut: main frame only (an embedded player in an iframe isn't seen).
+const BUSY_JS: &str = "[...document.querySelectorAll('video,audio')].some(m=>!m.paused&&!m.ended)||\
+[...document.querySelectorAll('input:not([type=hidden]),textarea')].some(e=>e.value!==e.defaultValue)";
+
+wrap_task! {
+    struct HibernateTick {}
+    impl Task {
+        fn execute(&self) {
+            hibernate_idle();
+            post_delayed_task(ThreadId::UI, Some(&mut HibernateTick::new()), 60_000);
+        }
+    }
+}
+
+/// Start the once-a-minute idle check (`tabs.hibernate_after`, minutes; 0 = off).
+pub fn start_hibernation() {
+    post_delayed_task(ThreadId::UI, Some(&mut HibernateTick::new()), 60_000);
+}
+
+fn hibernate_idle() {
+    let mins = config::get().int("tabs.hibernate_after");
+    if mins <= 0 {
+        return;
+    }
+    let after = std::time::Duration::from_secs(mins as u64 * 60);
+    let candidates: Vec<Browser> = WINS.with_borrow(|w| {
+        w.iter()
+            .filter(|s| s.window.is_some())
+            .flat_map(|s| {
+                s.tabs.iter().enumerate().filter(move |(i, t)| {
+                    *i != s.active
+                        && !t.keep
+                        && !t.asleep
+                        && !t.loading
+                        && t.crashed.is_none()
+                        && !t.url.starts_with("data:")
+                        && t.seen.elapsed() >= after
+                })
+            })
+            .filter_map(|(_, t)| t.view.browser())
+            .collect()
+    });
+    for b in candidates {
+        let b2 = b.clone();
+        devtools::eval_isolated(&b, BUSY_JS.into(), move |r| {
+            // no answer (hung, closed) = leave it alone
+            if r.is_some_and(|(_, v)| v == serde_json::Value::Bool(false)) {
+                in_owner(&b2, || hibernate_browser(b2.identifier(), false));
+            }
+        });
+    }
+}
+
+/// `tab-hibernate [index]`: unload a background tab now (not the active one).
+pub fn hibernate(n: Option<usize>) {
+    let id = S.with_borrow(|s| {
+        let n = n.unwrap_or(s.active);
+        if n == s.active {
+            return Err("Can't hibernate the tab you're looking at.");
+        }
+        let t = s.tabs.get(n).ok_or("No such tab.")?;
+        browser_id(&t.view).ok_or("Tab is already unloaded.")
+    });
+    match id {
+        Ok(id) => hibernate_browser(id, true),
+        Err(e) => message("error", e),
+    }
+}
+
+/// Replace the tab's page with a not-yet-loaded view of the same URL; history
+/// and scroll come back like a restored session tab when it's shown again.
+fn hibernate_browser(id: i32, manual: bool) {
+    let find = |s: &State| s.tabs.iter().position(|t| browser_id(&t.view) == Some(id));
+    let Some(url) = S.with_borrow(|s| {
+        let n = find(s)?;
+        let t = &s.tabs[n];
+        // re-check: things may have changed while the page was asked
+        (n != s.active && t.crashed.is_none() && (manual || !t.keep)).then(|| t.url.clone())
+    }) else {
+        return;
+    };
+    let view = browser_view(&mut TabClient::new(), &url, KIND_FIXED, &page_settings());
+    let old = S.with_borrow_mut(|s| {
+        let n = find(s)?;
+        let tj = tab_json(&s.tabs[n]);
+        let t = &mut s.tabs[n];
+        let old = std::mem::replace(&mut t.view, view);
+        t.back = strs(&tj["back"]);
+        t.fwd = strs(&tj["fwd"]).into_iter().rev().collect();
+        t.scroll_to = tj["scroll"].as_i64().filter(|y| *y > 0);
+        t.asleep = true;
+        t.loading = false;
+        t.progress = 0.0;
+        t.can_back = false;
+        t.can_fwd = false;
+        t.dark = None;
+        Some(old)
+    });
+    if let Some(old) = old {
+        release_view(old); // its on_before_close forgets devtools/passwords state
+        refresh();
+    }
+}
+
+/// `tab-keep-awake [index]`: toggle the tab's exemption from hibernation.
+pub fn keep_awake(n: Option<usize>) {
+    let on = S.with_borrow_mut(|s| {
+        let n = n.unwrap_or(s.active);
+        let t = s.tabs.get_mut(n)?;
+        t.keep = !t.keep;
+        Some(t.keep)
+    });
+    match on {
+        Some(true) => message("info", "This tab won't be hibernated."),
+        Some(false) => message("info", "This tab can be hibernated again."),
+        None => message("error", "No such tab."),
+    }
     refresh();
 }
 
@@ -1370,6 +1505,8 @@ const MENU: &[(&str, &str, &str)] = &[
     ("bookmark", "Bookmark", "M"),
     ("pin", "Pin / unpin", "Ctrl-p"),
     ("give", "Move to new window", "gD"),
+    ("sleep", "Hibernate now", ""),
+    ("keep", "Keep awake on / off", ""),
     ("close", "Close", "d"),
     ("others", "Close other tabs", "co"),
 ];
@@ -1470,6 +1607,8 @@ pub fn tab_menu_action(arg: &str) {
         "others" => return close_others_than(i),
         "pin" => return pin(Some(i)),
         "give" => return give(Some(i)),
+        "sleep" => return hibernate(Some(i)),
+        "keep" => return keep_awake(Some(i)),
         "reload" => "reload",
         "clone" => "tab-clone -b",
         "yank" => "yank",

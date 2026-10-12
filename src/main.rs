@@ -52,6 +52,7 @@ wrap_browser_process_handler! {
             adblock::start();
             ipc::start(); // after CEF init: its requests post_task to the UI thread
             window::create(self.start_url.clone());
+            window::start_hibernation();
         }
     }
 }

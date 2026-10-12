@@ -20,6 +20,13 @@ impl Cmd {
     }
 }
 
+/// 0-based tab from a count or a 1-based first argument (`tab-pin 3`), else None = active.
+fn tab_index(cmd: &Cmd, count: Option<u32>) -> Option<usize> {
+    count
+        .or_else(|| cmd.args.first()?.parse().ok())
+        .map(|c| (c as usize).saturating_sub(1))
+}
+
 /// Shell-like split: whitespace separates, '…' and "…" group, `\` escapes outside
 /// '…' (qutebrowser; `fake-key \<` sends a literal `<`).
 fn tokenize(s: &str) -> Result<Vec<String>, String> {
@@ -532,6 +539,8 @@ pub const NAMES: &[&str] = &[
     "tab-only",
     "tab-pin",
     "tab-give",
+    "tab-hibernate",
+    "tab-keep-awake",
     "tab-prev",
     "undo",
     "yank",
@@ -582,8 +591,10 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
         }
         // shortcut: -o/-p/-n (which tab gets focus afterwards) ignored; add if missed
         "tab-close" => window::close_active(cmd.flag("-f", "--force")),
-        "tab-pin" => window::pin(count.map(|c| c.saturating_sub(1) as usize)),
-        "tab-give" => window::give(count.map(|c| c.saturating_sub(1) as usize)),
+        "tab-pin" => window::pin(tab_index(cmd, count)),
+        "tab-give" => window::give(tab_index(cmd, count)),
+        "tab-hibernate" => window::hibernate(tab_index(cmd, count)),
+        "tab-keep-awake" => window::keep_awake(tab_index(cmd, count)),
         "tab-only" => window::close_others(),
         "tab-next" => window::cycle(n as i64),
         "tab-prev" => window::cycle(-(n as i64)),

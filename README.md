@@ -73,6 +73,15 @@ right-click a tab for its menu.
   page, tab bar, dark mode, ad blocking, cookies, downloads…).
 - `:bookmarks` — add, edit and delete quickmarks and bookmarks.
 - `:downloads` — finished and running downloads.
+- `:history [words]` (`Sh`) — browse, search and delete history.
+- `:tab-pin` (`Ctrl-p`) pins a tab (kept first, `d` won't close it);
+  `:tab-give` (`gD`) moves a tab into a new window.
+- **Tab hibernation** — a tab you haven't looked at for
+  `tabs.hibernate_after` minutes (default 30, `0` = off) is unloaded to free
+  memory and shown dimmed; it reloads where you left it (scroll, back/forward)
+  when you return. Tabs playing media or with text typed into a form are
+  skipped. `:tab-keep-awake` (also in the tab menu) exempts a tab, and it
+  stays exempt across restarts; `:tab-hibernate` unloads one now.
 - `:set <setting> <value>` — any setting; saved. `:set -t` only until restart.
 - `:profile-new` — create a profile (asks for a name) and open it in its own
   window; `:profile-open <name>` opens one. Each profile has its own history,

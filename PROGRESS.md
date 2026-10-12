@@ -36,6 +36,7 @@ Each done item links its evidence (file, commit, or session-log date).
 - [x] Pinned tabs + move to new window: `tab-pin` (`Ctrl-p`, tab menu), pinned tabs go first, `tabs.title.format_pinned` (`{audio}{index}`), `d`/middle-click refuse (`tab-close --force`), `tab-only` keeps them, saved in the session. `tab-give` (`gD`, tab menu) opens the tab in a new window with its back/forward + scroll (page reloads: CEF can't move a live browser). Checked all of it over IPC + tab bar readback.
 - [x] Widevine: works with the own CEF (component allowlisted, CDM downloads by itself): `requestMediaKeySystemAccess('com.widevine.alpha')` OK, Shaka Widevine test stream played (license from Google's test proxy). Netflix/Spotify not tried (need accounts).
 - [~] Hang watchdog: `on_render_process_unresponsive` → tab-bar prompt "isn't responding. Kill it? y/n" (`y` terminate → crash page, `r` reloads; `n` wait; dropped when it recovers). Not triggered in the test: the window was on a hidden workspace, real keys sent with `send_shortcut` didn't start Chromium's 15 s hang timer. Needs user: focused window, run `for(;;){}` in a page, press keys.
+- [x] Idle tab hibernation (user, 2026-10-12): background tabs unseen for `tabs.hibernate_after` minutes (default 30, 0 = off; checked every minute) are unloaded — the tab's view is swapped for a not-yet-attached one of the same URL and the old browser closed; back/forward + scroll come back like a restored session tab, tab shown dimmed. Skipped: active, loading, crashed, our data: pages, and pages where `BUSY_JS` (isolated world) sees media playing or input/textarea text that differs from its default (main frame only). Manual: `tab-keep-awake [n]` toggles a per-tab exemption (saved in the session), `tab-hibernate [n]` unloads now; both in the tab menu. Checked with `hibernate_after = 1`: plain tab unloaded after ~2 min, kept tab / typed form / playing audio stayed, re-shown tab came back at y=700/1200; 5 tabs hibernated by hand = 5 fewer renderers, RSS 2384 → 1727 MB. No freeze stage (Page lifecycle frozen) — add if CPU of idle tabs matters.
 - [ ] Intermittent: one quit ended with `Check failed: observers_.empty()` (SIGSEGV) after a profile had 2 windows and a handed-over `open -w` during shutdown; not reproduced in 5 runs (`/tmp/nova-h/crash.sh`).
 
 ### Phases 1–9 (PLAN.md §6; tick when the phase's exit check passes)
@@ -125,6 +126,8 @@ Newest first. Settled — don't reopen without new evidence.
 ## Session log
 
 Newest first. One entry per session: date, what changed, evidence, what's next.
+
+- 2026-10-12 (IST, 14:30) — Idle tab hibernation with per-tab keep-awake (see checklist); `tab-pin/give/hibernate/keep-awake` also take a 1-based index argument. 88 tests + smoke pass.
 
 - 2026-10-12 (IST, 13:00) — Phases 8/8b/9/10 marked done by user. Daily-use batch built (see checklist): restored history + scroll, `:history`, pinned tabs, `tab-give`, hang prompt; per-site zoom and Widevine already worked. 88 tests + smoke pass. Next: user checks the hang prompt; idle-tab hibernation if wanted.
 
