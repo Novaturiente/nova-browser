@@ -60,6 +60,7 @@ as `g` or `;`, a popup at the bottom right shows what can follow.
 | `d` / `u` | close tab / undo close |
 | `/` `?` `n` `N` | find in page |
 | `yy` / `pp` | copy URL / open the clipboard |
+| `Ctrl-Shift-v` | paste (same as right-click Paste; works in web terminals that swallow `Ctrl-v`) |
 | `i`, `Escape` | insert mode (type into the page), back to normal |
 | `Ctrl-n` | new window |
 | `:` | command line (Tab completes) |

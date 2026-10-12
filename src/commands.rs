@@ -543,6 +543,7 @@ pub const NAMES: &[&str] = &[
     "tab-keep-awake",
     "tab-prev",
     "undo",
+    "paste",
     "yank",
     "zoom",
     "zoom-in",
@@ -631,6 +632,11 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
             );
         }
         "undo" => window::undo_close(),
+        // what the right-click menu's Paste does: works where pages swallow Ctrl-V (web terminals)
+        "paste" => {
+            let b = need()?;
+            b.focused_frame().or_else(|| b.main_frame()).ok_or("no frame")?.paste();
+        }
         "back" => window::go(&need()?, -(n as i32)),
         "forward" => window::go(&need()?, n as i32),
         "dark-toggle" => dark_toggle()?,

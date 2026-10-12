@@ -102,6 +102,8 @@ pub const CORE: &[(&str, &str, &str)] = &[
     ("normal", "<Ctrl-n>", "open -w"),
     ("normal", "<Ctrl-q>", "quit"),
     ("insert", "<Escape>", "mode-leave"),
+    ("insert", "<Ctrl-Shift-v>", "paste"),
+    ("normal", "<Ctrl-Shift-v>", "paste"),
     ("passthrough", "<Shift-Escape>", "mode-leave"),
 ];
 
