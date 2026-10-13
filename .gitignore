@@ -2,3 +2,4 @@ target/
 *.png
 target-own/
 !packaging/icons/*.png
+!docs/media/*.png

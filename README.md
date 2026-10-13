@@ -7,6 +7,14 @@ A keyboard-driven web browser for Linux, in the spirit of qutebrowser,<br>
 built on current Chromium (CEF) with a Rust core.
 </p>
 
+<p align="center">
+<img src="docs/media/demo.gif" width="900" alt="Demo: link hints on Hacker News, scrolling with j, opening a page from history in the command palette, switching tabs with J, the key popup after g, and the F1 key list">
+</p>
+
+<p align="center">
+<img src="docs/media/screenshot.png" width="900" alt="The command palette over a blurred page, listing history matches, with the Tokyo Night theme">
+</p>
+
 ---
 
 novabrowser browses the way qutebrowser does: Vim-style modes, link hints,
