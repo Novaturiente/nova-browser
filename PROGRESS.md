@@ -129,6 +129,8 @@ Newest first. Settled — don't reopen without new evidence.
 
 Newest first. One entry per session: date, what changed, evidence, what's next.
 
+- 2026-10-13 (IST, 11:20) — v0.1.0 released: tag + GitHub release (novabrowser-0.1.0-x86_64.tar.zst, built from the tag, 88 tests). AUR PKGBUILDs in packaging/aur (novabrowser from source, novabrowser-bin prebuilt), both AVX2-only (prepare() refuses otherwise); packaging/release.sh automates future releases. Verified: -bin downloads, sha256 ok, smoke passes on its binary, non-AVX2 guard errors. Not yet pushed to the AUR (user does that).
+
 - 2026-10-13 (IST, 10:25) — `:profile-open` with no name now opens the profile picker (it errored with "no profile ''", which looked like profiles were lost; profile dirs were always kept). Verified in a throwaway XDG dir: profile survives quit+restart, no-arg command lists default + personal.
 
 - 2026-10-12 (IST, 19:10) — fixes: hints invisible on Reddit (its CSS hides undefined custom elements, so `novabrowser-hints` got visibility:hidden; host now uses inline !important styles; verified labels show and `hk` followed a post). Right-click menu items for links (new tab/background/window, copy address, save), images/video/audio (open in new tab, save, copy address) and selected text (search), inserted above CEF's defaults; shared `downloads::start`. Verified the menu contents per case via a temporary log; clicking the items is user-checked only (native popup not reachable by test keys). Window app_id `novabrowser` + PNG icons (r94). 88 tests pass.

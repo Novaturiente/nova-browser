@@ -2,11 +2,10 @@
 
 ## Install
 
-On Arch Linux:
+On Arch Linux, from the AUR (needs an AVX2 / x86-64-v3 CPU):
 
 ```sh
-git clone https://github.com/Novaturiente/nova-browser
-cd nova-browser/packaging && makepkg -si
+yay -S novabrowser-bin    # prebuilt; or `novabrowser` to build from source
 xdg-settings set default-web-browser novabrowser.desktop   # optional
 ```
 

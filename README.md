@@ -81,18 +81,17 @@ License: GPL-3.0-or-later. Platform: Linux (Wayland and X11), x86-64.
 
 ## Install
 
-Arch Linux:
+Arch Linux (AUR), needs an AVX2 (x86-64-v3) CPU:
 
 ```sh
-git clone https://github.com/Novaturiente/nova-browser
-cd nova-browser/packaging
-makepkg -si
+yay -S novabrowser-bin    # prebuilt
+yay -S novabrowser        # or build from source
 xdg-settings set default-web-browser novabrowser.desktop   # optional
 ```
 
-On CPUs with AVX2 (most from 2013 on) this uses novabrowser's own CEF build
-with H.264/AAC and the privacy patches. Older CPUs get the official prebuilt
-CEF without those codecs. Other distributions:
+Both use novabrowser's own CEF build with H.264/AAC, PartitionAlloc and the
+privacy patches, compiled for AVX2. To build the latest commit instead, clone
+the repo and run `makepkg -si` in `packaging/`. Other distributions:
 [build from source](docs/building.md#from-source-any-distribution).
 
 Optional extras: `aria2` (faster downloads, torrents), `rbw` or `pass`
