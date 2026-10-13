@@ -823,7 +823,10 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
             true => window::open_cmdline(":profile-new "),
             false => crate::profiles::create(&cmd.rest())?,
         },
-        "profile-open" => crate::profiles::open(&cmd.rest())?,
+        "profile-open" => match cmd.args.is_empty() {
+            true => window::open_cmdline(":profile-open "),
+            false => crate::profiles::open(&cmd.rest())?,
+        },
         "settings" => window::open(
             &window::data_url(&crate::settings_page::page()).to_string(),
             true,

@@ -129,6 +129,8 @@ Newest first. Settled — don't reopen without new evidence.
 
 Newest first. One entry per session: date, what changed, evidence, what's next.
 
+- 2026-10-13 (IST, 10:25) — `:profile-open` with no name now opens the profile picker (it errored with "no profile ''", which looked like profiles were lost; profile dirs were always kept). Verified in a throwaway XDG dir: profile survives quit+restart, no-arg command lists default + personal.
+
 - 2026-10-12 (IST, 19:10) — fixes: hints invisible on Reddit (its CSS hides undefined custom elements, so `novabrowser-hints` got visibility:hidden; host now uses inline !important styles; verified labels show and `hk` followed a post). Right-click menu items for links (new tab/background/window, copy address, save), images/video/audio (open in new tab, save, copy address) and selected text (search), inserted above CEF's defaults; shared `downloads::start`. Verified the menu contents per case via a temporary log; clicking the items is user-checked only (native popup not reachable by test keys). Window app_id `novabrowser` + PNG icons (r94). 88 tests pass.
 
 - 2026-10-12 (IST, 16:10) — publishing docs: README rewritten (qutebrowser-style browser on current Chromium), docs/ with getting-started, keybindings (tables from src/bindings.rs), commands, configuration, settings (all 147 from src/settings.rs), tabs/sessions/profiles, passwords, downloads, privacy, scripting, migrating-from-qutebrowser, building, troubleshooting; LICENSE (GPL-3.0-or-later text), CONTRIBUTING, SECURITY, CHANGELOG; PKGBUILD installs docs + LICENSE. Docs reference tables are hand-synced: update docs when adding a setting/command/key.

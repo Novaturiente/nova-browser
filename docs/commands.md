@@ -122,7 +122,7 @@ See [downloads](downloads.md).
 | `session-load [-c] name` | Open a saved session (`-c`: close the current tabs first). |
 | `session-delete name` | Delete a saved session. |
 | `profile-new [name]` | Create a profile and open it in a new window (asks for a name if none given). |
-| `profile-open name` | Open a profile (a new window, or a new instance if it isn't running). |
+| `profile-open [name]` | Open a profile (a new window, or a new instance if it isn't running). With no name, lists your profiles to pick from. |
 
 See [tabs, sessions and profiles](tabs-sessions-profiles.md).
 
