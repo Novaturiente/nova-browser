@@ -81,18 +81,75 @@ License: GPL-3.0-or-later. Platform: Linux (Wayland and X11), x86-64.
 
 ## Install
 
-Arch Linux (AUR), needs an AVX2 (x86-64-v3) CPU:
+### Arch Linux (AUR)
+
+Needs a CPU with AVX2 (x86-64-v3: Intel Haswell 2013+, AMD Excavator 2015+).
 
 ```sh
 yay -S novabrowser-bin    # prebuilt
 yay -S novabrowser        # or build from source
-xdg-settings set default-web-browser novabrowser.desktop   # optional
 ```
 
 Both use novabrowser's own CEF build with H.264/AAC, PartitionAlloc and the
-privacy patches, compiled for AVX2. To build the latest commit instead, clone
-the repo and run `makepkg -si` in `packaging/`. Other distributions:
-[build from source](docs/building.md#from-source-any-distribution).
+privacy patches, compiled for AVX2. Use `paru` or any other AUR helper the
+same way.
+
+### Other distributions
+
+The prebuilt binary needs a very new glibc, so build from source. You need
+Rust (install it with [rustup](https://rustup.rs); distro versions are often
+too old), a C compiler, `cmake`, `ninja`, `pkg-config` and SQLite.
+
+Debian / Ubuntu:
+
+```sh
+sudo apt install build-essential cmake ninja-build pkg-config libsqlite3-dev \
+  libgtk-3-0 libnss3 libasound2 libxss1 libxkbcommon0 libdrm2 libgbm1 libcups2 libatspi2.0-0
+```
+
+Fedora:
+
+```sh
+sudo dnf install gcc cmake ninja-build pkgconf sqlite-devel \
+  gtk3 nss alsa-lib libXScrnSaver libxkbcommon libdrm mesa-libgbm cups-libs at-spi2-core
+```
+
+Then build. On an AVX2 CPU, use novabrowser's CEF (H.264/AAC, privacy patches):
+
+```sh
+git clone https://github.com/Novaturiente/nova-browser && cd nova-browser
+curl -L https://github.com/Novaturiente/nova-browser/releases/download/cef-154.0.34-nova1/cef-154.0.34-novabrowser-x86_64-v3.tar.zst \
+  | tar --zstd -x               # unpacks ./cef-own
+CEF_PATH=$PWD/cef-own cargo build --release
+```
+
+On an older CPU, run plain `cargo build --release` instead. It downloads the
+official CEF (about 1.5 GB, no H.264/AAC).
+
+Install it system-wide:
+
+```sh
+r=target/release
+sudo install -d /opt/novabrowser
+sudo cp -r $r/novabrowser $r/libcef.so $r/libvk_swiftshader.so $r/libvulkan.so.1 \
+  $r/vk_swiftshader_icd.json $r/icudtl.dat $r/v8_context_snapshot.bin $r/*.pak $r/locales \
+  /opt/novabrowser/
+sudo ln -sf /opt/novabrowser/novabrowser /usr/local/bin/novabrowser
+sudo install -Dm644 packaging/novabrowser.desktop /usr/local/share/applications/novabrowser.desktop
+sudo install -Dm644 packaging/novabrowser.svg /usr/local/share/icons/hicolor/scalable/apps/novabrowser.svg
+```
+
+Or skip installing and run `target/release/novabrowser` straight from the
+build folder. More detail, including tests, is in
+[building](docs/building.md#from-source-any-distribution).
+
+### After installing
+
+Make it the default browser (optional):
+
+```sh
+xdg-settings set default-web-browser novabrowser.desktop
+```
 
 Optional extras: `aria2` (faster downloads, torrents), `rbw` or `pass`
 (passwords), `wl-clipboard` / `xclip` (primary selection).

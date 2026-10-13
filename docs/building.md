@@ -2,25 +2,34 @@
 
 ## Arch Linux package
 
+From the AUR (needs an AVX2 / x86-64-v3 CPU):
+
+```sh
+yay -S novabrowser-bin    # prebuilt
+yay -S novabrowser        # or build the release from source
+```
+
+Both install into `/usr/lib/novabrowser` with `/usr/bin/novabrowser`, a
+desktop entry and icons, and use novabrowser's own CEF build. They refuse to
+install on CPUs without AVX2. Check yours:
+`/lib/ld-linux-x86-64.so.2 --help | grep x86-64-v3`.
+
+To build the latest commit instead (`novabrowser-git`, not on the AUR):
+
 ```sh
 git clone https://github.com/Novaturiente/nova-browser
 cd nova-browser/packaging
 makepkg -si
 ```
 
-This builds and installs `novabrowser-git` into `/usr/lib/novabrowser` with
-`/usr/bin/novabrowser`, a desktop entry and an icon. Building runs the test
-suite.
-
-Which Chromium engine (CEF) the package uses:
+Building runs the test suite. Which Chromium engine (CEF) this one uses:
 
 | Your CPU | CEF used | H.264/AAC video | Google background calls |
 |---|---|---|---|
 | x86-64-v3 (AVX2: Intel Haswell 2013+, AMD Excavator 2015+) | novabrowser's own build, downloaded from this repo's Releases (~50 MB) | yes | removed (see [privacy](privacy.md#calls-to-google)) |
 | older x86-64 | the official prebuilt CEF (~1.5 GB download, a warning is printed) | no | not removed |
 
-Check your CPU: `/lib/ld-linux-x86-64.so.2 --help | grep x86-64-v3`. Set
-`NOVA_CEF=/path/to/unpacked/cef` to use a CEF you already have.
+Set `NOVA_CEF=/path/to/unpacked/cef` to use a CEF you already have.
 
 The prebuilt CEF download is large: build on a real disk, not a small
 `/tmp` tmpfs (`TMPDIR=~/.cache/makepkg-tmp makepkg -si`).
@@ -33,8 +42,11 @@ xdg-settings set default-web-browser novabrowser.desktop
 
 ## From source (any distribution)
 
-Requirements: Rust (stable), `cmake`, `ninja`, a C compiler,
-SQLite, and Chromium's runtime libraries (GTK 3, NSS, ALSA, libxkbcommon,
+The [README](../README.md#other-distributions) has the package lists for
+Debian/Ubuntu and Fedora and the system-wide install commands.
+
+Requirements: Rust (stable, via rustup), `cmake`, `ninja`, `pkg-config`, a C
+compiler, SQLite (with headers), and Chromium's runtime libraries (GTK 3, NSS, ALSA, libxkbcommon,
 libdrm, Mesa, CUPS, at-spi2). Optional: `wl-clipboard` (Wayland) or `xclip`
 (X11) for primary selection and paste, `xdg-utils`, `aria2`.
 
