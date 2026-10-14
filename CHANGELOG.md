@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.2 (2026-10-14)
 
 - Tabs show the site's icon; icons are saved with the session, so restored
   tabs show them before they load.
