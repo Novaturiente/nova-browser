@@ -269,21 +269,21 @@ When `:open` text is a search: `naive` searches anything with a space or without
 Page opened by `:open` with no argument and by new windows.
 
 - Type: string
-- Default: `"\"https://start.duckduckgo.com/\""`
+- Default: `"\"https://www.google.com/\""`
 
 ### `url.searchengines`
 
 Search engines: `{keyword: url}` with `{}` for the query (`{quoted}`, `{semiquoted}`, `{unquoted}` also work). `DEFAULT` is used without a keyword: `:open gh rust` uses `gh`.
 
 - Type: dict
-- Default: `"{\"DEFAULT\": \"https://duckduckgo.com/?q={}\"}"`
+- Default: `"{\"DEFAULT\": \"https://www.google.com/search?q={}\"}"`
 
 ### `url.start_pages`
 
 Page(s) opened at start when no session is restored.
 
 - Type: list or value
-- Default: `"[\"https://start.duckduckgo.com\"]"`
+- Default: `"[\"https://www.google.com/\"]"`
 
 
 ## Tabs

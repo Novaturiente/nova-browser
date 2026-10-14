@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Default search engine, start page and new-tab page are now Google
+  (were DuckDuckGo).
+
 ## 0.1.1 (2026-10-14)
 
 - `:profile-open` lists your profiles as soon as you type it; no space

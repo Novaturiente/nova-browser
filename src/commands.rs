@@ -159,7 +159,7 @@ fn url_or_search_with(text: &str, engines: &serde_json::Value, auto_search: &str
     let tpl = engines
         .get("DEFAULT")
         .and_then(|v| v.as_str())
-        .unwrap_or("https://duckduckgo.com/?q={}");
+        .unwrap_or("https://www.google.com/search?q={}");
     search_url(tpl, t)
 }
 
@@ -1081,9 +1081,9 @@ mod tests {
         assert_eq!(url_or_search("about:blank"), "about:blank");
         assert_eq!(
             url_or_search("rust lang"),
-            "https://duckduckgo.com/?q=rust+lang"
+            "https://www.google.com/search?q=rust+lang"
         );
-        assert_eq!(url_or_search("a&b"), "https://duckduckgo.com/?q=a%26b");
+        assert_eq!(url_or_search("a&b"), "https://www.google.com/search?q=a%26b");
         let e = serde_json::json!({"DEFAULT": "https://s.x/?q={}", "g": "https://g.x/search?q={}", "raw": "https://r.x/{unquoted}"});
         assert_eq!(
             url_or_search_with("g rust lang", &e, "naive"),
