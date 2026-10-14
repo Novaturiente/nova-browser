@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1 (2026-10-14)
+
+- `:profile-open` lists your profiles as soon as you type it; no space
+  or Enter needed.
+- README: demo GIF and screenshot; install steps for other distros.
+
 ## 0.1.0 (2026-10-13)
 
 First public version.
