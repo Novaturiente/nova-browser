@@ -278,6 +278,31 @@ wrap_display_handler! {
         fn on_loading_progress_change(&self, browser: Option<&mut Browser>, progress: f64) {
             if let Some(b) = browser { window::set_progress(b, progress); }
         }
+        fn on_favicon_urlchange(&self, browser: Option<&mut Browser>, icon_urls: Option<&mut CefStringList>) {
+            let (Some(b), Some(list)) = (browser, icon_urls) else { return };
+            let urls: Vec<String> = std::mem::take(list).into_iter().collect();
+            // prefer a raster icon when the page offers one
+            let Some(url) = urls.iter().find(|u| !u.ends_with(".svg")).or(urls.first()).cloned() else { return };
+            let Some(host) = b.host() else { return };
+            // fetched by the tab's own browser (its cookies/cache), 32 px for HiDPI
+            let mut cb = FaviconDone::new(b.clone());
+            host.download_image(Some(&CefString::from(url.as_str())), 1, 32, 0, Some(&mut cb));
+        }
+    }
+}
+
+wrap_download_image_callback! {
+    struct FaviconDone { browser: Browser }
+    impl DownloadImageCallback {
+        fn on_download_image_finished(&self, _url: Option<&CefString>, _status: i32, image: Option<&mut Image>) {
+            // cef-rs returns None from as_png unless both size out-params are given
+            let (mut w, mut h) = (0, 0);
+            let Some(png) = image.and_then(|i| i.as_png(1.0, 1, Some(&mut w), Some(&mut h))) else { return };
+            let mut bytes = vec![0u8; png.size()];
+            png.data(Some(&mut bytes), 0);
+            let b64 = CefString::from(&base64_encode(Some(&bytes))).to_string();
+            window::set_favicon(&self.browser, format!("data:image/png;base64,{b64}"));
+        }
     }
 }
 

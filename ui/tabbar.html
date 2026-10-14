@@ -22,6 +22,7 @@
   .t.d { border-left-color: var(--colors-tabs-indicator-stop); }
   .t.e { border-left-color: var(--colors-tabs-indicator-error); }
   .t.z { opacity: .5; }
+  .t img { width: 1.2em; height: 1.2em; vertical-align: -0.25em; margin-right: .4em; }
   body:not(.vertical) .t.n { flex: 0 0 auto; min-width: 0; }
   /* Status (no status bar): mode, pending keys, message at the end; load progress as a line. */
   #tabs { display: contents; }
@@ -80,7 +81,8 @@
     $("tabs").replaceChildren(...s.tabs.map((tab, i) => {
       const d = document.createElement("div");
       d.className = "t" + (tab.a ? " a" : "") + (tab.e ? " e" : tab.l ? " l" : " d") + (tab.n ? " n" : "") + (tab.z ? " z" : "");
-      d.textContent = tab.t;
+      if (tab.i) { const img = document.createElement("img"); img.src = tab.i; d.append(img); }
+      d.append(tab.t);
       d.onmousedown = (e) => {
         clearTimeout(tipTimer);
         if (e.button === 0) nova.send("tab " + i);

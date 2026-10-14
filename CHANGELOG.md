@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Tabs show the site's icon; icons are saved with the session, so restored
+  tabs show them before they load.
 - Default search engine, start page and new-tab page are now Google
   (were DuckDuckGo).
 

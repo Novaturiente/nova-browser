@@ -42,6 +42,8 @@ struct Tab {
     seen: std::time::Instant,
     keep: bool,
     asleep: bool,
+    /// Favicon as a data: URL (client.rs FaviconDone), empty until the page reports one.
+    icon: String,
 }
 
 /// Entries kept per direction in a saved session.
@@ -306,6 +308,7 @@ fn add_tab(view: BrowserView, url: String, title: String, foreground: bool) {
             seen: std::time::Instant::now(),
             keep: false,
             asleep: false,
+            icon: String::new(),
         });
         s.tabs.len() - 1
     });
@@ -388,6 +391,7 @@ fn tab_json(t: &Tab) -> serde_json::Value {
         "scroll": t.scroll_to.unwrap_or(t.scroll),
         "pinned": t.pinned,
         "keep": t.keep,
+        "icon": t.icon,
     })
 }
 
@@ -441,6 +445,7 @@ fn restore_tabs(v: &serde_json::Value, clear: bool) {
             tab.scroll_to = t["scroll"].as_i64().filter(|y| *y > 0);
             tab.pinned = t["pinned"].as_bool().unwrap_or(false);
             tab.keep = t["keep"].as_bool().unwrap_or(false);
+            tab.icon = t["icon"].as_str().unwrap_or("").to_string();
         });
     }
     if !tabs.is_empty() {
@@ -707,6 +712,9 @@ pub fn set_title(browser: &Browser, title: String) {
         }
     });
 }
+pub fn set_favicon(browser: &Browser, icon: String) {
+    update(browser, |t| t.icon = icon);
+}
 pub fn set_progress(browser: &Browser, p: f64) {
     update(browser, |t| t.progress = p);
 }
@@ -875,8 +883,10 @@ pub fn refresh() {
             .map(|(i, t)| {
                 let label = theme::format_title(if t.pinned { &pin_fmt } else { &tab_fmt }, &fields(i, t));
                 format!(
-                    "{{\"t\":{},\"a\":{},\"l\":{},\"p\":{},\"e\":{},\"n\":{},\"z\":{}}}",
+                    // shortcut: icons (~1-2 KB each) are resent on every refresh; cache by id in the tabbar if it ever shows up in profiles
+                    "{{\"t\":{},\"i\":{},\"a\":{},\"l\":{},\"p\":{},\"e\":{},\"n\":{},\"z\":{}}}",
                     js_str(&label),
+                    js_str(&t.icon),
                     i == s.active,
                     t.loading,
                     t.progress,
