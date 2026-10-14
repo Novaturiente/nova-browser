@@ -46,7 +46,12 @@ fn complete(text: &str) {
         let _ = commands::search(t, text.starts_with('?'));
         return set(String::new(), "", Vec::new());
     }
-    match body.split_once(' ') {
+    // a bare `:profile-open` already lists the profiles, no space needed
+    let split = match body {
+        "profile-open" => Some((body, "")),
+        _ => body.split_once(' '),
+    };
+    match split {
         None => {
             let items = commands::NAMES
                 .iter()
