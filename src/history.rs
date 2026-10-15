@@ -155,7 +155,10 @@ fn handle(db: &Connection, msg: Msg) -> rusqlite::Result<()> {
                 .iter()
                 .map(|u| st.query_row(params![u], |r| r.get(0)).unwrap_or(0))
                 .collect();
-            post_task(ThreadId::UI, Some(&mut Results::new(id, items, mark_visits)));
+            post_task(
+                ThreadId::UI,
+                Some(&mut Results::new(id, items, mark_visits)),
+            );
         }
     }
     Ok(())

@@ -275,8 +275,14 @@ mod tests {
         );
         use super::referrer;
         let p = "https://mail.example/inbox?t=secret#x";
-        assert_eq!(referrer(p, "https://mail.example/f.zip").as_deref(), Some("https://mail.example/inbox?t=secret"));
-        assert_eq!(referrer(p, "https://cdn.other/f.zip").as_deref(), Some("https://mail.example/"));
+        assert_eq!(
+            referrer(p, "https://mail.example/f.zip").as_deref(),
+            Some("https://mail.example/inbox?t=secret")
+        );
+        assert_eq!(
+            referrer(p, "https://cdn.other/f.zip").as_deref(),
+            Some("https://mail.example/")
+        );
         assert_eq!(referrer(p, "http://mail.example/f.zip"), None);
         assert_eq!(referrer("data:text/html,x", "https://a/"), None);
         assert_eq!(

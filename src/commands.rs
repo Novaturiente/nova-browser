@@ -1083,7 +1083,10 @@ mod tests {
             url_or_search("rust lang"),
             "https://www.google.com/search?q=rust+lang"
         );
-        assert_eq!(url_or_search("a&b"), "https://www.google.com/search?q=a%26b");
+        assert_eq!(
+            url_or_search("a&b"),
+            "https://www.google.com/search?q=a%26b"
+        );
         let e = serde_json::json!({"DEFAULT": "https://s.x/?q={}", "g": "https://g.x/search?q={}", "raw": "https://r.x/{unquoted}"});
         assert_eq!(
             url_or_search_with("g rust lang", &e, "naive"),

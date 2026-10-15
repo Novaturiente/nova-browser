@@ -195,10 +195,7 @@ pub fn history_results(id: u64, items: Vec<(String, String)>, visits: Vec<i64>) 
 }
 
 /// Mark rows most visited first inside each category, categories kept in place.
-fn by_visits<T>(
-    mk: Vec<(T, T, &'static str)>,
-    visits: Vec<i64>,
-) -> Vec<(T, T, &'static str)> {
+fn by_visits<T>(mk: Vec<(T, T, &'static str)>, visits: Vec<i64>) -> Vec<(T, T, &'static str)> {
     let mut rows: Vec<_> = mk.into_iter().zip(visits).collect();
     for g in rows.chunk_by_mut(|a, b| a.0 .2 == b.0 .2) {
         g.sort_by_key(|r| std::cmp::Reverse(r.1)); // stable: ties keep file order

@@ -497,7 +497,11 @@ pub fn show(n: usize) {
     // browser() is None until the view first joins a window.
     if let Some(b) = new.browser() {
         if thaw {
-            devtools::send(&b, "Page.setWebLifecycleState", serde_json::json!({"state": "active"}));
+            devtools::send(
+                &b,
+                "Page.setWebLifecycleState",
+                serde_json::json!({"state": "active"}),
+            );
         }
         if let Some(h) = b.host() {
             h.was_hidden(0);
@@ -1139,7 +1143,11 @@ fn hibernate_idle() {
             continue;
         }
         let b2 = b.clone();
-        let js = if sleep { BUSY_JS.to_string() } else { format!("{FREEZE_BUSY_JS}{BUSY_JS}") };
+        let js = if sleep {
+            BUSY_JS.to_string()
+        } else {
+            format!("{FREEZE_BUSY_JS}{BUSY_JS}")
+        };
         devtools::eval_isolated(&b, js, move |r| {
             // no answer (hung, closed) = leave it alone
             if r.is_some_and(|(_, v)| v == serde_json::Value::Bool(false)) {
@@ -1159,12 +1167,19 @@ fn hibernate_idle() {
 fn freeze_browser(b: &Browser) {
     let id = b.identifier();
     let ok = S.with_borrow_mut(|s| {
-        let n = s.tabs.iter().position(|t| browser_id(&t.view) == Some(id))?;
+        let n = s
+            .tabs
+            .iter()
+            .position(|t| browser_id(&t.view) == Some(id))?;
         let t = &mut s.tabs[n];
         (n != s.active && !t.keep && !t.pinned && !t.loading).then(|| t.frozen = true)
     });
     if ok.is_some() {
-        devtools::send(b, "Page.setWebLifecycleState", serde_json::json!({"state": "frozen"}));
+        devtools::send(
+            b,
+            "Page.setWebLifecycleState",
+            serde_json::json!({"state": "frozen"}),
+        );
     }
 }
 
@@ -1226,11 +1241,17 @@ pub fn keep_awake(n: Option<usize>) {
         let n = n.unwrap_or(s.active);
         let t = s.tabs.get_mut(n)?;
         t.keep = !t.keep;
-        let thaw = (t.keep && std::mem::take(&mut t.frozen)).then(|| t.view.browser()).flatten();
+        let thaw = (t.keep && std::mem::take(&mut t.frozen))
+            .then(|| t.view.browser())
+            .flatten();
         Some((t.keep, thaw))
     });
     if let Some((_, Some(b))) = &on {
-        devtools::send(b, "Page.setWebLifecycleState", serde_json::json!({"state": "active"}));
+        devtools::send(
+            b,
+            "Page.setWebLifecycleState",
+            serde_json::json!({"state": "active"}),
+        );
     }
     let on = on.map(|(k, _)| k);
     match on {
