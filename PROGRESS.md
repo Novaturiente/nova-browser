@@ -54,6 +54,31 @@ Each done item links its evidence (file, commit, or session-log date).
 - [x] Freeze background tabs: `tabs.freeze_after` (min, default 5, per site, 0 = off) → `Page.setWebLifecycleState frozen`; skips active/pinned/kept/loading tabs, media, typed forms, notification-granted sites; thawed on show or `tab-keep-awake`; frozen tabs hibernate without the JS check. Checked with a local ping page (`freeze_after = 1`): pings every 2 s stopped at the tick (18:50:03), resumed at once on `tab-focus` (18:50:45). Notification exemption not tested live.
 - [-] Password fill in same-site cross-origin iframes left as is: same-origin would break Apple-style `idmsa.apple.com` login iframes.
 
+### Audit 2 (2026-10-15 evening, read-only; nothing fixed yet, user to pick)
+Numbers match the report in the session. Code-checked by main session: A1–A10 (A4 redirect + A5 injection still suspected), B1, B3, C1.
+- [ ] A1 `hints.chars` < 2 chars → `scattered()` loops forever (`hints.rs:254`), persisted via `:set` → `f` hangs every launch.
+- [ ] A2 config.ts QuickJS has no memory/stack/interrupt limit (`config.rs:413`): `while(true){}` hangs startup.
+- [ ] A3 permission prompt steals typed keys (`permissions.rs:350-385`): page asks mid-typing, user's `y`/`A` grants. Needs grace period.
+- [ ] A4 aria2 `--rpc-secret` on argv + port bind-then-drop race (`aria2.rs:70-86`); cookies sent as global `Cookie:` header may follow redirects (`aria2.rs:276`, suspected).
+- [ ] A5 hint `fill`/`run` splice page URL into a command line before `;;` split (`hints.rs:234,240`) → possible command injection via opaque-scheme URLs (suspected).
+- [ ] A6 torrent cancel deletes `dir.join(info.name)` unsanitised (`downloads.rs:347,371`): absolute/`..` name → deletes outside Downloads.
+- [ ] A7 `on_before_popup` ignores `user_gesture` (`client.rs:509`): popup floods, focus stealing.
+- [ ] A8 back/forward via page-world `history.go` (`window.rs:830`): page can trap/redirect `H`/`L`; use `browser.go_back()`.
+- [ ] A9 `visit_row` BEGIN without rollback on error (`history.rs:174`): one failure wedges history writes until restart.
+- [ ] A10 adblock: all lists failing (offline/captive portal) still caches a fresh engine for 24 h (`adblock.rs:160-189`); curl without `--proto-redir`, size cap, `--`.
+- [ ] B1 `window::refresh()` on every key incl. insert-mode typing (`modes.rs:204-228`); rebuilds all tabs' JSON incl. icons.
+- [ ] B2 `owner()` scans all tabs with CEF calls per event (`window.rs:138`); cache browser id.
+- [ ] B3 `js_str` escapes every non-alnum char as `\uXXXX` with a `format!` each (`window.rs:179`): icons 6× bigger, heap churn.
+- [ ] B4 session autosave: serialize twice + fsync on UI thread, scroll marks dirty (`session.rs:69`, `window.rs:769`).
+- [ ] B5 history: title UPDATE even when unchanged (FTS churn), fragment/pushState changes count as visits (`history.rs:136`, `window.rs:677`).
+- [ ] B6 `net.rs:193` `save_pairs` (fsync) under the PAIRS mutex the IO thread takes per request; file unbounded.
+- [ ] B7 per-request IO-thread cost: `get_for` re-parses the URL per pattern (`urlmatch.rs:699`), whitelist reparsed per request (`adblock.rs:240`), cookie callbacks recompute first party per cookie.
+- [ ] B8 `close_others_than` / `restore_tabs(clear)` O(n²) refreshes (`window.rs:1289,442`).
+- [ ] C1 no `[profile.release]` (no LTO, 16 CGUs, no strip).
+- [ ] C2 `marks.rs:58` unreadable file treated as empty → next save wipes marks; newlines in titles corrupt files.
+- [ ] C3 `open -p` silently not private (`commands.rs:582`); `tab-close` ignores count (`commands.rs:594`).
+- [ ] C4 smaller: `zoom nan`, `js_error` huge loop, config.js reads pin defaults over theme, session `active` index off when data: tabs filtered (`window.rs:361`), `move_active` panics on 0 tabs, sanitize misses control/bidi chars, `rbw add` without `--`, `welcome.rs:178` unescaped dir name, smoke.sh leaves CEF children.
+
 ### Phases 1–9 (PLAN.md §6; tick when the phase's exit check passes)
 - [x] 1 Skeleton (2026-10-11; `src/{main,window,client,renderer}.rs`, `ui/{tabbar,statusbar}.html`). Exit check: CDP-driven trusted mouse + user by hand — links, `target=_blank` and `window.open` → new tab (opener kept), middle-click link → background tab, click/middle-click tab bar → switch/close, status bar URL + progress, window title; web pages get no `window.nova`. `kill -9` of the tab's renderer (found by CPU-time delta via `SystemInfo.getProcessInfo`) → crash page with URL, status `[crashed] …`; real `r` (compositor `send_shortcut`) reloads; `r` types normally elsewhere (user). Mod+Q closes; exits 0 with a detached tab open, no leftover processes. `cargo test`: js_str escaping. Scripts: `/tmp/nova-p1/{drive,crash,bg}.mjs` (not kept). Not done here: hang watchdog, atomic writes (nothing writes yet), log rotation — later phases.
 - [x] 2 Modal core (2026-10-11; `src/{keys,bindings,commands,modes,devtools}.rs`, focus msg in `renderer.rs`, cmdline in `ui/statusbar.html`). `cargo test` 27 green (keys port of qutebrowser `test_keyutils`/`test_basekeyparser` rows by `worker`, command tokenizer/`;;`/aliases, zoom steps, js_str). Real keys via compositor `send_shortcut` + CDP readback: `o`/`O` + URL, `j`×3+`5j` = 320 px, `G`/`gg`, `J`/`K`, `d`/`u`, `H`/`L`, `+`/`-`/`=` zoom 110/125/100%, pending `g` shown + Escape clears, `:foobar` → error msg, `i`/Escape, click into input → auto insert (`jkr` typed), Escape → `j` scrolls, Ctrl-v passthrough / Shift-Escape. User drove HN without mouse (o/O, j k d u J K H L gg G, Ctrl-d/u, T+n, i/Escape, click into text box): all work. Not here: hints `f`, find `/`, `yy`/clipboard, completion/history, user config bindings (later phases); ~58 default commands, unimplemented ones report "not implemented yet".
@@ -144,6 +169,8 @@ Newest first. Settled — don't reopen without new evidence.
 ## Session log
 
 Newest first. One entry per session: date, what changed, evidence, what's next.
+
+- 2026-10-15 19:45 (IST) — Second whole-repo audit, read-only (4 subagents: security, window/perf, storage, config/build; clippy clean apart from 2 `type_complexity`). Main session re-read the code for A1–A7, A9, B1, B3. Findings listed under "Audit 2"; no code changed. Next: user picks which to fix.
 
 - 2026-10-15 (IST) — Whole-repo audit (4 read-only subagents + own checks), then fixes 1–8, 10–13 in worktree `audit-fixes` (see checklist "Audit fixes"). 89 tests green (`cargo test --release`, own CEF), clippy no new warnings, `tests/smoke.sh` all passed, live checks on a throwaway profile (injection, perms, password kinds, freeze/thaw, HTTPS hint). During the audit the assistant closed two of the user's live tabs with `tab-close --force 2` (takes no index) and restored them with `undo`. Next: user installs the build, tries `Sp` and the stricter popup on real sites, watches chat tabs with freezing.
 
