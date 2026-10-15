@@ -57,6 +57,7 @@ pub const SETTINGS: &[(&str, &str, bool, &str, &[&str])] = &[
     ("tabs.title.format", "str", true, "\"{audio}{index}: {current_title}\"", &[]),
     ("downloads.backend", "str", false, "\"auto\"", &["auto", "aria2", "chromium"]),
     ("tabs.hibernate_after", "int", false, "30", &[]),
+    ("tabs.freeze_after", "int", false, "5", &[]),
     ("tabs.title.format_pinned", "str", true, "\"{audio}{index}\"", &[]),
     ("tabs.width", "perc", false, "\"15%\"", &[]),
     ("tabs.min_width", "int", false, "-1", &[]),

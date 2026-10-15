@@ -4,7 +4,7 @@ use crate::keys::{self, Mods};
 use crate::{commands, config, devtools, window};
 use cef::*;
 use serde_json::json;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -123,17 +123,17 @@ fn run_child(
     if output {
         cmd.stdout(Stdio::piped());
     }
-    let mut child = cmd.spawn().map_err(|e| format!("{name}: {e}"))?;
+    let child = cmd.spawn().map_err(|e| format!("{name}: {e}"))?;
     std::thread::spawn(move || {
-        let mut out = String::new();
-        let mut err = String::new();
-        if let Some(mut s) = child.stdout.take() {
-            let _ = s.read_to_string(&mut out);
-        }
-        if let Some(mut s) = child.stderr.take() {
-            let _ = s.read_to_string(&mut err);
-        }
-        let status = child.wait();
+        // reads stdout and stderr together: one at a time deadlocks once the other pipe fills
+        let (status, out, err) = match child.wait_with_output() {
+            Ok(o) => (
+                Ok(o.status),
+                String::from_utf8_lossy(&o.stdout).into_owned(),
+                String::from_utf8_lossy(&o.stderr).into_owned(),
+            ),
+            Err(e) => (Err(e), String::new(), String::new()),
+        };
         if let Some(dir) = &dir {
             // Wake the FIFO reader so it stops, then drop the files.
             if let Ok(mut f) = std::fs::OpenOptions::new()

@@ -115,6 +115,9 @@ fn switches(cfg: &config::Config) -> Vec<(String, Option<String>)> {
         })
         .collect();
     let mut add = |k: &str, v: Option<&str>| out.push((k.into(), v.map(Into::into)));
+    // tabs of the same site share renderers past this (site isolation still keeps sites
+    // apart); Chromium's own limit scales with RAM into the hundreds. chromium.args wins.
+    add("renderer-process-limit", Some("12"));
     add(
         if cfg.bool("scrolling.smooth") {
             "enable-smooth-scrolling"
@@ -259,8 +262,14 @@ pub(crate) fn on_ui(f: impl FnOnce() + Send + 'static) {
 
 pub(crate) fn write_atomic(path: &std::path::Path, data: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
     let tmp = path.with_extension("tmp");
-    let mut f = std::fs::File::create(&tmp)?;
+    let mut f = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600) // new files only; dirs are 0700 anyway (main)
+        .open(&tmp)?;
     f.write_all(data)?;
     f.sync_all()?;
     std::fs::rename(tmp, path)
@@ -378,7 +387,8 @@ fn main() {
         }
         // no URL: a new window, like other browsers
         if let Some(url) = std::env::args().skip(1).find(|a| !a.starts_with('-')) {
-            if ipc::request(&format!("cmd open -t {url}")).is_some() {
+            // `url`, not `cmd open`: a URL from another app must never be parsed as commands
+            if ipc::request(&format!("url {url}")).is_some() {
                 return;
             }
         } else if ipc::request("cmd open -w").is_some() {
@@ -411,6 +421,15 @@ fn main() {
     let data = xdg_dir("XDG_DATA_HOME", ".local/share");
     let state = xdg_dir("XDG_STATE_HOME", ".local/state");
     std::fs::create_dir_all(&state).expect("create state dir");
+    std::fs::create_dir_all(&data).expect("create data dir");
+    // history, sessions, cookies, aria2's session file, log: owner only, whatever the umask
+    for root in [
+        xdg_root("XDG_DATA_HOME", ".local/share"),
+        xdg_root("XDG_STATE_HOME", ".local/state"),
+    ] {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(root, std::fs::Permissions::from_mode(0o700));
+    }
     let profile = CefString::from(data.to_str().expect("utf-8 data dir"));
     let settings = Settings {
         root_cache_path: profile.clone(),

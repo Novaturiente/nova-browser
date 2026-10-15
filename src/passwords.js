@@ -8,19 +8,28 @@
   const textish = (e) => input(e) && /^(text|email|tel|)$/.test(e.type);
   const hint = (e) => [e.name, e.id, e.autocomplete, e.placeholder, e.getAttribute("aria-label")].join(" ").toLowerCase();
   const isOtp = (e) => textish(e) && (e.autocomplete === "one-time-code" ||
-    (/otp|totp|2fa|mfa|one.?time|verification|authenticat|security.?code|\bcode\b|\btoken\b/.test(hint(e)) &&
+    (/otp|totp|2fa|mfa|one.?time|verification|authenticat|security.?code/.test(hint(e)) &&
      !/zip|postal|promo|coupon|country|area|discount|gift/.test(hint(e))));
   const isUser = (e) => textish(e) && (e.type === "email" || /username|email/.test(e.autocomplete) ||
     /user|e-?mail|login|account|identifier|uname|phone/.test(hint(e)));
   const pwIn = (s) => [...s.querySelectorAll("input[type=password]")].filter((e) => vis(e) && input(e));
   const isNew = (e) => e.autocomplete === "new-password" || /new|confirm|repeat|retype|again|verify/.test(hint(e));
 
+  // a sign-in page or form (split logins: the email step has no password field yet)
+  const loginish = (e) => /log.?in|sign.?in|auth|sso/i.test(
+    location.pathname + " " + (e.form ? [e.form.id, e.form.name, e.form.className, e.form.getAttribute("action")].join(" ") : ""));
+
+  // Strict on purpose: newsletter/checkout/contact email and phone fields are not logins.
+  // Missed fields: `Sp` fills on demand.
   function kind(e) {
     if (!input(e)) return "";
     if (e.type === "password") return isNew(e) ? "new" : "password";
+    if (!textish(e)) return "";
     if (isOtp(e)) return "otp";
-    if (isUser(e)) return "user";
-    if (textish(e) && pwIn(e.form || D).length) return "user";
+    if (e.autocomplete === "username") return "user";
+    if (e.form ? pwIn(e.form).length : isUser(e) && pwIn(D).length) return "user";
+    if (e.form && pwIn(D).length) return ""; // the login form is another one on this page
+    if (isUser(e) && loginish(e)) return "user";
     return "";
   }
 
@@ -57,7 +66,8 @@
     }
     const scope = (a && a.form) || D;
     const pw = a && a.type === "password" ? a : pwIn(scope)[0] || pwIn(D)[0] || null;
-    const u = a && kind(a) === "user" ? a : userFor(pw, (pw && pw.form) || scope);
+    // a focused text field gets the username even if we didn't detect it (`Sp` on demand)
+    const u = a && a !== pw && textish(a) && !isOtp(a) ? a : userFor(pw, (pw && pw.form) || scope);
     if (u && user) set(u, user);
     if (pw && pass) set(pw, pass);
     if (pw) pw.focus(); else if (u) u.focus();

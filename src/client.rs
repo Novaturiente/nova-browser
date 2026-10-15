@@ -320,6 +320,16 @@ wrap_load_handler! {
         fn on_loading_state_change(&self, browser: Option<&mut Browser>, is_loading: ::std::os::raw::c_int, back: ::std::os::raw::c_int, fwd: ::std::os::raw::c_int) {
             if let Some(b) = browser { window::set_loading(b, is_loading != 0, back != 0, fwd != 0); }
         }
+        fn on_load_error(&self, browser: Option<&mut Browser>, frame: Option<&mut Frame>, error_code: Errorcode, error_text: Option<&CefString>, failed_url: Option<&CefString>) {
+            // HTTPS-only: a site that has no working https shows Chrome's error page; say why
+            let (Some(b), Some(f), Some(url)) = (browser, frame, failed_url) else { return };
+            let url = url.to_string();
+            if f.is_main() == 0 || error_code == Errorcode::ABORTED || !net::was_upgraded(&url) { return; }
+            let why = error_text.map(|t| t.to_string()).unwrap_or_default();
+            let host = net::authority(&url).map(|(a, _)| a.to_string()).unwrap_or_default();
+            let text = format!("{host}: https failed ({why}). HTTPS-only upgraded it; :https-toggle (<Space>th) allows http here");
+            window::in_owner(b, || window::message("warning", &text));
+        }
     }
 }
 

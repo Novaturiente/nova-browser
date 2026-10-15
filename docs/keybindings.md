@@ -157,7 +157,7 @@ one key. Change any of them with [`bind()`](configuration.md#key-bindings).
 |---|---|---|
 | `<Space>td` | Toggle dark mode for this site | `dark-toggle` |
 | `<Space>th` | Toggle HTTPS-only for this site | `https-toggle` |
-| `<Space>pp` | Fill the best matching login from your password manager | `password-fill` |
+| `Sp` | Fill the best matching login from your password manager (also into a field the popup missed) | `password-fill` |
 | `<Space>po` | Fill the one-time (TOTP) code | `password-fill --otp` |
 
 ### Modes and the rest

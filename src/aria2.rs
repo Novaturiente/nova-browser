@@ -72,6 +72,7 @@ pub fn start() {
         Err(e) => return eprintln!("novabrowser: aria2: no free port: {e}"),
     };
     let secret = random_hex();
+    // holds cookies of unfinished downloads; private via the 0700 data dir (main.rs)
     let session = xdg_dir("XDG_DATA_HOME", ".local/share").join("aria2.session");
     if !session.exists() {
         let _ = std::fs::write(&session, "");
@@ -249,7 +250,7 @@ fn send(job: Job) {
 pub fn add(browser: &Browser, url: String, id: u64) {
     let referer = browser
         .main_frame()
-        .map(|f| CefString::from(&f.url()).to_string())
+        .and_then(|f| crate::net::referrer(&CefString::from(&f.url()).to_string(), &url))
         .unwrap_or_default();
     let b = browser.clone();
     crate::devtools::call(
@@ -275,7 +276,7 @@ pub fn add(browser: &Browser, url: String, id: u64) {
                 if !cookies.is_empty() {
                     header.push(format!("Cookie: {}", cookies.join("; ")));
                 }
-                if !referer.is_empty() && !referer.starts_with("data:") {
+                if !referer.is_empty() {
                     header.push(format!("Referer: {referer}"));
                 }
                 let mut opts =

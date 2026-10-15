@@ -8,6 +8,14 @@ use std::sync::{Mutex, RwLock};
 
 /// `host` or `host:port` lines from <config>/https_excludes: left on http.
 static HTTPS_EXCLUDES: RwLock<Vec<String>> = RwLock::new(Vec::new());
+/// Hosts we upgraded to https this run: a load error there gets an https-toggle hint.
+static UPGRADED: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+
+/// `url` failed to load: was it https only because we upgraded it?
+pub fn was_upgraded(url: &str) -> bool {
+    url.starts_with("https://")
+        && authority(url).is_some_and(|(_, h)| UPGRADED.lock().unwrap().contains(h))
+}
 
 pub fn excludes_file() -> std::path::PathBuf {
     config::path().with_file_name("https_excludes")
@@ -72,6 +80,7 @@ pub fn https_upgrade(url: &str) -> Option<String> {
     if is_local(host) || ex.iter().any(|e| e == host || e == auth) {
         return None;
     }
+    UPGRADED.lock().unwrap().insert(host.to_string());
     Some(format!("https://{rest}"))
 }
 
@@ -101,9 +110,23 @@ fn save_pairs(p: &BTreeSet<(String, String)>) {
     }
 }
 
-fn origin(url: &str) -> Option<String> {
+pub fn origin(url: &str) -> Option<String> {
     let scheme = url.split_once("://")?.0;
     Some(format!("{scheme}://{}/", authority(url)?.0))
+}
+
+/// Referer for a request we make ourselves (aria2), like Chromium's default
+/// `strict-origin-when-cross-origin`: full URL same-origin, origin cross-origin,
+/// nothing on https → http or from non-http pages.
+pub fn referrer(page: &str, target: &str) -> Option<String> {
+    if !page.starts_with("http") || page.starts_with("https://") && target.starts_with("http://") {
+        return None;
+    }
+    if origin(page)? == origin(target)? {
+        page.split('#').next().map(str::to_string)
+    } else {
+        origin(page)
+    }
 }
 
 /// UI thread, at start and after any config change: map `content.cookies.accept`
@@ -250,6 +273,12 @@ mod tests {
             super::site("https://a.b.example.co.uk/x").as_deref(),
             Some("example.co.uk")
         );
+        use super::referrer;
+        let p = "https://mail.example/inbox?t=secret#x";
+        assert_eq!(referrer(p, "https://mail.example/f.zip").as_deref(), Some("https://mail.example/inbox?t=secret"));
+        assert_eq!(referrer(p, "https://cdn.other/f.zip").as_deref(), Some("https://mail.example/"));
+        assert_eq!(referrer(p, "http://mail.example/f.zip"), None);
+        assert_eq!(referrer("data:text/html,x", "https://a/"), None);
         assert_eq!(
             super::site("https://accounts.google.com/").as_deref(),
             Some("google.com")

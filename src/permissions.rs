@@ -43,8 +43,8 @@ enum Callback {
     Media(u32, MediaAccessCallback),
     /// alert / confirm / prompt() / leave-page; the String is what "yes" returns to prompt().
     Dialog(JsdialogCallback, String),
-    /// our own yes/no questions (passwords.rs save/update)
-    Ask(std::rc::Rc<dyn Fn(bool)>),
+    /// our own yes/no questions (passwords.rs save/update); id for expiry
+    Ask(u64, std::rc::Rc<dyn Fn(bool)>),
     /// hung renderer: yes = kill it (crash page, `r` reloads), no = keep waiting
     Hang(UnresponsiveProcessCallback),
 }
@@ -60,6 +60,17 @@ struct Pending {
 thread_local! {
     static QUEUE: RefCell<VecDeque<Pending>> = const { RefCell::new(VecDeque::new()) };
     static SAVED: RefCell<Option<Map<String, Value>>> = const { RefCell::new(None) };
+    static ASK_ID: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+wrap_task! {
+    struct ExpireAsk { id: u64 }
+    impl Task {
+        fn execute(&self) {
+            QUEUE.with_borrow_mut(|q| q.retain(|p| !matches!(p.cb, Callback::Ask(i, _) if i == self.id)));
+            show();
+        }
+    }
 }
 
 fn file() -> PathBuf {
@@ -136,7 +147,7 @@ fn answer(cb: &Callback, allow: bool) {
         Callback::Media(bits, c) if allow => c.cont(*bits),
         Callback::Media(_, c) => c.cancel(),
         Callback::Dialog(c, input) => c.cont(allow as i32, Some(&input.as_str().into())),
-        Callback::Ask(f) => f(allow),
+        Callback::Ask(_, f) => f(allow),
         Callback::Hang(c) if allow => c.terminate(),
         Callback::Hang(c) => c.wait(),
     }
@@ -275,14 +286,20 @@ pub fn dialog(
 }
 
 /// A yes/no question in the prompt queue; `f` gets the answer (Escape = no).
+/// The closure may hold a password: a newer question for the tab replaces it, and an
+/// unanswered one is dropped (= no) after 5 minutes.
 pub fn ask(browser: &Browser, text: String, f: impl Fn(bool) + 'static) {
+    let id = ASK_ID.replace(ASK_ID.get() + 1);
+    let bid = browser.identifier();
+    post_delayed_task(ThreadId::UI, Some(&mut ExpireAsk::new(id)), 5 * 60_000);
     QUEUE.with_borrow_mut(|q| {
+        q.retain(|p| !(p.browser == bid && matches!(p.cb, Callback::Ask(..))));
         q.push_back(Pending {
             browser: browser.identifier(),
             origin: String::new(),
             settings: Vec::new(),
             text,
-            cb: Callback::Ask(std::rc::Rc::new(f)),
+            cb: Callback::Ask(id, std::rc::Rc::new(f)),
         })
     });
     show_later();

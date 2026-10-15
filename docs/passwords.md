@@ -20,14 +20,22 @@ c.passwords.backend = "pass";
 2. A list of matching logins appears under the field.
 3. `Down` / `Up` choose, `Enter` fills, `Escape` hides the list.
 
-Or press `<Space>pp` anywhere on the page to fill the best match, and
-`<Space>po` to fill the current TOTP code.
+Or press `Sp` to fill the best match, and `<Space>po` to
+fill the current TOTP code.
+
+The list only pops up on fields that look like a login: password fields,
+fields in a form that has a password field, `autocomplete="username"`, and
+email/username fields on a sign-in page. Newsletter, checkout and contact
+forms stay quiet. For a field it misses, focus it, press `Escape` (normal
+mode) and `Sp`: the username goes into the focused field.
 
 - Matching uses the site's registrable domain, like Bitwarden's default:
   a login saved for `example.com` is offered on `login.example.com`. Logins
   for the exact host are listed first.
 - Nothing is filled on page load, only when you pick an entry.
 - Frames from a different site than the page get nothing.
+- Plain `http://` pages get nothing (the password would cross the network
+  unencrypted).
 - Sign-up and "new password" fields offer a generated 20-character password
   (made locally from `/dev/urandom`) that is filled into both fields.
 - Login forms split across two pages (username first, then password) work:
@@ -36,15 +44,17 @@ Or press `<Space>pp` anywhere on the page to fill the best match, and
 ### Locked vault
 
 Focusing a field never asks for your master password by itself. If the vault
-is locked, the list shows *"Bitwarden is locked"*: choose it (`Down`,
-`Enter`) to unlock, and the logins appear. `<Space>pp` unlocks directly.
+is locked, a password field shows *"Bitwarden is locked"*: choose it (`Down`,
+`Enter`) to unlock, and the logins appear. Username fields show nothing while
+locked. `Sp` unlocks directly.
 
 ## Saving and updating
 
 After you submit a login form, the tab bar asks whether to save it (new
 login) or update the stored password (changed password). Answer `y` or `n`.
 If the password didn't change, nothing is asked. With `rbw`, a locked vault
-is unlocked first.
+is unlocked first. An unanswered question is dropped after 5 minutes (or when
+the same tab asks a newer one), so the password isn't kept around.
 
 The secret is handed to the password manager through a pipe or the
 environment, never on a command line where other programs could see it.

@@ -514,7 +514,7 @@ pub fn on_focus(browser: &Browser, frame: &Frame, kind: &str, rect: Rect) {
     {
         return;
     }
-    if !same_site_as_top(browser, frame) {
+    if !same_site_as_top(browser, frame) || frame_url(frame).starts_with("http://") {
         return hide();
     }
     let seq = GEN.with(|g| {
@@ -536,10 +536,12 @@ pub fn on_focus(browser: &Browser, frame: &Frame, kind: &str, rect: Rect) {
         return show(seq, Some(Vec::new()));
     }
     std::thread::spawn(move || {
-        let r = if locked(b) {
+        let r = if !locked(b) {
+            matching(b, &url).map(Some)
+        } else if kind == Kind::Password {
             Ok(None)
         } else {
-            matching(b, &url).map(Some)
+            return; // locked: the unlock row only on password fields, not every email box
         };
         crate::on_ui(move || match r {
             Ok(v) => show(seq, v),
@@ -713,7 +715,7 @@ fn url_of(seq: u64) -> String {
         .unwrap_or_default()
 }
 
-/// Preselect the first row (after `<Space>pp` or unlocking: Enter fills right away).
+/// Preselect the first row (after `Sp` or unlocking: Enter fills right away).
 fn select_first(seq: u64) {
     FIELD.with_borrow_mut(|f| {
         if let Some(f) = f.as_mut().filter(|f| f.seq == seq && !f.items.is_empty()) {
@@ -741,6 +743,9 @@ fn send_fill(frame: &Frame, url: &str, user: &str, pass: &str, what: &str) {
     if frame.is_valid() == 0 || site(&frame_url(frame)) != site(url) {
         return window::message("warning", "page changed, nothing filled");
     }
+    if frame_url(frame).starts_with("http://") {
+        return window::message("error", "not filling a login over plain http");
+    }
     FILLED_AT.set(Some(Instant::now()));
     let msg = process_message_create(Some(&CefString::from("nova.fill")))
         .expect("process_message_create");
@@ -751,24 +756,23 @@ fn send_fill(frame: &Frame, url: &str, user: &str, pass: &str, what: &str) {
     frame.send_process_message(ProcessId::RENDERER, Some(&mut msg.clone()));
 }
 
-/// `:password-fill [--otp]` (`<Space>pp`): fill the best match into the focused
+/// `:password-fill [--otp]` (`Sp`): fill the best match into the focused
 /// login form, or the page's first one. Several matches → the list to pick from.
 pub fn fill_command(otp: bool) -> Result<(), String> {
     let b = backend().ok_or("passwords.backend is none")?;
     let browser = window::active_browser().ok_or("no tab")?;
     let id = browser.identifier();
-    // the focused field's frame when it's in this tab, else the main frame
-    let focused = FIELD.with_borrow(|f| {
-        f.as_ref()
-            .filter(|f| f.browser == id)
-            .map(|f| f.frame.clone())
-    });
-    let frame = focused
+    // the focused frame (also a field we didn't detect), else the main frame
+    let frame = browser
+        .focused_frame()
         .filter(|f| f.is_valid() != 0)
         .or_else(|| browser.main_frame())
         .ok_or("no page")?;
     if !same_site_as_top(&browser, &frame) {
         return Err("login form is in a cross-site frame".into());
+    }
+    if frame_url(&frame).starts_with("http://") {
+        return Err("not filling a login over plain http".into());
     }
     let kind = if otp { Kind::Otp } else { Kind::Password };
     let seq = GEN.with(|g| {

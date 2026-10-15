@@ -42,6 +42,8 @@ struct Tab {
     seen: std::time::Instant,
     keep: bool,
     asleep: bool,
+    /// Page lifecycle frozen (`tabs.freeze_after`): no JS, timers or network until shown.
+    frozen: bool,
     /// Favicon as a data: URL (client.rs FaviconDone), empty until the page reports one.
     icon: String,
 }
@@ -104,6 +106,10 @@ thread_local! {
     static STARTED: Cell<bool> = const { Cell::new(false) };
     /// `quit` is closing every window: don't autosave the shrinking session.
     static QUITTING: Cell<bool> = const { Cell::new(false) };
+}
+
+pub fn quitting() -> bool {
+    QUITTING.get()
 }
 
 /// `S.with_borrow(..)`: the current window's state.
@@ -308,6 +314,7 @@ fn add_tab(view: BrowserView, url: String, title: String, foreground: bool) {
             seen: std::time::Instant::now(),
             keep: false,
             asleep: false,
+            frozen: false,
             icon: String::new(),
         });
         s.tabs.len() - 1
@@ -461,7 +468,7 @@ fn restore_tabs(v: &serde_json::Value, clear: bool) {
 /// Swap the active tab into the content panel (S2: state survives, old tab
 /// is marked hidden so Chromium throttles it).
 pub fn show(n: usize) {
-    let Some((content, old, new)) = S.with_borrow_mut(|s| {
+    let Some((content, old, (new, thaw))) = S.with_borrow_mut(|s| {
         let new = s.tabs.get(n)?.view.clone();
         let old = (s.active != n)
             .then(|| s.tabs.get(s.active).map(|t| t.view.clone()))
@@ -472,7 +479,8 @@ pub fn show(n: usize) {
         }
         s.active = n;
         s.tabs[n].asleep = false;
-        Some((s.content.clone()?, old, new))
+        let thaw = std::mem::take(&mut s.tabs[n].frozen);
+        Some((s.content.clone()?, old, (new, thaw)))
     }) else {
         return;
     };
@@ -487,8 +495,13 @@ pub fn show(n: usize) {
         content.layout();
     }
     // browser() is None until the view first joins a window.
-    if let Some(h) = new.browser().and_then(|b| b.host()) {
-        h.was_hidden(0);
+    if let Some(b) = new.browser() {
+        if thaw {
+            devtools::send(&b, "Page.setWebLifecycleState", serde_json::json!({"state": "active"}));
+        }
+        if let Some(h) = b.host() {
+            h.was_hidden(0);
+        }
     }
     // qutebrowser leaves insert/passthrough when the tab changes
     if modes::mode() != Mode::Command {
@@ -1080,7 +1093,11 @@ wrap_task! {
     }
 }
 
-/// Start the once-a-minute idle check (`tabs.hibernate_after`, minutes; 0 = off).
+/// Freezing also spares tabs that may want to notify (chat, mail).
+const FREEZE_BUSY_JS: &str = "(self.Notification&&Notification.permission==='granted')||";
+
+/// Start the once-a-minute idle check (`tabs.hibernate_after` / `tabs.freeze_after`,
+/// minutes; 0 = off).
 pub fn start_hibernation() {
     post_delayed_task(ThreadId::UI, Some(&mut HibernateTick::new()), 60_000);
 }
@@ -1088,14 +1105,13 @@ pub fn start_hibernation() {
 fn hibernate_idle() {
     let cfg = config::get();
     // per site via pattern(): 0 there exempts the site, a number there overrides the global one
-    let due = |t: &Tab| {
-        let mins = cfg
-            .get_for("tabs.hibernate_after", &t.url)
-            .as_i64()
-            .unwrap_or(0);
+    let due = |t: &Tab, name: &str| {
+        let mins = cfg.get_for(name, &t.url).as_i64().unwrap_or(0);
         mins > 0 && t.seen.elapsed() >= std::time::Duration::from_secs(mins as u64 * 60)
     };
-    let candidates: Vec<Browser> = WINS.with_borrow(|w| {
+    // (browser, frozen already, hibernate due); frozen pages can't answer JS, and
+    // can't have changed since they passed the busy check when frozen
+    let candidates: Vec<(Browser, bool, bool)> = WINS.with_borrow(|w| {
         w.iter()
             .filter(|s| s.window.is_some())
             .flat_map(|s| {
@@ -1106,20 +1122,49 @@ fn hibernate_idle() {
                         && !t.loading
                         && t.crashed.is_none()
                         && !t.url.starts_with("data:")
-                        && due(t)
                 })
             })
-            .filter_map(|(_, t)| t.view.browser())
+            .filter_map(|(_, t)| {
+                let sleep = due(t, "tabs.hibernate_after");
+                let freeze = !t.frozen && !t.pinned && due(t, "tabs.freeze_after");
+                (sleep || freeze).then(|| Some((t.view.browser()?, t.frozen, sleep)))?
+            })
             .collect()
     });
-    for b in candidates {
+    for (b, frozen, sleep) in candidates {
+        if frozen {
+            if sleep {
+                hibernate_browser(b.identifier(), false);
+            }
+            continue;
+        }
         let b2 = b.clone();
-        devtools::eval_isolated(&b, BUSY_JS.into(), move |r| {
+        let js = if sleep { BUSY_JS.to_string() } else { format!("{FREEZE_BUSY_JS}{BUSY_JS}") };
+        devtools::eval_isolated(&b, js, move |r| {
             // no answer (hung, closed) = leave it alone
             if r.is_some_and(|(_, v)| v == serde_json::Value::Bool(false)) {
-                in_owner(&b2, || hibernate_browser(b2.identifier(), false));
+                in_owner(&b2, || {
+                    if sleep {
+                        hibernate_browser(b2.identifier(), false)
+                    } else {
+                        freeze_browser(&b2)
+                    }
+                });
             }
         });
+    }
+}
+
+/// Page lifecycle "frozen" for a background tab (re-checked: it may be in front now).
+fn freeze_browser(b: &Browser) {
+    let id = b.identifier();
+    let ok = S.with_borrow_mut(|s| {
+        let n = s.tabs.iter().position(|t| browser_id(&t.view) == Some(id))?;
+        let t = &mut s.tabs[n];
+        (n != s.active && !t.keep && !t.pinned && !t.loading).then(|| t.frozen = true)
+    });
+    if ok.is_some() {
+        devtools::send(b, "Page.setWebLifecycleState", serde_json::json!({"state": "frozen"}));
     }
 }
 
@@ -1166,6 +1211,7 @@ fn hibernate_browser(id: i32, manual: bool) {
         t.can_back = false;
         t.can_fwd = false;
         t.dark = None;
+        t.frozen = false;
         Some(old)
     });
     if let Some(old) = old {
@@ -1180,8 +1226,13 @@ pub fn keep_awake(n: Option<usize>) {
         let n = n.unwrap_or(s.active);
         let t = s.tabs.get_mut(n)?;
         t.keep = !t.keep;
-        Some(t.keep)
+        let thaw = (t.keep && std::mem::take(&mut t.frozen)).then(|| t.view.browser()).flatten();
+        Some((t.keep, thaw))
     });
+    if let Some((_, Some(b))) = &on {
+        devtools::send(b, "Page.setWebLifecycleState", serde_json::json!({"state": "active"}));
+    }
+    let on = on.map(|(k, _)| k);
     match on {
         Some(true) => message("info", "This tab won't be hibernated."),
         Some(false) => message("info", "This tab can be hibernated again."),

@@ -337,6 +337,13 @@ Unload tabs not looked at for this many minutes (`0` = never). Per site. See [ta
 - Type: int
 - Default: `"30"`
 
+### `tabs.freeze_after`
+
+Freeze background tabs not looked at for this many minutes (`0` = never): no JS, timers or network until you show them. Pinned, kept-awake, playing and notification-allowed tabs are skipped. Per site. See [tabs](tabs-sessions-profiles.md#tab-hibernation).
+
+- Type: int
+- Default: `"5"`
+
 ### `tabs.title.format_pinned`
 
 Title of pinned tabs (same fields).

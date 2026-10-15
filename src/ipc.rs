@@ -1,7 +1,8 @@
 //! Control socket (PLAN §5.7): one instance per profile. `novabrowser --cmd ':open -t x'`,
 //! `novabrowser --query state`, and `novabrowser <url>` while one runs (opens a tab).
 //!
-//! Protocol: one request line, one reply line. `cmd <line>` → `ok`; `query state` → JSON.
+//! Protocol: one request line, one reply line. `cmd <line>` → `ok`; `url <text>` → `ok`
+//! (new tab, text never parsed as commands); `query state` → JSON.
 //! The socket lives in the profile dir, so test profiles don't talk to the real one.
 use cef::*;
 use std::io::{BufRead, BufReader, Write};
@@ -30,6 +31,8 @@ pub fn start() {
         Ok(l) => l,
         Err(e) => return eprintln!("novabrowser: ipc {}: {e}", path.display()),
     };
+    use std::os::unix::fs::PermissionsExt; // any connecting process can run commands
+    let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
     std::thread::spawn(move || {
         for stream in listener.incoming().flatten() {
             std::thread::spawn(move || serve(stream));
@@ -61,7 +64,13 @@ wrap_task! {
     struct Handle { line: String, reply: Reply }
     impl Task {
         fn execute(&self) {
+            // quit() has closed the windows; a new one now would outlive shutdown (CHECK observers_)
+            if crate::window::quitting() {
+                let _ = self.reply.0.send("error: quitting".into());
+                return;
+            }
             let out = match self.line.split_once(' ') {
+                Some(("url", u)) => { crate::window::open(&crate::commands::url_or_search(u), true); "ok".to_string() }
                 Some(("cmd", c)) => { crate::commands::run(c, None); "ok".to_string() }
                 Some(("query", "state")) => crate::window::state_json(),
                 _ => format!("error: unknown request {:?}", self.line),

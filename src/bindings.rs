@@ -76,6 +76,7 @@ pub const CORE: &[(&str, &str, &str)] = &[
     ("normal", "Ss", "settings"),
     ("normal", "Sd", "downloads"),
     ("normal", "Sh", "history"),
+    ("normal", "Sp", "password-fill"), // also fills a field the popup didn't detect
     ("normal", "<Ctrl-p>", "tab-pin"),
     ("normal", "gD", "tab-give"),
     // zoom
@@ -85,7 +86,6 @@ pub const CORE: &[(&str, &str, &str)] = &[
     // site toggles
     ("normal", "<Space>td", "dark-toggle"),
     ("normal", "<Space>th", "https-toggle"),
-    ("normal", "<Space>pp", "password-fill"),
     ("normal", "<Space>po", "password-fill --otp"),
     // modes and the rest
     ("normal", "i", "mode-enter insert"),

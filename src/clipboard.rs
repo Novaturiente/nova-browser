@@ -2,7 +2,7 @@
 //! X11, no extra tools); the primary selection and reading (for `{clipboard}`)
 //! use `wl-copy`/`wl-paste`, else `xclip`, off the UI thread.
 use cef::*;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::process::{Command, Stdio};
 
 pub fn write(text: &str, primary: bool) {
@@ -76,9 +76,29 @@ fn read(primary: bool) -> String {
         .into_iter()
         .skip(usize::from(!wayland()))
     {
-        if let Ok(o) = Command::new(prog).args(args).stderr(Stdio::null()).output() {
-            return String::from_utf8_lossy(&o.stdout).into_owned();
-        }
+        let Ok(mut c) = Command::new(prog)
+            .args(args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+        else {
+            continue;
+        };
+        // a page can put megabytes there, and wl-paste can hang on a stuck owner
+        const CAP: u64 = 1 << 20;
+        let mut out = c.stdout.take().expect("piped stdout");
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut b = Vec::new();
+            let _ = (&mut out).take(CAP).read_to_end(&mut b);
+            let _ = tx.send(b);
+        });
+        let b = rx
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .unwrap_or_default();
+        let _ = c.kill(); // past the cap or timed out; no-op if it already exited
+        let _ = c.wait();
+        return String::from_utf8_lossy(&b).into_owned();
     }
     String::new()
 }

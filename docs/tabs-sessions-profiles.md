@@ -40,6 +40,13 @@ aren't detected.
 - Per site: `pattern("*://music.example.com/*", (p) => { p.tabs.hibernate_after = 0; })`.
 - `c.tabs.hibernate_after = 0` turns it off.
 
+Before that, after `tabs.freeze_after` minutes (default 5), a background tab
+is frozen: its page stays loaded but runs no scripts, timers or network until
+you switch to it. Skipped: pinned and kept-awake tabs, pages playing media or
+with typed form text, and sites you allowed notifications (chat and mail keep
+getting messages). `pattern("*://chat.example.com/*", (p) => { p.tabs.freeze_after = 0; })`
+exempts a site; `c.tabs.freeze_after = 0` turns it off.
+
 ### Crashed and frozen tabs
 
 If a tab's renderer crashes, the tab shows a crash page; press `r` to reload.
