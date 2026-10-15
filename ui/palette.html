@@ -127,6 +127,8 @@
       k === "Escape" || (ctrl && k === "[") ? () => nova.send("cmdleave") :
       k === "Backspace" && !ctrl && !alt && c.value === "" ? () => nova.send("cmdleave") :
       k === "Tab" && !ctrl && !alt ? () => nova.send(e.shiftKey ? "complete -1" : "complete 1") :
+      // arrows move in the list when one is shown, else browse command history (Ctrl-p/n always do)
+      (k === "ArrowUp" || k === "ArrowDown") && !ctrl && !alt && list.firstChild ? () => nova.send(k === "ArrowUp" ? "complete -1" : "complete 1") :
       k === "ArrowUp" || (ctrl && k === "p") ? () => nova.send("hist -1") :
       k === "ArrowDown" || (ctrl && k === "n") ? () => nova.send("hist 1") :
       ctrl && k === "a" ? () => move(!pre && c.value.startsWith(":") ? 1 : 0) :

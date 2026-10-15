@@ -153,7 +153,7 @@ fn complete(text: &str) {
                     _ => {}
                 }
             }
-            let id = history::query(arg);
+            let id = history::query(arg, mk.iter().map(|m| m.0.clone()).collect());
             S.with_borrow_mut(|s| {
                 s.prefix = prefix;
                 s.query = id;
@@ -173,13 +173,15 @@ fn strip_flags<'a>(text: &str, rest: &'a str) -> (&'a str, String) {
     (arg, text[..text.len() - arg.len()].to_string())
 }
 
-/// Answer from the history thread; stale answers are dropped.
-pub fn history_results(id: u64, items: Vec<(String, String)>) {
+/// Answer from the history thread (`visits` = one count per mark row); stale answers
+/// are dropped.
+pub fn history_results(id: u64, items: Vec<(String, String)>, visits: Vec<i64>) {
     let Some((prefix, mk)) = S.with_borrow_mut(|s| {
         (s.query == id).then(|| (s.prefix.clone(), std::mem::take(&mut s.marks)))
     }) else {
         return;
     };
+    let mk = by_visits(mk, visits);
     if mk.is_empty() {
         return set(prefix, "History", items);
     }
@@ -190,6 +192,18 @@ pub fn history_results(id: u64, items: Vec<(String, String)>) {
     set(prefix, "", all);
     S.with_borrow_mut(|s| s.cats = cats);
     render();
+}
+
+/// Mark rows most visited first inside each category, categories kept in place.
+fn by_visits<T>(
+    mk: Vec<(T, T, &'static str)>,
+    visits: Vec<i64>,
+) -> Vec<(T, T, &'static str)> {
+    let mut rows: Vec<_> = mk.into_iter().zip(visits).collect();
+    for g in rows.chunk_by_mut(|a, b| a.0 .2 == b.0 .2) {
+        g.sort_by_key(|r| std::cmp::Reverse(r.1)); // stable: ties keep file order
+    }
+    rows.into_iter().map(|r| r.0).collect()
 }
 
 fn set(prefix: String, title: &'static str, items: Vec<(String, String)>) {
@@ -324,6 +338,22 @@ mod tests {
                 s.text.clone()
             })
             .collect()
+    }
+
+    #[test]
+    fn marks_sorted_by_visits_per_category() {
+        let mk = vec![
+            ("q1", "", "Quickmarks"),
+            ("q2", "", "Quickmarks"),
+            ("b1", "", "Bookmarks"),
+            ("b2", "", "Bookmarks"),
+            ("b3", "", "Bookmarks"),
+        ];
+        let got: Vec<_> = by_visits(mk, vec![1, 5, 0, 9, 0])
+            .into_iter()
+            .map(|r| r.0)
+            .collect();
+        assert_eq!(got, ["q2", "q1", "b2", "b1", "b3"]);
     }
 
     #[test]

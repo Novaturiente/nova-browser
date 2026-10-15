@@ -10,12 +10,15 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 pub const LIMIT: usize = 200;
 const SHORT_SCAN: i64 = 20_000;
+/// Newest matches ranked by visit count for completion.
+const FREQ_POOL: usize = 2_000;
 
 enum Msg {
     Visit(String),
     Title(String, String),
     Cmd(String),
-    Query(u64, String),
+    /// id, text, quickmark/bookmark URLs whose visit counts to send back
+    Query(u64, String, Vec<String>),
 }
 
 static TX: OnceLock<mpsc::Sender<Msg>> = OnceLock::new();
@@ -23,9 +26,11 @@ static TX: OnceLock<mpsc::Sender<Msg>> = OnceLock::new();
 static LATEST: AtomicU64 = AtomicU64::new(0);
 
 wrap_task! {
-    struct Results { id: u64, items: Vec<(String, String)> }
+    struct Results { id: u64, items: Vec<(String, String)>, mark_visits: Vec<i64> }
     impl Task {
-        fn execute(&self) { crate::completion::history_results(self.id, self.items.clone()); }
+        fn execute(&self) {
+            crate::completion::history_results(self.id, self.items.clone(), self.mark_visits.clone());
+        }
     }
 }
 
@@ -85,10 +90,11 @@ pub fn title(url: &str, title: &str) {
 pub fn cmd(line: &str) {
     send(Msg::Cmd(line.to_string()));
 }
-/// Ask for history matching `text`; the answer arrives as `completion::history_results(id, …)`.
-pub fn query(text: &str) -> u64 {
+/// Ask for history matching `text` (most visited first) and the visit counts of
+/// `marks`; the answer arrives as `completion::history_results(id, …)`.
+pub fn query(text: &str, marks: Vec<String>) -> u64 {
     let id = LATEST.fetch_add(1, Ordering::SeqCst) + 1;
-    send(Msg::Query(id, text.to_string()));
+    send(Msg::Query(id, text.to_string(), marks));
     id
 }
 
@@ -110,6 +116,7 @@ pub fn open(path: &std::path::Path) -> rusqlite::Result<Connection> {
          CREATE TRIGGER IF NOT EXISTS history_au AFTER UPDATE ON history BEGIN
              INSERT INTO history_fts(history_fts, rowid, url, title) VALUES ('delete', old.id, old.url, old.title);
              INSERT INTO history_fts(rowid, url, title) VALUES (new.id, new.url, new.title); END;
+         CREATE INDEX IF NOT EXISTS history_visits ON history(visits, id);
          CREATE TABLE IF NOT EXISTS cmd_history(id INTEGER PRIMARY KEY, cmd TEXT NOT NULL);",
     )?;
     Ok(db)
@@ -133,7 +140,7 @@ fn handle(db: &Connection, msg: Msg) -> rusqlite::Result<()> {
             db.prepare_cached("INSERT INTO cmd_history(cmd) VALUES (?1)")?
                 .execute(params![line])?;
         }
-        Msg::Query(id, text) => {
+        Msg::Query(id, text, marks) => {
             if id != LATEST.load(Ordering::SeqCst) {
                 return Ok(());
             }
@@ -143,7 +150,12 @@ fn handle(db: &Connection, msg: Msg) -> rusqlite::Result<()> {
             if ms > 16.0 {
                 eprintln!("novabrowser: history: slow query {text:?}: {ms:.1} ms");
             }
-            post_task(ThreadId::UI, Some(&mut Results::new(id, items)));
+            let mut st = db.prepare_cached("SELECT visits FROM history WHERE url = ?1")?;
+            let mark_visits = marks
+                .iter()
+                .map(|u| st.query_row(params![u], |r| r.get(0)).unwrap_or(0))
+                .collect();
+            post_task(ThreadId::UI, Some(&mut Results::new(id, items, mark_visits)));
         }
     }
     Ok(())
@@ -204,25 +216,27 @@ fn cmd_history(db: &Connection) -> rusqlite::Result<Vec<String>> {
     rows.collect()
 }
 
-/// Newest first; every word must be in the URL or the title (qutebrowser's history
-/// model). Words of 3+ chars go through the trigram index; shorter ones (which it
+/// Completion: most visited first, then newest; every word must be in the URL or the
+/// title (qutebrowser's history model). Words of 3+ chars go through the trigram index; shorter ones (which it
 /// can't index) are LIKE filters on top.
 pub fn search(
     db: &Connection,
     text: &str,
     limit: usize,
 ) -> rusqlite::Result<Vec<(String, String)>> {
-    Ok(search_rows(db, text, limit)?
+    Ok(search_rows(db, text, limit, true)?
         .into_iter()
         .map(|(u, t, _)| (u, t))
         .collect())
 }
 
-/// `search` plus each row's last visit time (unix seconds).
+/// `search` plus each row's last visit time (unix seconds); `frequent` = most visited
+/// first, else newest first.
 fn search_rows(
     db: &Connection,
     text: &str,
     limit: usize,
+    frequent: bool,
 ) -> rusqlite::Result<Vec<(String, String, i64)>> {
     let (long, short): (Vec<&str>, Vec<&str>) = text
         .split_whitespace()
@@ -249,21 +263,38 @@ fn search_rows(
             "(h.url LIKE ?{i} ESCAPE '\\' OR h.title LIKE ?{i} ESCAPE '\\')"
         ));
     }
-    let sql = if long.is_empty() {
+    // newest first (the trigram index returns rowid order, so LIMIT stops it early)
+    let newest = if long.is_empty() {
         // The index can't serve 1-2 char words: scan only the newest SHORT_SCAN rows (~5 ms),
         // these queries are transient while typing.
         conds.push(format!(
             "h.id > (SELECT coalesce(max(id), 0) FROM history) - {SHORT_SCAN}"
         ));
         format!(
-            "SELECT h.url, h.title, h.last_atime FROM history h WHERE {} ORDER BY h.id DESC LIMIT {limit}",
+            "SELECT h.id, h.visits, h.url, h.title, h.last_atime FROM history h WHERE {} ORDER BY h.id DESC",
             conds.join(" AND ")
         )
     } else {
         let more: String = conds.iter().map(|c| format!(" AND {c}")).collect();
         format!(
-            "SELECT h.url, h.title, h.last_atime FROM history_fts f JOIN history h ON h.id = f.rowid
-             WHERE history_fts MATCH ?1{more} ORDER BY f.rowid DESC LIMIT {limit}"
+            "SELECT h.id, h.visits, h.url, h.title, h.last_atime FROM history_fts f
+             JOIN history h ON h.id = f.rowid WHERE history_fts MATCH ?1{more} ORDER BY f.rowid DESC"
+        )
+    };
+    let sql = if !frequent {
+        format!(
+            "SELECT url, title, last_atime FROM ({newest} LIMIT {limit})
+             ORDER BY id DESC"
+        )
+    } else if text.trim().is_empty() {
+        // `o` with nothing typed: all of history, served by the history_visits index
+        format!("SELECT url, title, last_atime FROM history ORDER BY visits DESC, id DESC LIMIT {limit}")
+    } else {
+        // shortcut: only the newest FREQ_POOL matches are ranked by visits (sorting every
+        // match of a common word takes ~50 ms at 100k rows); raise it if old favourites go missing
+        format!(
+            "SELECT url, title, last_atime FROM ({newest} LIMIT {FREQ_POOL})
+             ORDER BY visits DESC, id DESC LIMIT {limit}"
         )
     };
     let mut st = db.prepare_cached(&sql)?;
@@ -295,7 +326,7 @@ pub fn page(query: Option<&str>) -> String {
     }
     let q = PAGE_QUERY.with_borrow(|q| q.clone());
     let rows = page_db()
-        .and_then(|db| search_rows(&db, &q, PAGE_ROWS).map_err(|e| e.to_string()))
+        .and_then(|db| search_rows(&db, &q, PAGE_ROWS, false).map_err(|e| e.to_string()))
         .unwrap_or_else(|e| {
             eprintln!("novabrowser: history page: {e}");
             vec![]
@@ -444,6 +475,13 @@ mod tests {
             )
             .unwrap();
         assert_eq!((t.as_str(), v), ("Rust lang", 2));
+        // more visits beat a newer visit
+        visit_row(&db, "https://b.com/rust", 10).unwrap();
+        visit_row(&db, "https://b.com/rust", 11).unwrap();
+        visit_row(&db, "https://b.com/rust", 11).unwrap();
+        visit_row(&db, "https://a.com/x", 12).unwrap();
+        assert_eq!(urls("rust"), ["https://b.com/rust", "https://a.com/x"]);
+        assert_eq!(urls("")[0], "https://b.com/rust");
     }
 
     #[test]
