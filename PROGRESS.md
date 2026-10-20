@@ -178,6 +178,8 @@ Newest first. Settled — don't reopen without new evidence.
 
 Newest first. One entry per session: date, what changed, evidence, what's next.
 
+- 2026-10-20 16:55 (IST) — Release 0.1.4 (Sign in with Google cookie fix). Tag `v0.1.4`, GitHub release tarball uploaded by `packaging/release.sh` (source package built + tested), AUR `novabrowser` 1c966ee and `novabrowser-bin` 5a432b7 pushed (confirmed with `git ls-remote`; cgit page was still cached at 0.1.3). Next: user confirms ChatGPT Google sign-in.
+
 - 2026-10-20 16:50 (IST) — Fixed "Sign in with Google" (top-level navigations judged third-party against the previous page; see the user-requests list). Next: user signs in to ChatGPT with Google to confirm; release 0.1.4 if wanted.
 
 - 2026-10-20 16:40 (IST) — Release 0.1.3 (profile flags, typed-first completion, plus the unreleased audit fixes; CHANGELOG filled in for them). Tag `v0.1.3` pushed; `packaging/release.sh 0.1.3` built + tested the source package and uploaded `novabrowser-0.1.3-x86_64.tar.zst` to the GitHub release; AUR `novabrowser` (3460b9d) and `novabrowser-bin` (5a2a423) pushed from `~/personal/aur/`, cgit `.SRCINFO` shows 0.1.3 (RPC still cached 0.1.2-1 right after). Note: the first AUR push hung for minutes inside a chained script; a plain `git push` went through in seconds. Next: unchanged.
