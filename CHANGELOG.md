@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.4 (2026-10-20)
 
 - "Sign in with Google" (and other logins that hop across sites) works
   with `content.cookies.accept = "no-3rdparty"`: a page you navigate to
