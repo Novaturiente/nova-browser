@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.3 (2026-10-20)
 
 - `--profile work` and `-P work` start a profile (as `--profile=work`
   did); `--list-profiles` lists them.
@@ -10,6 +10,20 @@
   counts from Chromium and Firefox.
 - The first page of a new tab is now recorded in history when its URL
   was exactly the one asked for (it was skipped).
+- Up/Down move through the completion list when one is shown; Ctrl-p /
+  Ctrl-n always browse command history.
+- Background tabs freeze after `tabs.freeze_after` minutes (default 5;
+  not pinned, kept-awake, playing, typed-in or notification-allowed tabs).
+- Passwords: nothing is filled or offered on `http://` pages; stricter
+  login-field detection; `Sp` fills the focused field (replaces
+  `<Space>pp`).
+- HTTPS-only: a failed upgrade shows a hint naming `:https-toggle`.
+- A second launch hands its URL over as a URL only (never run as
+  commands).
+- Data and state directories are private (0700), files we write 0600.
+- aria2 downloads send the Referer the way Chromium does; save/update
+  password prompts expire after 5 minutes; clipboard reads are capped;
+  renderer processes limited to 12.
 
 ## 0.1.2 (2026-10-14)
 
