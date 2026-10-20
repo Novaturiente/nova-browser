@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- "Sign in with Google" (and other logins that hop across sites) works
+  with `content.cookies.accept = "no-3rdparty"`: a page you navigate to
+  was judged a third party of the page you came from and lost its
+  cookies (ChatGPT showed "Something went wrong").
+
 ## 0.1.3 (2026-10-20)
 
 - `--profile work` and `-P work` start a profile (as `--profile=work`

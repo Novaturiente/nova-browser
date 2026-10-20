@@ -385,7 +385,7 @@ wrap_resource_request_handler! {
         fn on_before_resource_load(&self, browser: Option<&mut Browser>, _frame: Option<&mut Frame>, request: Option<&mut Request>, _callback: Option<&mut Callback>) -> ReturnValue {
             let (Some(b), Some(r)) = (browser, request) else { return ReturnValue::CONTINUE };
             let url = CefString::from(&r.url()).to_string();
-            let source = b.main_frame().map(|f| CefString::from(&f.url()).to_string()).unwrap_or_default();
+            let source = first_party(Some(b), r);
             if adblock::should_block(&url, &source, r.resource_type()) { return ReturnValue::CANCEL; }
             let method = CefString::from(&r.method()).to_string();
             if method == "GET" || method == "HEAD" { // other methods can't be redirected safely
@@ -411,7 +411,14 @@ wrap_resource_request_handler! {
     }
 }
 
-fn first_party(b: Option<&mut Browser>) -> String {
+/// The page a request belongs to. A top-level navigation belongs to the page it opens,
+/// not the one still shown: else the sites a login hops through (chatgpt.com →
+/// auth.openai.com → accounts.google.com → back) count as third parties of the
+/// previous page and lose their cookies ("Sign in with Google" failed).
+fn first_party(b: Option<&mut Browser>, r: &Request) -> String {
+    if r.resource_type() == ResourceType::MAIN_FRAME {
+        return CefString::from(&r.url()).to_string();
+    }
     b.and_then(|b| b.main_frame())
         .map(|f| CefString::from(&f.url()).to_string())
         .unwrap_or_default()
@@ -422,12 +429,12 @@ wrap_cookie_access_filter! {
     impl CookieAccessFilter {
         // IO thread.
         fn can_send_cookie(&self, browser: Option<&mut Browser>, _frame: Option<&mut Frame>, request: Option<&mut Request>, _cookie: Option<&Cookie>) -> ::std::os::raw::c_int {
-            let url = request.map(|r| CefString::from(&r.url()).to_string()).unwrap_or_default();
-            net::cookie_allowed(&url, &first_party(browser)) as i32
+            let Some(r) = request else { return 1 };
+            net::cookie_allowed(&CefString::from(&r.url()).to_string(), &first_party(browser, r)) as i32
         }
         fn can_save_cookie(&self, browser: Option<&mut Browser>, _frame: Option<&mut Frame>, request: Option<&mut Request>, _response: Option<&mut Response>, _cookie: Option<&Cookie>) -> ::std::os::raw::c_int {
-            let url = request.map(|r| CefString::from(&r.url()).to_string()).unwrap_or_default();
-            net::cookie_allowed(&url, &first_party(browser)) as i32
+            let Some(r) = request else { return 1 };
+            net::cookie_allowed(&CefString::from(&r.url()).to_string(), &first_party(browser, r)) as i32
         }
     }
 }
