@@ -351,6 +351,19 @@ fn run_one_line(line: &str) -> Result<(), String> {
     Ok(())
 }
 
+thread_local! {
+    /// True while a line typed into the command box/address bar runs.
+    static FROM_BAR: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// A line the user entered in the command box: an `open` there counts as typed
+/// (history ranks pages opened this way first).
+pub fn run_from_bar(line: &str) {
+    FROM_BAR.set(true);
+    run(line, None);
+    FROM_BAR.set(false);
+}
+
 /// Run a command line (`a ;; b`), reporting errors in the status bar.
 /// `/text` and `?text` (from the command line) search forward / backward.
 pub fn run(line: &str, count: Option<u32>) {
@@ -579,15 +592,25 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
             } else {
                 url_or_search(&cmd.rest())
             };
+            let typed = FROM_BAR.get() && !cmd.args.is_empty();
+            let open = |url: String, current: bool, f: &dyn Fn(String)| {
+                if typed {
+                    window::typed_open(current, || f(url));
+                } else {
+                    f(url);
+                }
+            };
             // shortcut: -p (private) opens a tab until private windows exist
             if cmd.flag("-b", "--bg") {
-                window::open(&url, false);
+                open(url, false, &|u| window::open(&u, false));
             } else if cmd.flag("-w", "--window") {
-                window::open_window(Some(url));
+                open(url, false, &|u| window::open_window(Some(u)));
             } else if cmd.flag("-t", "--tab") || cmd.flag("-p", "--private") {
-                window::open(&url, true);
+                open(url, false, &|u| window::open(&u, true));
             } else if let Some(f) = need()?.main_frame() {
-                f.load_url(Some(&CefString::from(url.as_str())));
+                open(url, true, &|u| {
+                    f.load_url(Some(&CefString::from(u.as_str())))
+                });
             }
         }
         // shortcut: -o/-p/-n (which tab gets focus afterwards) ignored; add if missed

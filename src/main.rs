@@ -316,7 +316,58 @@ pub(crate) fn valid_profile_name(name: &str) -> bool {
         && !name.starts_with(' ')
 }
 
+/// `--profile <name>` / `-P <name>` → `--profile=<name>` (the only form the rest of
+/// startup and Chromium's own switch parser understand); None = nothing to rewrite.
+/// `Err` = the flag has no name: list the profiles instead.
+fn normalize_profile_args(args: &[String]) -> Result<Option<Vec<String>>, ()> {
+    let Some(i) = args
+        .iter()
+        .skip(1)
+        .position(|a| a == "--profile" || a == "-P")
+        .map(|i| i + 1)
+    else {
+        return Ok(None);
+    };
+    let name = args.get(i + 1).filter(|n| !n.starts_with('-')).ok_or(())?;
+    let mut out = args.to_vec();
+    out.splice(i..i + 2, [format!("--profile={name}")]);
+    Ok(Some(out))
+}
+
+fn print_profiles() {
+    let current = profile().unwrap_or("default");
+    for n in profiles::list() {
+        println!("{n}{}", if n == current { "  (this one)" } else { "" });
+    }
+    eprintln!("start one with: novabrowser --profile=<name> [url]  (a new name creates it)");
+}
+
 fn main() {
+    let raw: Vec<String> = std::env::args().collect();
+    if !raw.iter().any(|a| a.starts_with("--type=")) {
+        match normalize_profile_args(&raw) {
+            Ok(Some(args)) => {
+                // re-run ourselves so every later look at argv (and Chromium) sees --profile=
+                use std::os::unix::process::CommandExt;
+                let exe = std::env::current_exe().unwrap_or_else(|_| raw[0].clone().into());
+                let err = std::process::Command::new(exe)
+                    .arg0(&raw[0])
+                    .args(&args[1..])
+                    .exec();
+                eprintln!("novabrowser: can't restart with {}: {err}", args.join(" "));
+                std::process::exit(1);
+            }
+            Ok(None) => {}
+            Err(()) => {
+                print_profiles();
+                return;
+            }
+        }
+        if raw.iter().skip(1).any(|a| a == "--list-profiles") {
+            print_profiles();
+            return;
+        }
+    }
     // --profile=<name> may come first; the subcommands below look at argv[1]
     let argv: Vec<String> = std::env::args()
         .filter(|a| !a.starts_with("--profile="))
@@ -325,6 +376,12 @@ fn main() {
         if !valid_profile_name(name) {
             eprintln!("novabrowser: bad profile name {name:?} (letters, digits, space, - and _)");
             std::process::exit(2);
+        }
+        let dir = xdg_root("XDG_DATA_HOME", ".local/share")
+            .join("profiles")
+            .join(name);
+        if !argv.iter().any(|a| a.starts_with("--type=")) && !dir.exists() {
+            eprintln!("novabrowser: new profile '{name}' ({})", dir.display());
         }
     }
     // rbw add/edit run us as $VISUAL (passwords.rs): put the secret in the file
@@ -468,4 +525,29 @@ fn main() {
     run_message_loop();
     aria2::stop();
     shutdown();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_profile_args as norm;
+
+    fn v(a: &[&str]) -> Vec<String> {
+        a.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn profile_flag_forms() {
+        assert_eq!(
+            norm(&v(&["nb", "--profile", "work", "x.com"])),
+            Ok(Some(v(&["nb", "--profile=work", "x.com"])))
+        );
+        assert_eq!(
+            norm(&v(&["nb", "x.com", "-P", "my work"])),
+            Ok(Some(v(&["nb", "x.com", "--profile=my work"])))
+        );
+        assert_eq!(norm(&v(&["nb", "--profile=work", "x.com"])), Ok(None));
+        assert_eq!(norm(&v(&["nb", "x.com"])), Ok(None));
+        assert_eq!(norm(&v(&["nb", "--profile"])), Err(()));
+        assert_eq!(norm(&v(&["nb", "-P", "--cmd"])), Err(()));
+    }
 }

@@ -216,7 +216,8 @@ fn history_file(p: &Path) -> Option<PathBuf> {
 }
 
 /// (url, title, unix seconds, visits)
-pub type Row = (String, String, i64, i64);
+/// url, title, last visit (unix s), visits, times typed into the address bar
+pub type Row = (String, String, i64, i64, i64);
 
 /// Chromium time: microseconds since 1601-01-01.
 const WEBKIT_EPOCH_OFFSET: i64 = 11_644_473_600;
@@ -267,23 +268,25 @@ fn read_db(db: &Connection) -> rusqlite::Result<(&'static str, Vec<Row>)> {
     };
     let (kind, sql) = if has("urls")? {
         let sql = format!(
-            "SELECT url, title, last_visit_time / 1000000 - {WEBKIT_EPOCH_OFFSET}, visit_count FROM urls WHERE hidden = 0"
+            "SELECT url, title, last_visit_time / 1000000 - {WEBKIT_EPOCH_OFFSET}, visit_count, typed_count FROM urls WHERE hidden = 0"
         );
         ("Chromium", sql)
     } else if has("moz_places")? {
-        let sql = "SELECT url, coalesce(title, ''), last_visit_date / 1000000, visit_count FROM moz_places
+        let sql = "SELECT url, coalesce(title, ''), last_visit_date / 1000000, visit_count, typed FROM moz_places
                    WHERE visit_count > 0 AND last_visit_date IS NOT NULL AND hidden = 0";
         ("Firefox", sql.to_string())
     } else if has("CompletionHistory")? {
         (
             "qutebrowser",
-            "SELECT url, title, last_atime, 1 FROM CompletionHistory".to_string(),
+            "SELECT url, title, last_atime, 1, 0 FROM CompletionHistory".to_string(),
         )
     } else {
         return Err(rusqlite::Error::InvalidQuery);
     };
     let mut st = db.prepare(&sql)?;
-    let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
+    let rows = st.query_map([], |r| {
+        Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+    })?;
     let web = |r: &Row| {
         ["http:", "https:", "file:"]
             .iter()
@@ -334,10 +337,10 @@ mod tests {
     fn reads_chromium_firefox_qutebrowser() {
         let c = Connection::open_in_memory().unwrap();
         c.execute_batch(
-            "CREATE TABLE urls(url, title, last_visit_time, visit_count, hidden);
-             INSERT INTO urls VALUES ('https://a.com/', 'A', 13435995854106267, 30, 0),
-                                     ('https://h.com/', 'H', 13435995854106267, 1, 1),
-                                     ('chrome://settings/', 'S', 13435995854106267, 1, 0);",
+            "CREATE TABLE urls(url, title, last_visit_time, visit_count, hidden, typed_count);
+             INSERT INTO urls VALUES ('https://a.com/', 'A', 13435995854106267, 30, 0, 4),
+                                     ('https://h.com/', 'H', 13435995854106267, 1, 1, 0),
+                                     ('chrome://settings/', 'S', 13435995854106267, 1, 0, 0);",
         )
         .unwrap();
         let (kind, rows) = read_db(&c).unwrap();
@@ -346,22 +349,22 @@ mod tests {
             (kind, rows),
             (
                 "Chromium",
-                vec![("https://a.com/".into(), "A".into(), 1791522254, 30)]
+                vec![("https://a.com/".into(), "A".into(), 1791522254, 30, 4)]
             )
         );
 
         let f = Connection::open_in_memory().unwrap();
         f.execute_batch(
-            "CREATE TABLE moz_places(url, title, last_visit_date, visit_count, hidden);
-             INSERT INTO moz_places VALUES ('https://f.com/', NULL, 1791522254000000, 2, 0),
-                                           ('https://never.com/', 'N', NULL, 0, 0);",
+            "CREATE TABLE moz_places(url, title, last_visit_date, visit_count, hidden, typed);
+             INSERT INTO moz_places VALUES ('https://f.com/', NULL, 1791522254000000, 2, 0, 1),
+                                           ('https://never.com/', 'N', NULL, 0, 0, 0);",
         )
         .unwrap();
         assert_eq!(
             read_db(&f).unwrap(),
             (
                 "Firefox",
-                vec![("https://f.com/".into(), "".into(), 1791522254, 2)]
+                vec![("https://f.com/".into(), "".into(), 1791522254, 2, 1)]
             )
         );
 
@@ -375,7 +378,7 @@ mod tests {
             read_db(&q).unwrap(),
             (
                 "qutebrowser",
-                vec![("https://q.com/".into(), "Q".into(), 5, 1)]
+                vec![("https://q.com/".into(), "Q".into(), 5, 1, 0)]
             )
         );
     }

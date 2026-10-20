@@ -47,6 +47,13 @@ one key. Change any of them with [`bind()`](configuration.md#key-bindings).
 | `pp` | Open the URL (or search) in the clipboard | `open -- {clipboard}` |
 | `Pp` | Same, in a new tab | `open -t -- {clipboard}` |
 
+Suggestions in the address box come in this order: quickmarks and
+bookmarks first, then history. Inside each group, pages you opened most
+often from the address box (typed, or picked from the list) come first,
+then the most visited ones, then the most recent. A bookmarked page shows
+up only once, under Bookmarks. History imported with `--import` brings
+the other browser's typed counts along.
+
 ### Page navigation
 
 | Key | Action | Command |

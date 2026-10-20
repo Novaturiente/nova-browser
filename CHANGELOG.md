@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- `--profile work` and `-P work` start a profile (as `--profile=work`
+  did); `--list-profiles` lists them.
+- Address-box suggestions: bookmarks first, then pages you opened most
+  from the address box, then the most visited, then the most recent.
+  Bookmarked pages are no longer listed twice. `--import` brings typed
+  counts from Chromium and Firefox.
+- The first page of a new tab is now recorded in history when its URL
+  was exactly the one asked for (it was skipped).
+
 ## 0.1.2 (2026-10-14)
 
 - Tabs show the site's icon; icons are saved with the session, so restored

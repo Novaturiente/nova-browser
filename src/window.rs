@@ -44,6 +44,11 @@ struct Tab {
     asleep: bool,
     /// Page lifecycle frozen (`tabs.freeze_after`): no JS, timers or network until shown.
     frozen: bool,
+    /// The next committed URL was opened from the address bar (history ranks it higher).
+    typed: bool,
+    /// No page committed yet in a newly opened tab: its first URL is a visit even
+    /// when it equals `url` (restored session tabs aren't fresh).
+    fresh: bool,
     /// Favicon as a data: URL (client.rs FaviconDone), empty until the page reports one.
     icon: String,
 }
@@ -293,6 +298,27 @@ pub fn open_window(url: Option<String>) {
     );
 }
 
+thread_local! {
+    /// Set around an address-bar `open` that makes a new tab: that tab starts `typed`.
+    static TYPED_NEXT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Run `f` (an `open` from the address bar) so the page it loads counts as typed:
+/// new tabs made inside `f` start typed; `current` marks the active tab instead.
+pub fn typed_open(current: bool, f: impl FnOnce()) {
+    if current {
+        S.with_borrow_mut(|s| {
+            let i = s.active;
+            if let Some(t) = s.tabs.get_mut(i) {
+                t.typed = true;
+            }
+        });
+    }
+    TYPED_NEXT.set(!current);
+    f();
+    TYPED_NEXT.set(false);
+}
+
 fn add_tab(view: BrowserView, url: String, title: String, foreground: bool) {
     let n = S.with_borrow_mut(|s| {
         s.tabs.push(Tab {
@@ -316,6 +342,8 @@ fn add_tab(view: BrowserView, url: String, title: String, foreground: bool) {
             asleep: false,
             frozen: false,
             icon: String::new(),
+            typed: TYPED_NEXT.get(),
+            fresh: true,
         });
         s.tabs.len() - 1
     });
@@ -447,6 +475,7 @@ fn restore_tabs(v: &serde_json::Value, clear: bool) {
         open_titled(url, t["title"].as_str().unwrap_or("").to_string(), false);
         S.with_borrow_mut(|s| {
             let tab = s.tabs.last_mut().unwrap();
+            tab.fresh = false;
             tab.back = strs(&t["back"]);
             tab.fwd = strs(&t["fwd"]).into_iter().rev().collect();
             tab.scroll_to = t["scroll"].as_i64().filter(|y| *y > 0);
@@ -673,8 +702,11 @@ fn update(browser: &Browser, f: impl FnOnce(&mut Tab)) {
 
 pub fn set_url(browser: &Browser, url: String) {
     update(browser, |t| {
-        if t.crashed.is_none() && t.url != url {
-            history::visit(&url);
+        // a typed open counts even when the URL didn't change (new tab, same page again)
+        let typed = std::mem::take(&mut t.typed);
+        let fresh = std::mem::take(&mut t.fresh);
+        if t.crashed.is_none() && (t.url != url || typed || fresh) {
+            history::visit(&url, typed);
             t.url = url;
             t.scroll = 0;
         }

@@ -173,9 +173,9 @@ fn strip_flags<'a>(text: &str, rest: &'a str) -> (&'a str, String) {
     (arg, text[..text.len() - arg.len()].to_string())
 }
 
-/// Answer from the history thread (`visits` = one count per mark row); stale answers
-/// are dropped.
-pub fn history_results(id: u64, items: Vec<(String, String)>, visits: Vec<i64>) {
+/// Answer from the history thread (`visits` = (typed, visits) per mark row); stale
+/// answers are dropped.
+pub fn history_results(id: u64, items: Vec<(String, String)>, visits: Vec<(i64, i64)>) {
     let Some((prefix, mk)) = S.with_borrow_mut(|s| {
         (s.query == id).then(|| (s.prefix.clone(), std::mem::take(&mut s.marks)))
     }) else {
@@ -185,6 +185,12 @@ pub fn history_results(id: u64, items: Vec<(String, String)>, visits: Vec<i64>) 
     if mk.is_empty() {
         return set(prefix, "History", items);
     }
+    // a bookmarked URL is listed once, in its bookmark section
+    let marked: std::collections::HashSet<&str> = mk.iter().map(|m| m.0.as_str()).collect();
+    let items: Vec<(String, String)> = items
+        .into_iter()
+        .filter(|(u, _)| !marked.contains(u.as_str()))
+        .collect();
     let mut cats: Vec<&'static str> = mk.iter().map(|m| m.2).collect();
     let mut all: Vec<(String, String)> = mk.into_iter().map(|(a, b, _)| (a, b)).collect();
     cats.extend(std::iter::repeat_n("History", items.len()));
@@ -194,8 +200,12 @@ pub fn history_results(id: u64, items: Vec<(String, String)>, visits: Vec<i64>) 
     render();
 }
 
-/// Mark rows most visited first inside each category, categories kept in place.
-fn by_visits<T>(mk: Vec<(T, T, &'static str)>, visits: Vec<i64>) -> Vec<(T, T, &'static str)> {
+/// Mark rows inside each category: most opened from the address bar first, then most
+/// visited; categories kept in place. `visits` = (typed, visits) per row.
+fn by_visits<T>(
+    mk: Vec<(T, T, &'static str)>,
+    visits: Vec<(i64, i64)>,
+) -> Vec<(T, T, &'static str)> {
     let mut rows: Vec<_> = mk.into_iter().zip(visits).collect();
     for g in rows.chunk_by_mut(|a, b| a.0 .2 == b.0 .2) {
         g.sort_by_key(|r| std::cmp::Reverse(r.1)); // stable: ties keep file order
@@ -346,11 +356,11 @@ mod tests {
             ("b2", "", "Bookmarks"),
             ("b3", "", "Bookmarks"),
         ];
-        let got: Vec<_> = by_visits(mk, vec![1, 5, 0, 9, 0])
+        let got: Vec<_> = by_visits(mk, vec![(0, 1), (0, 5), (1, 0), (0, 9), (2, 1)])
             .into_iter()
             .map(|r| r.0)
             .collect();
-        assert_eq!(got, ["q2", "q1", "b2", "b1", "b3"]);
+        assert_eq!(got, ["q2", "q1", "b3", "b1", "b2"]);
     }
 
     #[test]

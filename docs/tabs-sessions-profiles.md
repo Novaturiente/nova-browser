@@ -93,10 +93,17 @@ per client.
 :profile-new work            same, without asking
 :profile-open work           open it
 novabrowser --profile=work   start it from a shell or a desktop shortcut
+novabrowser --profile work   same (also -P work)
+novabrowser --list-profiles  list your profiles
 ```
 
-Names may contain letters, digits, spaces, `-` and `_` (up to 40 characters;
-stored lower case). The profile's name appears at the start of the tab bar
+A name that doesn't exist yet creates that profile. If the profile is
+already running, the URL (or a new window) goes to that instance. For a
+menu entry per profile, copy `novabrowser.desktop` to
+`~/.local/share/applications/novabrowser-work.desktop` and change it to
+`Name=novabrowser (work)` and `Exec=novabrowser --profile=work %U`.
+
+Names may contain letters, digits, spaces, `-` and `_` (up to 40 characters). The profile's name appears at the start of the tab bar
 and in the window title; the default profile shows nothing. Each profile
 runs as its own process, so profiles never share cookies.
 
