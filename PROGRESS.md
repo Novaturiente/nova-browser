@@ -176,6 +176,8 @@ Newest first. Settled — don't reopen without new evidence.
 
 Newest first. One entry per session: date, what changed, evidence, what's next.
 
+- 2026-10-20 16:40 (IST) — Release 0.1.3 (profile flags, typed-first completion, plus the unreleased audit fixes; CHANGELOG filled in for them). Tag `v0.1.3` pushed; `packaging/release.sh 0.1.3` built + tested the source package and uploaded `novabrowser-0.1.3-x86_64.tar.zst` to the GitHub release; AUR `novabrowser` (3460b9d) and `novabrowser-bin` (5a2a423) pushed from `~/personal/aur/`, cgit `.SRCINFO` shows 0.1.3 (RPC still cached 0.1.2-1 right after). Note: the first AUR push hung for minutes inside a chained script; a plain `git push` went through in seconds. Next: unchanged.
+
 - 2026-10-20 16:30 (IST) — User asked for a profile flag and typed-first address-box ranking. `--profile`/`-P` forms + `--list-profiles` (main.rs); `history.typed` + ranking + bookmark dedupe (history.rs, completion.rs, window.rs, commands.rs, client.rs, import.rs); fixed new-tab first page missing from history. Evidence under "User requests (2026-10-20)". Next: unchanged (Audit 2 picks by user).
 
 - 2026-10-15 19:45 (IST) — Second whole-repo audit, read-only (4 subagents: security, window/perf, storage, config/build; clippy clean apart from 2 `type_complexity`). Main session re-read the code for A1–A7, A9, B1, B3. Findings listed under "Audit 2"; no code changed. Next: user picks which to fix.
