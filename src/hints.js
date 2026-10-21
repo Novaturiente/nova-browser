@@ -51,7 +51,9 @@
     host = document.createElement("novabrowser-hints");
     // Inline !important beats page CSS on the host (Reddit hides undefined custom elements).
     for (const [k, v] of Object.entries({ all: "initial", display: "block", visibility: "visible", opacity: "1", position: "fixed",
-      inset: "0", "z-index": "2147483647", "pointer-events": "none", transform: "none", filter: "none" }))
+      inset: "0", "z-index": "2147483647", "pointer-events": "none", transform: "none", filter: "none",
+      // opts out of colors.webpage.darkmode, which recoloured labels on some pages only
+      "color-scheme": "only light" }))
       host.style.setProperty(k, v, "important");
     // Closed shadow root: page CSS and scripts can't restyle or read the labels.
     const root = host.attachShadow({ mode: "closed" });

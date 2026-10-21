@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.6 (2026-10-21)
+
+- Hint labels keep their configured colours with
+  `colors.webpage.darkmode` on: force-dark recoloured them on some
+  pages only (white text on yellow or dark).
+
 ## 0.1.5 (2026-10-21)
 
 - Hints work in modal dialogs (ChatGPT's login box): labels are drawn
