@@ -36,8 +36,11 @@
       } catch (e) { /* cross-origin frame: qutebrowser skips these too */ }
     }
     for (const root of shadowRoots(document)) containers.push([root, zero]);
+    // An open modal <dialog> makes the rest of the page inert: hint only inside it.
+    const modal = document.querySelector(":modal");
     elems = [];
-    for (const [c, off] of containers) for (const e of c.querySelectorAll(selector)) if (visible(e, off)) elems.push([e, off]);
+    for (const [c, off] of containers)
+      for (const e of c.querySelectorAll(selector)) if ((!modal || modal.contains(e)) && visible(e, off)) elems.push([e, off]);
     return elems.length;
   };
 
@@ -69,6 +72,9 @@
       return d;
     });
     document.documentElement.append(host);
+    // Top layer, so the labels sit above a modal <dialog> (z-index can't beat it).
+    host.popover = "manual";
+    host.showPopover();
   };
 
   // Hide labels that don't start with `prefix`; the typed part is dimmed.

@@ -26,6 +26,8 @@
   body:not(.vertical) .t.n { flex: 0 0 auto; min-width: 0; }
   /* Status (no status bar): mode, pending keys, message at the end; load progress as a line. */
   #tabs { display: contents; }
+  /* Tabs overflow inside their own box, so many tabs can't push #info (prompts!) off the bar. */
+  body:not(.vertical) #tabs { display: flex; flex: 1 1 0; min-width: 0; overflow: hidden; }
   /* named profile, always first in the bar */
   #profile { flex: 0 0 auto; align-self: center; margin: 0 6px; padding: 1px 10px; border-radius: 999px;
              font: var(--fonts-tabs-selected, inherit); font-weight: bold;
@@ -34,7 +36,8 @@
   body.vertical #profile { align-self: stretch; margin: 6px 8px; text-align: center; }
   #info { margin-left: auto; display: flex; align-items: center; gap: 6px; padding: 0 8px; flex: 0 1 auto;
           min-width: 0; font: var(--fonts-statusbar, 10pt monospace); white-space: nowrap; }
-  body.vertical #info { margin: auto 0 0; padding: 6px 8px; flex-wrap: wrap; white-space: normal; }
+  body.vertical #info { margin: auto 0 0; padding: 6px 8px; flex-wrap: wrap; white-space: normal;
+                        position: sticky; bottom: 0; background: var(--colors-tabs-bar-bg, #555); }
   #info span:empty { display: none; }
   #info span { padding: 1px 9px; border-radius: 999px; overflow: hidden; text-overflow: ellipsis; }
   #mode { color: var(--colors-statusbar-normal-fg); background: var(--colors-statusbar-normal-bg); }

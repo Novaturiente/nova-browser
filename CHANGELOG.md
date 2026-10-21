@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.5 (2026-10-21)
+
+- Hints work in modal dialogs (ChatGPT's login box): labels are drawn
+  above the dialog, and only the dialog's own elements get labels while
+  it is open (the page behind can't be clicked).
+- Permission prompts (microphone, camera, …) and messages no longer
+  vanish when many tabs are open: the tabs used to push the message
+  area off the right edge of the bar.
+
 ## 0.1.4 (2026-10-20)
 
 - "Sign in with Google" (and other logins that hop across sites) works
