@@ -23,7 +23,8 @@
   .t.e { border-left-color: var(--colors-tabs-indicator-error); }
   .t.z { opacity: .5; }
   .t img { width: 1.2em; height: 1.2em; vertical-align: -0.25em; margin-right: .4em; }
-  body:not(.vertical) .t.n { flex: 0 0 auto; min-width: 0; }
+  body:not(.vertical) .t.n:not(.a) { flex: 0 0 auto; min-width: 0; }
+  .t img:last-child { margin-right: 0; }
   /* Status (no status bar): mode, pending keys, message at the end; load progress as a line. */
   #tabs { display: contents; }
   /* Tabs overflow inside their own box, so many tabs can't push #info (prompts!) off the bar. */
@@ -69,7 +70,9 @@
   };
   // Core → UI: nova.apply({tabs: [{t: label, a: active, l: loading, p: progress, e: crashed}],
   //   status: {mode, modename, cmd, keys, level, msg, loading, p, crashed}}).
-  let tipTimer;
+  let tipTimer, dragFrom = -1;
+  // drag a tab onto another to move it there (the press already focused it, so move the active tab)
+  document.onmouseup = () => { dragFrom = -1; };
   nova.apply = (s) => {
     const st = s.status;
     $("profile").textContent = st.profile;
@@ -88,10 +91,11 @@
       d.append(tab.t);
       d.onmousedown = (e) => {
         clearTimeout(tipTimer);
-        if (e.button === 0) nova.send("tab " + i);
+        if (e.button === 0) { dragFrom = i; nova.send("tab " + i); }
         if (e.button === 1) { e.preventDefault(); nova.send("close " + i); }
         if (e.button === 2) { const r = d.getBoundingClientRect(); nova.send(`menu ${i} ${Math.round(e.clientX)} ${Math.round(r.bottom)} ${Math.round(r.right)}`); }
       };
+      d.onmouseup = (e) => { if (e.button === 0 && dragFrom >= 0 && dragFrom !== i) nova.send("move " + i); };
       d.oncontextmenu = (e) => e.preventDefault();
       // hover: full title + URL after a short wait
       d.onmouseenter = () => {

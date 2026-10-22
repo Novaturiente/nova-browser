@@ -244,6 +244,7 @@ wrap_client! {
                 ("ready", _) => window::ui_ready(),
                 ("tab", Ok(n)) if n >= 0 => window::show(n as usize),
                 ("close", Ok(n)) if n >= 0 => window::close_user(n as usize, false),
+                ("move", Ok(n)) if n >= 0 => window::move_active(n + 1, false),
                 ("run", _) => { completion::record(arg); window::close_cmdline(); commands::run_from_bar(arg); }
                 ("text", _) => completion::on_text(arg),
                 ("complete", Ok(by)) => completion::select(by),

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.7 (2026-10-22)
+
+- Drag a tab in the tab bar to move it.
+- A focused pinned tab shows its full title; others keep the short
+  `tabs.title.format_pinned`.
+- Moving tabs (`gJ`/`gK`, `:tab-move`, dragging) keeps pinned tabs in front
+  of the others.
+
 ## 0.1.6 (2026-10-21)
 
 - Hint labels keep their configured colours with

@@ -930,7 +930,9 @@ pub fn refresh() {
             .iter()
             .enumerate()
             .map(|(i, t)| {
-                let label = theme::format_title(if t.pinned { &pin_fmt } else { &tab_fmt }, &fields(i, t));
+                // the focused pinned tab expands to the normal title
+                let pinned = t.pinned && i != s.active;
+                let label = theme::format_title(if pinned { &pin_fmt } else { &tab_fmt }, &fields(i, t));
                 format!(
                     // shortcut: icons (~1-2 KB each) are resent on every refresh; cache by id in the tabbar if it ever shows up in profiles
                     "{{\"t\":{},\"i\":{},\"a\":{},\"l\":{},\"p\":{},\"e\":{},\"n\":{},\"z\":{}}}",
@@ -1419,12 +1421,29 @@ pub fn move_active(i: i64, relative: bool) {
         } else {
             i - 1
         };
-        let to = to.clamp(0, len - 1) as usize;
+        let pinned = s.tabs.iter().filter(|t| t.pinned).count();
+        let to = move_target(to, len as usize, pinned, s.tabs[s.active].pinned);
         let tab = s.tabs.remove(s.active);
         s.tabs.insert(to, tab);
         s.active = to;
     });
     refresh();
+}
+
+/// Clamp a move so pinned tabs stay in the pinned group at the start, unpinned ones after it.
+fn move_target(to: i64, len: usize, pinned: usize, is_pinned: bool) -> usize {
+    let (lo, hi) = if is_pinned { (0, pinned - 1) } else { (pinned, len - 1) };
+    to.clamp(lo as i64, hi as i64) as usize
+}
+
+#[test]
+fn move_keeps_pinned_group() {
+    // 5 tabs, first 2 pinned
+    assert_eq!(move_target(4, 5, 2, true), 1);
+    assert_eq!(move_target(-3, 5, 2, true), 0);
+    assert_eq!(move_target(0, 5, 2, false), 2);
+    assert_eq!(move_target(3, 5, 2, false), 3);
+    assert_eq!(move_target(9, 5, 0, false), 4);
 }
 
 pub fn undo_close() {

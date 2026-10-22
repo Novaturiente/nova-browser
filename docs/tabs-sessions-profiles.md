@@ -5,7 +5,7 @@
 - `J` / `K` switch tabs, `Alt-1`…`Alt-8` jump to a tab, `Alt-9` to the last
   one, `Ctrl-Tab` to the one you used before.
 - `d` closes, `u` reopens (the closed-tab list survives restarts, last 100).
-- `gJ` / `gK` move a tab, `gC` duplicates it, `co` closes all others.
+- `gJ` / `gK` move a tab (or drag it in the tab bar; pinned tabs stay in front), `gC` duplicates it, `co` closes all others.
 - Mouse: click a tab to switch, middle-click to close, hover for its full URL,
   right-click for a menu (reload, clone, copy URL, mute, bookmark, pin, move
   to new window, sleep, keep awake, close, close others).
@@ -19,7 +19,7 @@ download status. A thin line under the tabs shows loading progress.
 ### Pinned tabs
 
 `Ctrl-p` (`:tab-pin`) pins a tab: it moves to the left, shows a short title
-(`tabs.title.format_pinned`), and `d`, `co` and middle-click won't close it.
+(`tabs.title.format_pinned`) until you focus it, and `d`, `co` and middle-click won't close it.
 `:tab-close --force` does. Pins are saved with the session.
 
 ### Tab hibernation

@@ -346,7 +346,8 @@ Freeze background tabs not looked at for this many minutes (`0` = never): no JS,
 
 ### `tabs.title.format_pinned`
 
-Title of pinned tabs (same fields).
+Title of pinned tabs that aren't focused (same fields); the focused one uses
+`tabs.title.format`. `"{audio}"` shows just the icon.
 
 - Type: string
 - Default: `"\"{audio}{index}\""`

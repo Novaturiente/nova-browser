@@ -90,6 +90,8 @@ Numbers match the report in the session. Code-checked by main session: A1–A10 
 
 - [x] Inconsistent hint colours (user, 2026-10-21): `colors.webpage.darkmode` force-darkened the labels on some pages (HN: white text on darkened yellow; Wikipedia: unchanged). `src/hints.js`: host gets `color-scheme: only light` (opts out of force-dark); checked on HN: black on yellow. User's config.ts: opaque hint gradient (default is 80% alpha, blends with the page), `fonts.hints` 10pt regular, padding 2px — label 22×17 px, verified through the real `hint` command (computed styles via DevTools).
 
+- [x] Tab reorder/pin UX (user, 2026-10-22): drag a tab in the tab bar to move it (`ui/tabbar.html` mousedown/mouseup → `move N` → `window::move_active`); focused pinned tab uses `tabs.title.format`; `move_target` keeps pinned tabs in front (test `move_keeps_pinned_group`). Checked via DevTools mouse events on the tab bar. Favicon delay measured: Chromium reports icon URLs only at load end (`loading 0`); download 30–90 ms. Not changed (would need a per-site icon cache).
+
 ### Phases 1–9 (PLAN.md §6; tick when the phase's exit check passes)
 - [x] 1 Skeleton (2026-10-11; `src/{main,window,client,renderer}.rs`, `ui/{tabbar,statusbar}.html`). Exit check: CDP-driven trusted mouse + user by hand — links, `target=_blank` and `window.open` → new tab (opener kept), middle-click link → background tab, click/middle-click tab bar → switch/close, status bar URL + progress, window title; web pages get no `window.nova`. `kill -9` of the tab's renderer (found by CPU-time delta via `SystemInfo.getProcessInfo`) → crash page with URL, status `[crashed] …`; real `r` (compositor `send_shortcut`) reloads; `r` types normally elsewhere (user). Mod+Q closes; exits 0 with a detached tab open, no leftover processes. `cargo test`: js_str escaping. Scripts: `/tmp/nova-p1/{drive,crash,bg}.mjs` (not kept). Not done here: hang watchdog, atomic writes (nothing writes yet), log rotation — later phases.
 - [x] 2 Modal core (2026-10-11; `src/{keys,bindings,commands,modes,devtools}.rs`, focus msg in `renderer.rs`, cmdline in `ui/statusbar.html`). `cargo test` 27 green (keys port of qutebrowser `test_keyutils`/`test_basekeyparser` rows by `worker`, command tokenizer/`;;`/aliases, zoom steps, js_str). Real keys via compositor `send_shortcut` + CDP readback: `o`/`O` + URL, `j`×3+`5j` = 320 px, `G`/`gg`, `J`/`K`, `d`/`u`, `H`/`L`, `+`/`-`/`=` zoom 110/125/100%, pending `g` shown + Escape clears, `:foobar` → error msg, `i`/Escape, click into input → auto insert (`jkr` typed), Escape → `j` scrolls, Ctrl-v passthrough / Shift-Escape. User drove HN without mouse (o/O, j k d u J K H L gg G, Ctrl-d/u, T+n, i/Escape, click into text box): all work. Not here: hints `f`, find `/`, `yy`/clipboard, completion/history, user config bindings (later phases); ~58 default commands, unimplemented ones report "not implemented yet".
@@ -182,6 +184,8 @@ Newest first. Settled — don't reopen without new evidence.
 ## Session log
 
 Newest first. One entry per session: date, what changed, evidence, what's next.
+
+- 2026-10-22 (IST) — Tab dragging, expanded focused pinned tab, pinned group kept on moves. Release 0.1.7. Thunder Compute login fixed in user config (Stytch telemetry whitelisted). Next: per-site favicon cache if the user wants faster icons.
 
 - 2026-10-21 (IST) — Hint labels opted out of force-dark; user's hints made compact. Release 0.1.6. Next: user confirms Google sign-in and mic prompt.
 
