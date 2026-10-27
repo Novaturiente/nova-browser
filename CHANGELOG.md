@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.8 (2026-10-27)
+
+- Submitting a payment card form (for example "Update payment method" on
+  claude.ai) no longer crashes the browser. Chromium's autofill tried to
+  show its "Save card?" bubble, which needs Chrome UI that novabrowser
+  doesn't have. Autofill for cards and addresses is now off.
+
 ## 0.1.7 (2026-10-22)
 
 - Drag a tab in the tab bar to move it.
