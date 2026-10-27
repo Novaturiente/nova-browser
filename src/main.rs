@@ -43,7 +43,9 @@ wrap_browser_process_handler! {
             if let Some(ctx) = request_context_get_global_context() {
                 // signin: no Google sign-in here, stops the accounts.google.com ListAccounts poll.
                 // safebrowsing: without a Google API key its list fetch only gets HTTP 400.
-                for name in ["signin.allowed", "safebrowsing.enabled"] {
+                // autofill: its save-card/address bubbles need Chrome's tab UI, which Alloy lacks:
+                // submitting a card form crashed the browser in TabInterface::GetFromContents.
+                for name in ["signin.allowed", "safebrowsing.enabled", "autofill.credit_card_enabled", "autofill.profile_enabled"] {
                     let off = value_create().expect("cef value");
                     off.set_bool(0);
                     set_pref(&ctx, name, off);

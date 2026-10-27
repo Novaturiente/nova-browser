@@ -111,6 +111,8 @@ Numbers match the report in the session. Code-checked by main session: A1–A10 
 
 Newest first. Settled — don't reopen without new evidence.
 
+- 2026-10-27 — Autofill off (prefs `autofill.credit_card_enabled`, `autofill.profile_enabled` = false, main.rs). Submitting a card form (claude.ai payment method) segfaulted the browser: `CreditCardSaveManager::OfferCardLocalSave` → `SaveCardBubbleControllerImpl::DoShowBubble` → `tabs::TabInterface::GetFromContents`, Chrome tab UI that Alloy lacks. Address save uses the same bubble family, so it is off too [Likely same crash; not reproduced]. Alloy has no autofill dropdown anyway, so nothing usable is lost. Symbolize browser crashes with `eu-addr2line -f -e ~/.local/share/cef-own/libcef.so <offset>` (same BuildID as the installed libcef, symbol table kept).
+
 - 2026-10-20 — Address-box ranking (user): strict order typed count → visits → recency (supersedes the 2026-10-13 visits-only ranking), not a blended score; a page typed once outranks one reached 100× by links. "Typed" = any `open` with an argument entered in the command box, incl. picking a completion row (Chromium counts those too); IPC/`--cmd`/hints/keys like `pp` don't count. Bookmark sections stay above history (`completion.open_categories` order).
 
 - 2026-10-15 — Audit fixes (user): background tabs freeze after 5 min unless pinned/kept/playing/typed/notification-allowed (risk named to user: chat tabs without notification permission stop receiving until shown; exempt per site with `p.tabs.freeze_after = 0`). Password popup strict, `Sp` for the rest; `Sp` replaces `<Space>pp` (one key per action). Same-site iframe fill kept (same-origin breaks real logins). Private files via 0700 dirs rather than chmod per file.
@@ -184,6 +186,8 @@ Newest first. Settled — don't reopen without new evidence.
 ## Session log
 
 Newest first. One entry per session: date, what changed, evidence, what's next.
+
+- 2026-10-27 (IST, 22:00) — Fixed browser crash on card form submit (claude.ai update payment method). Cause from the two 18:45/18:46 coredumps, symbolized: autofill save-card bubble → `TabInterface::GetFromContents` SIGSEGV. Repro: local card form (labelled cc fields, 4111…1111, GET submit) filled + submitted over CDP in a throwaway profile — installed 0.1.7 segfaults (exit 139, same stack); patched `target-own` build navigates to `done.html` and stays alive, no pref errors. 92 tests green. Not checked: claude.ai itself (Stripe iframe) — user to retry after reinstall. Next: unchanged (Now).
 
 - 2026-10-22 (IST) — Tab dragging, expanded focused pinned tab, pinned group kept on moves. Release 0.1.7. Thunder Compute login fixed in user config (Stytch telemetry whitelisted). Next: per-site favicon cache if the user wants faster icons.
 
