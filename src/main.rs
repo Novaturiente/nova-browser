@@ -13,7 +13,6 @@ mod hints;
 mod history;
 mod import;
 mod ipc;
-mod keys;
 mod marks;
 mod modes;
 mod net;
@@ -26,12 +25,15 @@ mod settings;
 mod settings_page;
 mod spawn;
 mod theme;
-mod urlmatch;
 mod welcome;
 mod window;
 
 use cef::*;
-use std::path::PathBuf;
+// Engine-independent code shared with novabrowser-webkit; re-exported so `crate::keys` etc. keep working.
+pub(crate) use nova_core::paths::{
+    page_token, profile, valid_profile_name, write_atomic, xdg_dir, xdg_root,
+};
+pub(crate) use nova_core::{keys, urlmatch};
 
 wrap_browser_process_handler! {
     struct NovaBrowserProcess { start_url: Option<String> }
@@ -198,20 +200,6 @@ fn start_url() -> Option<String> {
     )
 }
 
-/// Random per-run secret our manager pages (data: URLs) put in their nova.send
-/// messages: other data: frames (e.g. a site's data: iframe) can't know it.
-pub(crate) fn page_token() -> &'static str {
-    static T: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    T.get_or_init(|| {
-        let mut b = [0u8; 16];
-        use std::io::Read;
-        std::fs::File::open("/dev/urandom")
-            .and_then(|mut f| f.read_exact(&mut b))
-            .expect("/dev/urandom");
-        b.iter().map(|x| format!("{x:02x}")).collect()
-    })
-}
-
 /// Set a Chromium profile preference; failures go to the log.
 pub(crate) fn set_pref(ctx: &RequestContext, name: &str, mut v: Value) {
     // cef-rs passes an empty CefString out-param as NULL and CEF then fails the call: pre-fill it.
@@ -239,7 +227,6 @@ pub(crate) fn apply_spellcheck() {
     set_pref(&ctx, "spellcheck.dictionaries", v);
 }
 
-/// Temp file, fsync, rename: a crash leaves the old or the new file, never half of one.
 type UiFn = Box<dyn FnOnce() + Send>;
 
 wrap_task! {
@@ -260,62 +247,6 @@ pub(crate) fn on_ui(f: impl FnOnce() + Send + 'static) {
             std::sync::Mutex::new(Some(f)),
         ))),
     );
-}
-
-pub(crate) fn write_atomic(path: &std::path::Path, data: &[u8]) -> std::io::Result<()> {
-    use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
-    let tmp = path.with_extension("tmp");
-    let mut f = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600) // new files only; dirs are 0700 anyway (main)
-        .open(&tmp)?;
-    f.write_all(data)?;
-    f.sync_all()?;
-    std::fs::rename(tmp, path)
-}
-
-/// This instance's data/state dir: `<XDG dir>/novabrowser`, or for a named
-/// profile `<XDG dir>/novabrowser/profiles/<name>` (all data per profile; config shared).
-pub(crate) fn xdg_dir(var: &str, fallback: &str) -> PathBuf {
-    let root = xdg_root(var, fallback);
-    match profile() {
-        Some(name) => root.join("profiles").join(name),
-        None => root,
-    }
-}
-
-/// `<XDG dir>/novabrowser`, the same for every profile.
-pub(crate) fn xdg_root(var: &str, fallback: &str) -> PathBuf {
-    let base = std::env::var_os(var)
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").expect("HOME")).join(fallback));
-    base.join("novabrowser")
-}
-
-static PROFILE: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
-
-/// Named profile from `--profile=<name>`; None = the default profile.
-pub(crate) fn profile() -> Option<&'static str> {
-    PROFILE
-        .get_or_init(|| {
-            std::env::args()
-                .find_map(|a| a.strip_prefix("--profile=").map(str::to_string))
-                .filter(|n| n != "default")
-        })
-        .as_deref()
-}
-
-/// Profile names: letters, digits, space, `-`, `_`; "default" is the unnamed one.
-pub(crate) fn valid_profile_name(name: &str) -> bool {
-    !name.is_empty()
-        && name.len() <= 40
-        && name
-            .chars()
-            .all(|c| c.is_alphanumeric() || matches!(c, ' ' | '-' | '_'))
-        && !name.starts_with(' ')
 }
 
 /// `--profile <name>` / `-P <name>` → `--profile=<name>` (the only form the rest of

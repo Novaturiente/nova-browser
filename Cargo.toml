@@ -8,6 +8,7 @@ publish = false
 [dependencies]
 adblock = { version = "0.13.3", default-features = false, features = ["embedded-domain-resolver", "full-regex-handling"] }
 cef = "=154.5.0"  # exact: must match the CEF binary version (154.0.34)
+nova-core = { path = "../nova-core" }  # shared with novabrowser-webkit
 oxc_allocator = "0.153"
 oxc_codegen = "0.153"
 oxc_parser = "0.153"

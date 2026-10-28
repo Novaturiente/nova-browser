@@ -984,11 +984,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "610a5acd306ec67f907abe5567859a3c693fb9886eb1f012ab8f2a47bef3db51"
 
 [[package]]
+name = "nova-core"
+version = "0.1.0"
+
+[[package]]
 name = "novabrowser"
 version = "0.1.8"
 dependencies = [
  "adblock",
  "cef",
+ "nova-core",
  "oxc_allocator",
  "oxc_codegen",
  "oxc_parser",
