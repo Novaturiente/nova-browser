@@ -62,6 +62,14 @@ impl nova_core::host::Host for CefHost {
         });
         post_delayed_task(ThreadId::UI, Some(&mut Later::new(id)), ms as i64);
     }
+    fn run_in_tab(&self, tab: u64, line: &str) -> bool {
+        window::run_in_tab(tab as i32, || commands::run(line, None))
+    }
+    fn show_text(&self, text: &str) {
+        // qutebrowser shows `spawn -o` output in a new tab as plain text
+        let b64 = CefString::from(&base64_encode(Some(text.as_bytes()))).to_string();
+        window::open(&format!("data:text/plain;charset=utf-8;base64,{b64}"), true);
+    }
 }
 
 thread_local! {

@@ -986,8 +986,9 @@ checksum = "610a5acd306ec67f907abe5567859a3c693fb9886eb1f012ab8f2a47bef3db51"
 [[package]]
 name = "nova-core"
 version = "0.1.0"
-source = "git+https://github.com/Novaturiente/nova-core?rev=0433ff0044604cff48153ade557cd28f72721b64#0433ff0044604cff48153ade557cd28f72721b64"
+source = "git+https://github.com/Novaturiente/nova-core?rev=40be7614bd1defda653c9e47aa3279ca46dbe57e#40be7614bd1defda653c9e47aa3279ca46dbe57e"
 dependencies = [
+ "adblock",
  "oxc_allocator",
  "oxc_codegen",
  "oxc_parser",
