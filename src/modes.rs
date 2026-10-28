@@ -33,57 +33,9 @@ thread_local! {
 
 /// (Re)build the keymaps: `bindings.default`, then `bindings.commands`, then
 /// config.ts bind()/unbind() in order. Bad key strings are reported, not fatal.
-/// Every binding in apply order: defaults, then `bindings.commands`, then config.ts
-/// bind/unbind. (mode, key, command or None = unbind, set by the user).
-fn all_binds(cfg: &config::Config) -> Vec<(String, String, Option<String>, bool)> {
-    let mut binds = Vec::new();
-    for setting in ["bindings.default", "bindings.commands"] {
-        for (mode, map) in cfg.get(setting).as_object().into_iter().flatten() {
-            for (key, cmd) in map.as_object().into_iter().flatten() {
-                // an empty/null command in bindings.commands unbinds (qutebrowser)
-                let cmd = cmd.as_str().filter(|c| !c.is_empty()).map(str::to_string);
-                binds.push((
-                    mode.clone(),
-                    key.clone(),
-                    cmd,
-                    setting == "bindings.commands",
-                ));
-            }
-        }
-    }
-    binds.extend(
-        cfg.binds
-            .iter()
-            .map(|(m, k, c)| (m.clone(), k.clone(), c.clone(), true)),
-    );
-    binds
-}
-
-/// Effective bindings for `:bindings`: (mode, key in canonical notation, command,
-/// set by the user). Later binds replace earlier ones for the same key; unbinds drop it.
-pub fn bindings() -> Vec<(String, String, String, bool)> {
-    let mut out: Vec<(String, String, String, bool)> = Vec::new();
-    for (mode, keystr, cmd, user) in all_binds(&config::get()) {
-        let Ok(seq) = keys::parse_keystring(&keystr) else {
-            continue;
-        };
-        let key: String = seq.iter().map(|k| k.to_string()).collect();
-        let at = out.iter().position(|(m, k, _, _)| *m == mode && *k == key);
-        match (at, cmd) {
-            (Some(i), Some(c)) => out[i] = (mode, key, c, user),
-            (None, Some(c)) => out.push((mode, key, c, user)),
-            (Some(i), None) => {
-                out.remove(i);
-            }
-            (None, None) => {}
-        }
-    }
-    out
-}
-
 pub fn init() {
     let cfg = config::get();
-    let binds: Vec<(String, String, Option<String>)> = all_binds(&cfg)
+    let binds: Vec<(String, String, Option<String>)> = nova_core::bindings::all(&cfg)
         .into_iter()
         .map(|(m, k, c, _)| (m, k, c))
         .collect();

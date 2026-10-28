@@ -2,7 +2,7 @@
 //! shared in `nova_core::commands`.
 use crate::{clipboard, config, devtools, hints, modes, window};
 use cef::*;
-pub use nova_core::commands::{host, url_or_search, zoom_step, Cmd, NAMES};
+pub use nova_core::commands::{host, set_user, url_or_search, zoom_step, Cmd};
 use nova_core::commands::tab_index;
 use std::cell::RefCell;
 
@@ -262,23 +262,6 @@ fn open_in(url: &str, cmd: &Cmd) -> Result<(), String> {
         }
     }
     Ok(())
-}
-
-/// `:set` / `:config-cycle` / settings page: save the value unless `temp`. A value
-/// config.ts sets can only be overridden until restart (config.ts wins).
-pub fn set_user(name: &str, value: &str, temp: bool) -> Result<(), String> {
-    let cfg = config::get();
-    if temp || cfg.in_config_ts(name) {
-        cfg.set_runtime(name, value)?;
-        if !temp {
-            window::message(
-                "warning",
-                &format!("{name} is set in config.ts: changed until restart only"),
-            );
-        }
-        return Ok(());
-    }
-    config::save(name, Some(value))
 }
 
 fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {

@@ -4,24 +4,16 @@ mod aria2;
 mod client;
 mod clipboard;
 mod commands;
-mod completion;
 mod devtools;
 mod downloads;
 mod hints;
-mod history;
-mod import;
 mod ipc;
-mod marks;
 mod modes;
 mod net;
 mod passwords;
 mod permissions;
-mod profiles;
 mod renderer;
-mod session;
-mod settings_page;
 mod spawn;
-mod welcome;
 mod window;
 
 use cef::*;
@@ -29,12 +21,72 @@ use cef::*;
 pub(crate) use nova_core::paths::{
     page_token, profile, valid_profile_name, write_atomic, xdg_dir, xdg_root,
 };
-pub(crate) use nova_core::{config, keys, settings, theme, urlmatch};
+pub(crate) use nova_core::{
+    completion, config, history, import, keys, marks, profiles, session, settings_page, theme,
+    urlmatch, welcome,
+};
+
+/// nova-core's seam into this edition (see nova_core::host).
+struct CefHost;
+impl nova_core::host::Host for CefHost {
+    fn message(&self, level: &str, text: &str) {
+        window::message(level, text)
+    }
+    fn config_changed(&self) {
+        window::config_changed()
+    }
+    fn open_window(&self, url: Option<String>) {
+        window::open_window(url)
+    }
+    fn show_completion(&self, json: Option<&str>) {
+        window::show_completion(json)
+    }
+    fn set_cmdline_text(&self, text: &str) {
+        window::set_cmdline_text(text)
+    }
+    fn search(&self, text: &str, backward: bool) {
+        let _ = commands::search(text, backward);
+    }
+    fn session_json(&self) -> Option<serde_json::Value> {
+        window::session_json()
+    }
+    fn restore(&self, v: &serde_json::Value, clear: bool) {
+        window::restore(v, clear)
+    }
+    fn later(&self, ms: u64, f: Box<dyn FnOnce()>) {
+        // the task must be Send: keep the closure here and post only its id
+        let id = LATER.with_borrow_mut(|l| {
+            l.0 += 1;
+            l.1.push((l.0, f));
+            l.0
+        });
+        post_delayed_task(ThreadId::UI, Some(&mut Later::new(id)), ms as i64);
+    }
+}
+
+thread_local! {
+    static LATER: std::cell::RefCell<(u64, Vec<(u64, Box<dyn FnOnce()>)>)> =
+        std::cell::RefCell::new((0, Vec::new()));
+}
+
+wrap_task! {
+    struct Later { id: u64 }
+    impl Task {
+        fn execute(&self) {
+            let f = LATER.with_borrow_mut(|l| {
+                let i = l.1.iter().position(|e| e.0 == self.id)?;
+                Some(l.1.remove(i).1)
+            });
+            if let Some(f) = f { f() }
+        }
+    }
+}
 
 wrap_browser_process_handler! {
     struct NovaBrowserProcess { start_url: Option<String> }
     impl BrowserProcessHandler {
         fn on_context_initialized(&self) {
+            nova_core::host::set(Box::new(CefHost), |f| on_ui(f));
             modes::init();
             net::apply_cookie_policy();
             apply_spellcheck();

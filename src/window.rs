@@ -179,20 +179,7 @@ pub fn in_owner<R>(browser: &Browser, f: impl FnOnce() -> R) -> R {
 const KIND_FIXED: u8 = 0;
 const KIND_TABBAR: u8 = 1;
 
-/// JS string literal; everything but ASCII alphanumerics and space as \uXXXX,
-/// so page titles/URLs can't break out of the script we inject them into.
-pub fn js_str(v: &str) -> String {
-    let mut out = String::with_capacity(v.len() + 2);
-    out.push('"');
-    for u in v.encode_utf16() {
-        match u {
-            0x20 | 0x30..=0x39 | 0x41..=0x5a | 0x61..=0x7a => out.push(u as u8 as char),
-            _ => out.push_str(&format!("\\u{u:04x}")),
-        }
-    }
-    out.push('"');
-    out
-}
+pub use nova_core::host::js_str;
 
 pub fn data_url(html: &str) -> CefString {
     let b64 = CefString::from(&base64_encode(Some(html.as_bytes()))).to_string();
@@ -2213,21 +2200,5 @@ wrap_window_delegate! {
         fn can_minimize(&self, _window: Option<&mut Window>) -> ::std::os::raw::c_int { 1 }
 
         fn window_runtime_style(&self) -> RuntimeStyle { RuntimeStyle::ALLOY }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::js_str;
-
-    #[test]
-    fn js_str_escapes_everything_risky() {
-        assert_eq!(js_str("ab 09"), "\"ab 09\"");
-        assert_eq!(
-            js_str("\"</script>"),
-            "\"\\u0022\\u003c\\u002fscript\\u003e\""
-        );
-        assert_eq!(js_str("\\\n\u{2028}é"), "\"\\u005c\\u000a\\u2028\\u00e9\"");
-        assert_eq!(js_str("😀"), "\"\\ud83d\\ude00\"");
     }
 }
