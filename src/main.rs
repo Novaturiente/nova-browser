@@ -1,12 +1,10 @@
 //! novabrowser: one binary; re-executes itself as the CEF subprocesses.
 mod adblock;
 mod aria2;
-mod bindings;
 mod client;
 mod clipboard;
 mod commands;
 mod completion;
-mod config;
 mod devtools;
 mod downloads;
 mod hints;
@@ -21,10 +19,8 @@ mod permissions;
 mod profiles;
 mod renderer;
 mod session;
-mod settings;
 mod settings_page;
 mod spawn;
-mod theme;
 mod welcome;
 mod window;
 
@@ -33,7 +29,7 @@ use cef::*;
 pub(crate) use nova_core::paths::{
     page_token, profile, valid_profile_name, write_atomic, xdg_dir, xdg_root,
 };
-pub(crate) use nova_core::{keys, urlmatch};
+pub(crate) use nova_core::{config, keys, settings, theme, urlmatch};
 
 wrap_browser_process_handler! {
     struct NovaBrowserProcess { start_url: Option<String> }

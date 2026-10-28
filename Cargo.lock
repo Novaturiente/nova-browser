@@ -986,7 +986,17 @@ checksum = "610a5acd306ec67f907abe5567859a3c693fb9886eb1f012ab8f2a47bef3db51"
 [[package]]
 name = "nova-core"
 version = "0.1.0"
-source = "git+https://github.com/Novaturiente/nova-core?rev=32b1886407c7fa66f69d822638eb31c10de69250#32b1886407c7fa66f69d822638eb31c10de69250"
+source = "git+https://github.com/Novaturiente/nova-core?rev=b17be2258ddb362cfa8407c0470f023b222b46dc#b17be2258ddb362cfa8407c0470f023b222b46dc"
+dependencies = [
+ "oxc_allocator",
+ "oxc_codegen",
+ "oxc_parser",
+ "oxc_semantic",
+ "oxc_span",
+ "oxc_transformer",
+ "rquickjs",
+ "serde_json",
+]
 
 [[package]]
 name = "novabrowser"
@@ -995,13 +1005,6 @@ dependencies = [
  "adblock",
  "cef",
  "nova-core",
- "oxc_allocator",
- "oxc_codegen",
- "oxc_parser",
- "oxc_semantic",
- "oxc_span",
- "oxc_transformer",
- "rquickjs",
  "rusqlite",
  "serde_json",
 ]

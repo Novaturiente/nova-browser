@@ -9,13 +9,6 @@ publish = false
 adblock = { version = "0.13.3", default-features = false, features = ["embedded-domain-resolver", "full-regex-handling"] }
 cef = "=154.5.0"  # exact: must match the CEF binary version (154.0.34)
 # Shared with novabrowser-webkit; pinned rev, bump after pushing nova-core changes.
-nova-core = { git = "https://github.com/Novaturiente/nova-core", rev = "32b1886407c7fa66f69d822638eb31c10de69250" }
-oxc_allocator = "0.153"
-oxc_codegen = "0.153"
-oxc_parser = "0.153"
-oxc_semantic = "0.153"
-oxc_span = "0.153"
-oxc_transformer = "0.153"
-rquickjs = { version = "0.14.0", features = ["loader"] }
+nova-core = { git = "https://github.com/Novaturiente/nova-core", rev = "b17be2258ddb362cfa8407c0470f023b222b46dc" }
 rusqlite = "0.40.2"
 serde_json = "1.0.152"
