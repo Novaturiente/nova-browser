@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Downloads through aria2: the RPC secret is now passed in a private
+  (0600) config file instead of on aria2c's command line, where other
+  local users could read it.
+- Most of the browser logic now lives in the shared `nova-core` crate,
+  also used by the WebKit edition. No change in behaviour expected.
+- `:set` refuses settings that only apply to the WebKit edition
+  (`webkit.*`).
+
 ## 0.1.8 (2026-10-27)
 
 - Submitting a payment card form (for example "Update payment method" on
