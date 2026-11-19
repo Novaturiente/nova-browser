@@ -402,6 +402,9 @@ pub fn open_related(url: &str, foreground: bool) {
 }
 
 fn open_titled(url: &str, title: String, foreground: bool, related: bool) {
+    // a browser created with no URL never gets a page and ignores every key (a saved
+    // popup that never loaded comes back as "")
+    let url = if url.is_empty() { "about:blank" } else { url };
     let view = browser_view(&mut TabClient::new(), url, KIND_FIXED, &page_settings());
     add_tab(view, url.to_string(), title, foreground, related);
 }
