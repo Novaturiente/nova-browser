@@ -55,7 +55,8 @@
   .grp:nth-child(2) { animation-delay: 30ms; } .grp:nth-child(3) { animation-delay: 60ms; } .grp:nth-child(n+4) { animation-delay: 90ms; }
   @keyframes grp-in { from { opacity: 0; transform: translateY(-6px); } }
   #list.still .grp { animation: none; }
-  .grp.small { flex-shrink: 0; }
+  /* small cards never shrink, so they need no floor: their height is their rows */
+  .grp.small { flex-shrink: 0; min-height: 0; }
   .cat { position: relative; z-index: 3; display: flex; gap: 8px; align-items: baseline; padding: 10px 10px 5px;
          font: var(--fonts-completion-category, 600 9pt sans-serif); letter-spacing: .02em;
          color: color-mix(in srgb, var(--colors-completion-category-fg, var(--ink)) 70%, transparent); }
