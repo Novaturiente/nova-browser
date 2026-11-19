@@ -104,8 +104,6 @@ struct State {
     keyhint_gen: u64,
     /// Palette shown as a thin strip (search: the page must stay visible).
     compact: bool,
-    /// Where hidden overlays wait (parked), in window coordinates.
-    park: Option<(i32, i32)>,
     tabs: Vec<Tab>,
     active: usize,
     /// Previously active tab, for `tab-focus last`.
@@ -1658,37 +1656,18 @@ fn clamp_to_window(mut r: Rect) -> Rect {
     r
 }
 
-/// Where a "hidden" overlay waits: visible, with only its top-left pixel inside the
-/// window's bottom-right corner. A hidden CEF view stops painting, and so does one fully
-/// outside the window, so showing it flashed white (or its last popup) for a frame; a
-/// parked one keeps painting, so it is filled first and moved in once its frame is ready.
+/// Where a "hidden" overlay waits: visible but far outside the window. A hidden CEF view
+/// stops painting, so showing it flashed white (or its last popup) for a frame; a parked
+/// one keeps painting, so it can be filled first and moved in once its frame is ready.
+const PARK_X: i32 = 100_000;
+
 fn parked(r: &Rect) -> Rect {
-    let w = S.with_borrow(|s| s.window.as_ref().map(|w| w.bounds()));
-    let (x, y) = w.map_or((0, 0), |b| (b.width - 1, b.height - 1));
-    S.with_borrow_mut(|s| s.park = Some((x, y)));
-    Rect { x, y, width: r.width, height: r.height }
+    Rect { x: PARK_X, y: 0, width: r.width, height: r.height }
 }
 
-fn is_parked(b: &Rect) -> bool {
-    S.with_borrow(|s| s.park == Some((b.x, b.y)))
-}
-
-/// 1 px at the window's top-left: a new overlay until its page has painted once
-/// (on_window_created, ui_painted); a view never painted on screen doesn't paint parked.
-fn warming(b: &Rect) -> bool {
-    (b.x, b.y, b.width, b.height) == (0, 0, 1, 1)
-}
-
-/// The overlay is on screen (not parked, warming or hidden).
+/// The overlay is on screen (not parked, not hidden).
 fn is_shown(o: &OverlayController) -> bool {
-    let b = o.bounds();
-    o.is_visible() != 0 && !is_parked(&b) && !warming(&b)
-}
-
-fn overlays() -> Vec<(BrowserView, OverlayController)> {
-    S.with_borrow(|s| {
-        [&s.keyhint, &s.toast, &s.ask, &s.tip, &s.menu, &s.palette].into_iter().flatten().cloned().collect()
-    })
+    o.is_visible() != 0 && o.bounds().x < PARK_X
 }
 
 thread_local! {
@@ -1733,12 +1712,7 @@ fn glass_fill(v: &BrowserView, o: &OverlayController, gen: u64, r: Rect, focus: 
     GLASS_PENDING.with_borrow_mut(|p| p.insert(id, (gen, r, focus, o.clone(), v.clone())));
     view_js(v, &format!("nova.show({gen}, {glass}, () => {{ {js} }})"));
     let slot = CUR.get();
-    nova_core::host::later(400, move || {
-        if GLASS_PENDING.with_borrow(|p| p.get(&id).is_some_and(|e| e.0 == gen)) {
-            eprintln!("novabrowser: overlay {id} did not paint parked; shown anyway");
-        }
-        in_slot(slot, || glass_ready(id, gen))
-    });
+    nova_core::host::later(400, move || in_slot(slot, || glass_ready(id, gen)));
 }
 
 /// "glassready gen" from an overlay page: its frame is painted, put it on screen.
@@ -2126,22 +2100,12 @@ fn show_keyhint(generation: u64) {
     show_glass(&view, &overlay, r, js, false);
 }
 
-/// After a relayout (window resize): parked overlays follow the window's corner, and a
-/// shown palette fills its new place.
-fn place_overlays() {
-    let old = S.with_borrow(|s| s.park);
-    for (_, o) in overlays() {
-        let b = o.bounds();
-        if old == Some((b.x, b.y)) {
-            o.set_bounds(Some(&parked(&b)));
-        }
-    }
+/// Move the palette to its place after a relayout (parked stays parked, resized).
+fn place_palette() {
     let (Some(r), Some((_, o))) = (palette_rect(), S.with_borrow(|s| s.palette.clone())) else {
         return;
     };
-    if is_shown(&o) {
-        o.set_bounds(Some(&r));
-    }
+    o.set_bounds(Some(&if is_shown(&o) { r } else { parked(&r) }));
 }
 
 /// Full content area, or a search pill at the top centre when compact.
@@ -2292,7 +2256,7 @@ fn apply_layout() {
     tabbar.set_visible(show as i32);
     tb.invalidate_layout();
     window.layout();
-    place_overlays();
+    place_palette();
     push_theme();
     focus_active(); // re-parenting moves focus off the page
 }
@@ -2340,17 +2304,6 @@ fn push_theme() {
 pub fn ui_ready() {
     push_theme();
     refresh();
-}
-
-/// An overlay page painted its first frame while warming (on_window_created): park it;
-/// from here on it paints while parked.
-pub fn ui_painted(id: i32) {
-    if let Some((_, o)) = overlays().into_iter().find(|(v, _)| browser_id(v) == Some(id)) {
-        let b = o.bounds();
-        if warming(&b) {
-            o.set_bounds(Some(&parked(&b)));
-        }
-    }
 }
 
 /// After `:config-source` / `:set`: rebuild keys, layout, theme, per-site dark mode.
@@ -2415,7 +2368,7 @@ wrap_window_delegate! {
     impl ViewDelegate {
         fn preferred_size(&self, _view: Option<&mut View>) -> Size { Size { width: 1200, height: 800 } }
         fn on_layout_changed(&self, _view: Option<&mut View>, bounds: Option<&Rect>) {
-            in_slot(self.slot, place_overlays);
+            in_slot(self.slot, place_palette);
             // vertical tab bar width is a percentage of the window: re-layout on resize
             let w = bounds.map_or(0, |b| b.width);
             let (_, size) = bar_sizes(w);
@@ -2466,18 +2419,11 @@ wrap_window_delegate! {
             let tip_overlay = window.add_overlay_view(Some(&mut View::from(&tip)), DockingMode::CUSTOM, 0).expect("tip overlay");
             let menu = browser_view(&mut UiClient::new(), &ui_url(POPUP_HTML), KIND_FIXED, &ui);
             let menu_overlay = window.add_overlay_view(Some(&mut View::from(&menu)), DockingMode::CUSTOM, 1).expect("menu overlay");
-            // Added last so it stays on top (cef_window.h); positioned by palette_rect.
+            // Added last so it stays on top (cef_window.h); positioned by place_palette.
             let palette = browser_view(&mut UiClient::new(), &ui_url(PALETTE_HTML), KIND_FIXED, &ui);
             let overlay = window
                 .add_overlay_view(Some(&mut View::from(&palette)), DockingMode::CUSTOM, 1) // can_activate: takes keys
                 .expect("palette overlay");
-            // parked from the start, never hidden: a view that never was on screen does
-            // not paint while parked, so its first show would flash (see glass_fill)
-            // warming until its page has painted (ui_painted parks it)
-            for o in [&kh_overlay, &toast_overlay, &ask_overlay, &tip_overlay, &menu_overlay, &overlay] {
-                o.set_bounds(Some(&Rect { x: 0, y: 0, width: 1, height: 1 }));
-                o.set_visible(1);
-            }
             let (start, startup) = S.with_borrow_mut(|s| {
                 s.palette = Some((palette, overlay));
                 s.keyhint = Some((keyhint, kh_overlay));

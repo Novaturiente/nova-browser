@@ -41,8 +41,6 @@
   // Replay the entry animation on the page's surface; nova.out() fades it before
   // window.rs hides the overlay (views can't fade themselves).
   nova.surface = () => document.querySelector(".pop") || document.body;
-  // first frame painted (window.rs keeps each new overlay 1 px on screen until then)
-  addEventListener("load", () => requestAnimationFrame(() => requestAnimationFrame(() => nova.send("painted"))));
   // nova.show(gen, glass, fill): window.rs parked the view; decode the backdrop, paint
   // it with the content (fill), then say "glassready gen" so it moves on screen.
   let showing = 0;
