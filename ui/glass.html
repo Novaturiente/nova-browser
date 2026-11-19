@@ -23,6 +23,8 @@
   @keyframes glass-in { from { opacity: 0; transform: translateY(var(--rise, -8px)) scale(.94); } }
   @keyframes glass-out { from { opacity: 1; } to { opacity: 0; transform: scale(.97); } }
   @media (prefers-reduced-motion: reduce) { .pop, .pop.out { animation-duration: 1ms; } }
+  /* filled while parked off screen: only the backdrop until window.rs moves it in */
+  html.wait .pop { visibility: hidden; animation: none; }
 </style>
 <script>
   // nova.vars(theme): the config's colours/fonts as CSS variables (theme.rs)
@@ -39,6 +41,21 @@
   // Replay the entry animation on the page's surface; nova.out() fades it before
   // window.rs hides the overlay (views can't fade themselves).
   nova.surface = () => document.querySelector(".pop") || document.body;
+  // nova.show(gen, glass, fill): window.rs parked the view; decode the backdrop, paint
+  // it with the content (fill), then say "glassready gen" so it moves on screen.
+  let showing = 0;
+  nova.show = async (gen, g, fill) => {
+    showing = gen;
+    document.documentElement.classList.add("wait");
+    if (g) { const im = new Image(); im.src = g.img; try { await im.decode(); } catch (e) {} }
+    if (showing !== gen) return;
+    nova.glass(g);
+    fill();
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    if (showing === gen) nova.send("glassready " + gen);
+  };
+  // on screen now: play the entrance
+  nova.play = () => { document.documentElement.classList.remove("wait"); nova.in(); };
   nova.in = () => { const s = nova.surface(); s.classList.remove("out"); s.style.animation = "none"; void s.offsetWidth; s.style.animation = ""; };
   nova.out = () => nova.surface().classList.add("out");
 </script>

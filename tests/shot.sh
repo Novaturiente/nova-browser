@@ -4,7 +4,9 @@
 # focus it, read its geometry with hyprctl, grab it with grim).
 # Usage: tests/shot.sh <binary> <out.png> [command ...]
 #   env: SHOT_TABS (default 4), SHOT_WAIT (seconds before the shot, default 1),
-#        SHOT_THEME (e.g. light), SHOT_PAGE (URL of the first tab)
+#        SHOT_THEME (e.g. light), SHOT_PAGE (URL of the first tab),
+#        SHOT_STDERR (copy the browser's stderr there)
+#   commands: "sleep N", "type TEXT" (wtype), "burst N" (N frames right away)
 set -u
 bin=$(realpath "$1")
 out=$(realpath -m "$2")
@@ -29,15 +31,19 @@ hyprctl dispatch focuswindow pid:$pid >/dev/null
 for t in $(seq 2 "${SHOT_TABS:-4}"); do "$bin" --cmd "open -t $(page "tab$t")" >/dev/null; done
 "$bin" --cmd "tab-focus 1" >/dev/null
 sleep 1.5
+geo=$(hyprctl -j clients | jq -r --argjson p $pid '.[] | select(.pid == $p) | "\(.at[0]),\(.at[1]) \(.size[0])x\(.size[1])"' | head -1)
 for c in "$@"; do
     case "$c" in
         sleep\ *) sleep "${c#sleep }" ;;
+        type\ *) wtype "${c#type }" ;;
+        # burst N: N back-to-back frames as <out>-1.png ... (catches flashes)
+        burst\ *) for i in $(seq "${c#burst }"); do grim -g "$geo" "${out%.png}-$i.png"; done ;;
         *) "$bin" --cmd "$c" >/dev/null ;;
     esac
 done
 sleep "${SHOT_WAIT:-1}"
-geo=$(hyprctl -j clients | jq -r --argjson p $pid '.[] | select(.pid == $p) | "\(.at[0]),\(.at[1]) \(.size[0])x\(.size[1])"' | head -1)
 grim -g "$geo" "$out"
+[ -n "${SHOT_STDERR:-}" ] && cp "$tmp/stderr" "$SHOT_STDERR"
 "$bin" --cmd quit >/dev/null
 sleep 1
 echo "$out"

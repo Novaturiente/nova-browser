@@ -14,6 +14,8 @@
         transition: opacity 220ms var(--ease-out), transform 320ms var(--ease-spring); }
   #bg.on { opacity: 1; transform: none; }
   body.closing #bg { opacity: 0; transition-duration: 150ms; }
+  /* the blur fades in over the sharp page (the glass backdrop) once on screen */
+  html.wait #bg { opacity: 0 !important; transition: none; }
   /* Floating pieces over the blurred page: the input is a pill, each completion
      category its own card below it; one list for the keys (the core moves `sel`). */
   #card { --origin: 50% 0; position: relative; margin: 12vh auto 0; width: min(720px, 86vw); box-sizing: border-box;
@@ -201,7 +203,7 @@
     show(text);
     nova.send("text " + text);
   };
-  // closing: the card fades with the backdrop, then window.rs hides the view
+  // closing: the card and the blur fade, leaving the sharp page; then window.rs parks the view
   const out = nova.out;
   nova.out = () => { document.body.classList.add("closing"); out(); };
   const _in = nova.in;

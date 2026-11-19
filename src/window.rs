@@ -1656,19 +1656,36 @@ fn clamp_to_window(mut r: Rect) -> Rect {
     r
 }
 
+/// Where a "hidden" overlay waits: visible but far outside the window. A hidden CEF view
+/// stops painting, so showing it flashed white (or its last popup) for a frame; a parked
+/// one keeps painting, so it can be filled first and moved in once its frame is ready.
+const PARK_X: i32 = 100_000;
+
+fn parked(r: &Rect) -> Rect {
+    Rect { x: PARK_X, y: 0, width: r.width, height: r.height }
+}
+
+/// The overlay is on screen (not parked, not hidden).
+fn is_shown(o: &OverlayController) -> bool {
+    o.is_visible() != 0 && o.bounds().x < PARK_X
+}
+
+thread_local! {
+    /// Per overlay (browser id): the show waiting for its page's "glassready": its
+    /// generation, place on screen and whether it takes keys.
+    static GLASS_PENDING: RefCell<HashMap<i32, (u64, Rect, bool, OverlayController, BrowserView)>> = RefCell::default();
+}
+
 /// Show `overlay` at `r` (window coords, kept inside the window) over a screenshot of
-/// the page behind it (CEF views can't be transparent), then run `js`, which fills the
-/// page and plays its entry animation. `focus`: the overlay takes keys (tab menu).
-/// shortcut: one screenshot per show (~30-60 ms before it appears); cache per tab if it lags.
+/// the page behind it (CEF views can't be transparent). `js` fills the page; it runs
+/// while the view is parked, and the view moves in once the page has painted it with
+/// its backdrop (glass.html nova.show). `focus`: the overlay takes keys (tab menu).
 fn show_glass(view: &BrowserView, overlay: &OverlayController, r: Rect, js: String, focus: bool) {
     let r = clamp_to_window(r);
     let gen = glass_gen(view, true);
     let content = content_rect();
     let (v, o) = (view.clone(), overlay.clone());
     let finish = move |img: Option<String>| {
-        if glass_gen(&v, false) != gen {
-            return;
-        }
         let glass = match (img, content) {
             (Some(img), Some(c)) => serde_json::json!({
                 "img": img, "x": r.x - c.x, "y": r.y - c.y, "w": c.width, "h": c.height,
@@ -1676,22 +1693,50 @@ fn show_glass(view: &BrowserView, overlay: &OverlayController, r: Rect, js: Stri
             .to_string(),
             _ => "null".to_string(),
         };
-        // fill the page first, so the view doesn't show its last popup for a frame
-        view_js(&v, &format!("nova.glass({glass}); {js}"));
-        o.set_bounds(Some(&r));
-        o.set_visible(1);
-        if focus {
-            // a just-shown overlay ignores request_focus (same as the palette)
-            post_task(ThreadId::UI, Some(&mut FocusOverlay::new(v.clone(), o.clone())));
-        }
+        glass_fill(&v, &o, gen, r, focus, &glass, &js);
     };
     page_shot(active_browser(), 350, finish);
 }
 
-/// Fade the overlay's surface out (glass.html nova.out), then hide the view.
+/// Fill a parked overlay (`nova.show`), then move it to `r` when its page says
+/// "glassready" (or after 400 ms, should the parked view not paint).
+fn glass_fill(v: &BrowserView, o: &OverlayController, gen: u64, r: Rect, focus: bool, glass: &str, js: &str) {
+    if glass_gen(v, false) != gen {
+        return;
+    }
+    let id = browser_id(v).unwrap_or(-1);
+    if !is_shown(o) {
+        o.set_bounds(Some(&parked(&r)));
+        o.set_visible(1);
+    }
+    GLASS_PENDING.with_borrow_mut(|p| p.insert(id, (gen, r, focus, o.clone(), v.clone())));
+    view_js(v, &format!("nova.show({gen}, {glass}, () => {{ {js} }})"));
+    let slot = CUR.get();
+    nova_core::host::later(400, move || in_slot(slot, || glass_ready(id, gen)));
+}
+
+/// "glassready gen" from an overlay page: its frame is painted, put it on screen.
+pub fn glass_ready(id: i32, gen: u64) {
+    let Some((_, r, focus, o, v)) = GLASS_PENDING.with_borrow_mut(|p| {
+        p.get(&id).is_some_and(|e| e.0 == gen).then(|| p.remove(&id)).flatten()
+    }) else {
+        return;
+    };
+    if glass_gen(&v, false) != gen {
+        return;
+    }
+    o.set_bounds(Some(&r));
+    view_js(&v, "nova.play()");
+    if focus {
+        // a just-moved overlay ignores request_focus (same as the palette)
+        post_task(ThreadId::UI, Some(&mut FocusOverlay::new(v.clone(), o.clone())));
+    }
+}
+
+/// Fade the overlay's surface out (glass.html nova.out), then park the view.
 fn hide_glass(view: &BrowserView, overlay: &OverlayController) {
     let gen = glass_gen(view, true);
-    if overlay.is_visible() == 0 {
+    if !is_shown(overlay) {
         return;
     }
     view_js(view, "nova.out()");
@@ -1703,7 +1748,7 @@ wrap_task! {
     impl Task {
         fn execute(&self) {
             if glass_gen(&self.view, false) == self.gen {
-                self.overlay.set_visible(0);
+                self.overlay.set_bounds(Some(&parked(&self.overlay.bounds())));
             }
         }
     }
@@ -1713,7 +1758,7 @@ wrap_task! {
     struct FocusOverlay { view: BrowserView, overlay: OverlayController }
     impl Task {
         fn execute(&self) {
-            if self.overlay.is_visible() != 0 {
+            if is_shown(&self.overlay) {
                 self.view.request_focus();
             }
         }
@@ -1745,35 +1790,34 @@ pub fn open_cmdline(text: &str) {
     }) else {
         return;
     };
-    // a fade-out still running from the last close must not hide it now
-    glass_gen(&view, true);
-    let r = place_palette();
-    // shown at once (keys typed now must land in the input); the backdrop follows
-    palette_js(&format!(
-        "nova.backdrop(null); nova.glass(null); nova.cmdline({}, {compact})",
-        js_str(text)
-    ));
-    overlay.set_visible(1);
+    // a fade-out still running from the last close must not park it now
+    let gen = glass_gen(&view, true);
+    let Some(r) = palette_rect() else { return };
+    // filled and focused at once while parked (keys typed now must land in the input);
+    // it moves in with its backdrop (glass_fill)
+    if !is_shown(&overlay) {
+        overlay.set_bounds(Some(&parked(&r)));
+        overlay.set_visible(1);
+    }
+    palette_js(&format!("nova.cmdline({}, {compact})", js_str(text)));
     // A just-shown overlay ignores focus requests; focus on the next UI task.
     post_task(ThreadId::UI, Some(&mut FocusPalette::new()));
-    if let Some(page) = page {
-        let content = content_rect();
-        let params =
-            serde_json::json!({ "format": "jpeg", "quality": 75, "optimizeForSpeed": true });
-        devtools::call(&page, "Page.captureScreenshot", params, move |res| {
-            let data = res.as_ref().and_then(|r| r["data"].as_str());
-            let (Some(data), Mode::Command) = (data, modes::mode()) else { return };
-            let img = format!("data:image/jpeg;base64,{data}");
-            // search: the pill sits over the page itself; else the blurred full page
-            match (compact, r, content) {
-                (true, Some(r), Some(c)) => palette_js(&format!(
-                    "nova.glass({})",
-                    serde_json::json!({"img": img, "x": r.x - c.x, "y": r.y - c.y, "w": c.width, "h": c.height})
-                )),
-                _ => palette_js(&format!("nova.backdrop({})", js_str(&img))),
-            }
-        });
-    }
+    let content = content_rect();
+    let (v, o) = (view.clone(), overlay.clone());
+    page_shot(page, 350, move |img| {
+        if modes::mode() != Mode::Command {
+            return;
+        }
+        // the page itself behind the view; full mode also blurs it in (nova.backdrop)
+        let (glass, fill) = match (img, content) {
+            (Some(img), Some(c)) => (
+                serde_json::json!({"img": img, "x": r.x - c.x, "y": r.y - c.y, "w": c.width, "h": c.height}).to_string(),
+                if compact { "nova.backdrop(null)".to_string() } else { format!("nova.backdrop({})", js_str(&img)) },
+            ),
+            _ => ("null".into(), "nova.backdrop(null)".into()),
+        };
+        glass_fill(&v, &o, gen, r, false, &glass, &fill);
+    });
 }
 
 wrap_task! {
@@ -1950,6 +1994,12 @@ pub fn suggest(field: Rect, data: &serde_json::Value) {
         width: 360,
         height: 54 + n.min(8) * 26,
     };
+    // already up (the selection moved): redraw in place, no new screenshot or entrance
+    if is_shown(&overlay) {
+        glass_gen(&view, true); // cancels a fade-out in progress
+        overlay.set_bounds(Some(&clamp_to_window(r)));
+        return view_js(&view, &format!("nova.surface().classList.remove('out'); nova.suggest({data})"));
+    }
     popup_at(&view, &overlay, r, &format!("nova.suggest({data})"));
 }
 
@@ -2050,11 +2100,18 @@ fn show_keyhint(generation: u64) {
     show_glass(&view, &overlay, r, js, false);
 }
 
-/// Full content area, or a search pill at the top centre when compact; returns the bounds.
-fn place_palette() -> Option<Rect> {
-    let Some((overlay, mid, content, compact)) = S.with_borrow(|s| {
+/// Move the palette to its place after a relayout (parked stays parked, resized).
+fn place_palette() {
+    let (Some(r), Some((_, o))) = (palette_rect(), S.with_borrow(|s| s.palette.clone())) else {
+        return;
+    };
+    o.set_bounds(Some(&if is_shown(&o) { r } else { parked(&r) }));
+}
+
+/// Full content area, or a search pill at the top centre when compact.
+fn palette_rect() -> Option<Rect> {
+    let Some((mid, content, compact)) = S.with_borrow(|s| {
         Some((
-            s.palette.as_ref()?.1.clone(),
             s.mid.clone()?,
             s.content.clone()?,
             s.compact,
@@ -2078,7 +2135,6 @@ fn place_palette() -> Option<Rect> {
     } else {
         r
     };
-    overlay.set_bounds(Some(&b));
     Some(b)
 }
 
