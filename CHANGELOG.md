@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.13 (2026-11-19)
 
 - Popups rebuilt as solid cards: the URL box is a drop-down card under the
   tab bar, messages, questions, which-key and tab menus are cards too. No
