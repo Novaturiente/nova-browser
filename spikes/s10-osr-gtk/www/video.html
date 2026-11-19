@@ -1,0 +1,15 @@
+<!doctype html><title>video</title>
+<body style="margin:0;background:#000">
+<video id="v" src="video.webm" muted autoplay loop playsinline style="width:100vw;height:100vh"></video>
+<script>
+  // frames shown and dropped over `ms`
+  window.bench = (ms) => new Promise(r => {
+    const v = document.getElementById("v");
+    const q0 = v.getVideoPlaybackQuality();
+    setTimeout(() => {
+      const q = v.getVideoPlaybackQuality();
+      r({ total: q.totalVideoFrames - q0.totalVideoFrames, dropped: q.droppedVideoFrames - q0.droppedVideoFrames,
+          playing: !v.paused, w: v.videoWidth, h: v.videoHeight });
+    }, ms);
+  });
+</script>

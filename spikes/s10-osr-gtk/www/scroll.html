@@ -1,0 +1,40 @@
+<!doctype html><title>scroll</title>
+<style>
+  body { margin: 0; font: 16px/1.5 sans-serif; background: #f4f4f6; }
+  .b { margin: 14px auto; max-width: 900px; padding: 18px 22px; border-radius: 12px; color: #222;
+       box-shadow: 0 2px 10px rgba(0,0,0,.12); }
+  .b h2 { margin: 0 0 6px; }
+</style>
+<body>
+<input id="i" placeholder="type here" style="margin:14px;font-size:18px">
+<select id="s" style="margin:14px;font-size:18px"><option>one</option><option>two</option><option>three</option></select>
+<div id="list"></div>
+<script>
+  // a long page of shadowed, gradient blocks: work for the compositor on every scrolled frame
+  const words = "lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore".split(" ");
+  let html = "";
+  for (let i = 0; i < 400; i++) {
+    const h = (i * 37) % 360;
+    let p = "";
+    for (let j = 0; j < 60; j++) p += words[(i * 7 + j) % words.length] + " ";
+    html += `<div class=b style="background:linear-gradient(135deg,hsl(${h} 70% 92%),hsl(${(h + 60) % 360} 70% 82%))"><h2>Block ${i}</h2>${p}</div>`;
+  }
+  document.getElementById("list").innerHTML = html;
+  // scroll by script for `ms`, one step per frame; returns frame rate and frames over 25 ms
+  window.bench = (ms) => new Promise(r => {
+    let n = 0, long = 0, dir = 1;
+    const t0 = performance.now();
+    let last = t0;
+    const f = t => {
+      n++;
+      if (t - last > 25) long++;
+      last = t;
+      scrollBy(0, 14 * dir);
+      if (scrollY + innerHeight >= document.body.scrollHeight - 2) dir = -1;
+      if (scrollY <= 0) dir = 1;
+      if (t - t0 < ms) requestAnimationFrame(f);
+      else r({ fps: +(n * 1000 / (t - t0)).toFixed(1), long });
+    };
+    requestAnimationFrame(f);
+  });
+</script>
