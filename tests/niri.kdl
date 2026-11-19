@@ -1,0 +1,14 @@
+// Nested niri for tests/flash.sh: its own output, so the recording only ever sees the
+// browser (on the live desktop other windows and workspace switches get recorded).
+animations { off; }
+hotkey-overlay { skip-at-startup; }
+prefer-no-csd
+layout {
+    gaps 0
+    focus-ring { off; }
+    border { off; }
+    default-column-width { proportion 1.0; }
+}
+window-rule {
+    open-maximized true
+}
