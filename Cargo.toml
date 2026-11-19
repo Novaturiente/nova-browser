@@ -8,6 +8,10 @@ publish = false
 [dependencies]
 adblock = { version = "0.13.3", default-features = false, features = ["embedded-domain-resolver", "full-regex-handling"] }
 cef = "=154.5.0"  # exact: must match the CEF binary version (154.0.34)
+# the window and its interface (src/chrome/, from novabrowser-webkit); pages are off-screen
+# CEF browsers drawn as GTK textures (src/page.rs)
+gtk = { package = "gtk4", version = "0.11", features = ["v4_14"] }
+adw = { package = "libadwaita", version = "0.9", features = ["v1_6"] }
 # Shared with novabrowser-webkit; pinned rev, bump after pushing nova-core changes.
 nova-core = { git = "https://github.com/Novaturiente/nova-core", rev = "96af9c8f86379177e531aab6a878d1f2ef2f2b1c" }
 rusqlite = "0.40.2"

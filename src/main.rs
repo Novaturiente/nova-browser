@@ -1,5 +1,6 @@
 //! novabrowser: one binary; re-executes itself as the CEF subprocesses.
 mod adblock;
+mod chrome;
 mod aria2;
 mod client;
 mod clipboard;
@@ -144,13 +145,17 @@ wrap_app! {
             // https_excludes hosts. The rest stop Google calls made with no page open (net-log
             // check): network time, AI-mode eligibility, preconnect to the built-in Google search,
             // and Topics.
+            // WaylandFractionalScaleV1: off-screen pages take their scale from us
+            // (page.rs screen_info); with it Chromium's Wayland code forced 1 (blurry at 150 %).
             const OFF: &str = "HttpsUpgrades,NetworkTimeServiceQuerying,AimEnabled,AimServerEligibilityEnabled,\
-                PreconnectToSearch,PreconnectFromKeyedService,BrowsingTopics";
+                PreconnectToSearch,PreconnectFromKeyedService,BrowsingTopics,WaylandFractionalScaleV1";
             let df = CefString::from("disable-features");
             let old = CefString::from(&cmd.switch_value(Some(&df))).to_string();
             let merged = if old.is_empty() { OFF.to_string() } else { format!("{old},{OFF}") };
             cmd.append_switch_with_value(Some(&df), Some(&CefString::from(merged.as_str())));
             cmd.append_switch(Some(&CefString::from("no-pings"))); // <a ping> hyperlink auditing
+            // GTK4 is already loaded (our window): Chromium must not load GTK3 next to it
+            cmd.append_switch_with_value(Some(&CefString::from("gtk-version")), Some(&CefString::from("4")));
         }
         fn browser_process_handler(&self) -> Option<BrowserProcessHandler> {
             Some(NovaBrowserProcess::new(self.start_url.clone()))
@@ -477,8 +482,13 @@ fn main() {
         use std::os::unix::fs::PermissionsExt;
         let _ = std::fs::set_permissions(root, std::fs::Permissions::from_mode(0o700));
     }
+    // the window is GTK; CEF's own loop (run_message_loop) is a glib loop on the default
+    // context, so GTK runs inside it (driving CEF from a GTK loop spun a core: spike S10)
+    gtk::init().expect("gtk init");
+    adw::init().expect("libadwaita init");
     let profile = CefString::from(data.to_str().expect("utf-8 data dir"));
     let settings = Settings {
+        windowless_rendering_enabled: 1, // every page is off-screen (src/page.rs)
         root_cache_path: profile.clone(),
         cache_path: profile, // empty would mean an in-memory (incognito) profile
         // shortcut: no rotation, rotate when Phase 8 daily driving makes it grow
