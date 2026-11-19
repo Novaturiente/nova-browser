@@ -15,20 +15,15 @@ use std::rc::Rc;
 pub const CSS: &str = "
 window.nova .nova-palette { font: var(--fonts-completion-entry); color: var(--colors-completion-fg); }
 window.nova .nova-palette .p-bar {
-  min-height: 52px; padding: 0 20px; border-radius: 999px;
+  min-height: 52px; padding: 0 20px 0 14px; border-radius: 12px;
   background: var(--colors-completion-even-bg);
   border: 1px solid var(--colors-completion-category-border-top);
   box-shadow: 0 14px 40px rgba(0,0,0,.5);
-  transition: border-color 140ms ease-out;
-}
-window.nova .nova-palette .p-bar:focus-within {
-  border-color: color-mix(in srgb, var(--colors-completion-category-fg) 55%, transparent);
 }
 window.nova .nova-palette.compact .p-bar { box-shadow: 0 2px 6px rgba(0,0,0,.35); }
 window.nova .nova-palette .p-icon {
-  min-width: 26px; min-height: 26px; border-radius: 999px; font-weight: bold;
-  color: var(--colors-completion-category-fg);
-  background: color-mix(in srgb, var(--colors-completion-category-fg) 18%, transparent);
+  min-width: 22px; min-height: 22px; font-size: 15px;
+  color: color-mix(in srgb, var(--colors-completion-fg) 55%, transparent);
 }
 window.nova .nova-palette text {
   padding: 0; background: transparent; color: var(--colors-statusbar-command-fg);
@@ -37,7 +32,7 @@ window.nova .nova-palette text {
 window.nova .nova-palette text > placeholder { color: inherit; opacity: .45; }
 window.nova .nova-palette .p-count { opacity: .6; font-feature-settings: \"tnum\"; }
 window.nova .nova-palette .p-grp {
-  padding: 0 6px 6px; border-radius: 18px;
+  padding: 0 6px 6px; border-radius: 12px;
   background: var(--colors-completion-even-bg);
   border: 1px solid var(--colors-completion-category-border-top);
   box-shadow: 0 6px 16px rgba(0,0,0,.35);
@@ -47,12 +42,9 @@ window.nova .nova-palette .p-cat {
   color: var(--colors-completion-category-fg);
 }
 window.nova .nova-palette .p-cat .p-n { font-weight: normal; opacity: .6; }
-window.nova .nova-palette .p-row { padding: 6px 12px; border-radius: 10px; transition: color 120ms ease-out; }
+window.nova .nova-palette .p-row { padding: 6px 12px; border-radius: 7px; transition: color 120ms ease-out; }
 window.nova .nova-palette .p-row.sel { color: var(--colors-completion-item-selected-fg); }
-window.nova .nova-palette .p-hl {
-  border-radius: 10px; background: var(--colors-completion-item-selected-bg);
-  box-shadow: inset 3px 0 0 var(--colors-completion-category-fg);
-}
+window.nova .nova-palette .p-hl { border-radius: 7px; background: var(--colors-completion-item-selected-bg); }
 window.nova .nova-palette .p-fav { border-radius: 4px; }
 window.nova .nova-palette .p-fav.fi { background: color-mix(in srgb, currentColor 15%, transparent); }
 window.nova .nova-palette .p-b { opacity: .65; }
@@ -349,12 +341,12 @@ impl Inner {
             ":profile-new " => Some("Name for the new profile…"),
             p if p.contains(" -t") || p.contains(" -w") => Some("Open in new tab…"),
             p if p.contains(" -b") => Some("Open in background tab…"),
-            _ => Some("Search or enter address…"),
+            _ => Some("Search or enter website name"),
         };
         self.text.set_placeholder_text(hint);
         let search = self.compact.get();
         self.icon.set_label(if search || pre.starts_with(":open") {
-            "🔍"
+            "\u{2315}"
         } else if !pre.is_empty() {
             "›"
         } else {
@@ -474,7 +466,7 @@ impl Inner {
             self.pop.allocate(w, h.max(min_h), -1, None);
             return;
         }
-        let cw = 760.min((w as f64 * 0.86) as i32);
+        let cw = 720.min((w as f64 * 0.86) as i32);
         let mut ch = self.bar.measure(gtk::Orientation::Vertical, -1).1;
         if self.list.is_visible() {
             let (_, list_nat, _, _) = self.list.measure(gtk::Orientation::Vertical, -1);
