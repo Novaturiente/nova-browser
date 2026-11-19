@@ -6,7 +6,8 @@
 #   env: SHOT_TABS (default 4), SHOT_WAIT (seconds before the shot, default 1),
 #        SHOT_THEME (e.g. light), SHOT_PAGE (URL of the first tab),
 #        SHOT_STDERR (copy the browser's stderr there)
-#   commands: "sleep N", "type TEXT" (wtype), "burst N" (N frames right away)
+#   commands: "sleep N", "type TEXT" (wtype), "burst N" (N frames right away),
+#             "hypr DISPATCH ARGS" (hyprctl dispatch)
 set -u
 bin=$(realpath "$1")
 out=$(realpath -m "$2")
@@ -36,6 +37,8 @@ for c in "$@"; do
     case "$c" in
         sleep\ *) sleep "${c#sleep }" ;;
         type\ *) wtype "${c#type }" ;;
+        # hypr DISPATCH: e.g. "hypr resizewindowpixel exact 900 700,pid:PID" (PID = this instance)
+        hypr\ *) c=${c#hypr }; hyprctl dispatch ${c//PID/$pid} >/dev/null ;;
         # burst N: N back-to-back frames as <out>-1.png ... (catches flashes)
         burst\ *) for i in $(seq "${c#burst }"); do grim -g "$geo" "${out%.png}-$i.png"; done ;;
         *) "$bin" --cmd "$c" >/dev/null ;;

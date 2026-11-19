@@ -249,6 +249,7 @@ wrap_client! {
             let (cmd, arg) = text.split_once(' ').unwrap_or((&text, ""));
             window::in_owner(b, || match (cmd, arg.parse::<i64>()) {
                 ("ready", _) => window::ui_ready(),
+                ("painted", _) => window::ui_painted(b.identifier()),
                 ("tab", Ok(n)) if n >= 0 => window::show(n as usize),
                 ("close", Ok(n)) if n >= 0 => window::close_user(n as usize, false),
                 ("move", Ok(n)) if n >= 0 => window::move_active(n + 1, false),
