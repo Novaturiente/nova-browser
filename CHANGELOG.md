@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.12 (2026-11-19)
+
+- The URL box takes keys again as soon as it opens, and Escape closes it.
+  This undoes 0.1.11's popup change, so popups can flash again; a rebuilt
+  popup layer follows.
+
 ## 0.1.11 (2026-11-19)
 
 - Popups (URL bar, palette, toast, which-key, menus) no longer flash
