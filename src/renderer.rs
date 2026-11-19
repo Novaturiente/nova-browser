@@ -49,7 +49,7 @@ wrap_v8_handler! {
             exception: Option<&mut CefString>,
         ) -> ::std::os::raw::c_int {
             let name = name.map(|n| n.to_string()).unwrap_or_default();
-            if name != "send" && name != "report" && name != "scroll" {
+            if name != "send" && name != "report" && name != "scroll" && name != "nav" {
                 return 0;
             }
             let arg = arguments.and_then(|a| a.first()).and_then(|a| a.as_ref()).filter(|a| a.is_string() != 0);
@@ -59,7 +59,7 @@ wrap_v8_handler! {
                 if let Some(e) = exception { e.try_set("nova.send(str): expected a string"); }
                 return 1;
             };
-            let kind = match name.as_str() { "report" => "nova.creds", "scroll" => "nova.scroll", _ => "nova.send" };
+            let kind = match name.as_str() { "report" => "nova.creds", "scroll" => "nova.scroll", "nav" => "nova.nav", _ => "nova.send" };
             let msg = process_message_create(Some(&s(kind))).expect("process_message_create");
             msg.argument_list().expect("argument_list").set_string(0, Some(&CefString::from(&arg.string_value())));
             frame.send_process_message(ProcessId::BROWSER, Some(&mut msg.clone()));
@@ -146,6 +146,27 @@ fn install_helper(frame: &Frame, context: &mut V8Context) {
     }
     if frame.is_main() != 0 {
         install_scroll(context);
+        install_nav(context);
+    }
+}
+
+/// Mouse back/forward buttons (Alloy doesn't navigate on them): captured before page
+/// listeners, navigated by the browser (`window::go`, restored history too).
+/// shortcut: main frame only (a click inside an iframe isn't seen); add per frame if missed.
+const NAV_JS: &str = "(function(r){addEventListener('mouseup',e=>{if(e.button===3||e.button===4){e.preventDefault();e.stopImmediatePropagation();r(e.button===3?'back':'forward')}},true)})";
+
+fn install_nav(context: &mut V8Context) {
+    let (mut ret, mut exc) = (None, None);
+    context.eval(
+        Some(&s(NAV_JS)),
+        Some(&s("novabrowser://nav.js")),
+        1,
+        Some(&mut ret),
+        Some(&mut exc),
+    );
+    if let Some(f) = ret {
+        let r = v8_value_create_function(Some(&s("nav")), Some(&mut NovaV8Handler::new()));
+        f.execute_function_with_context(Some(context), None, Some(&[r]));
     }
 }
 

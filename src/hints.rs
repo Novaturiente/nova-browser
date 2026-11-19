@@ -210,9 +210,14 @@ fn act(b: &Browser, target: &str, args: &[String], info: &Value) -> Result<(), S
         "normal" => devtools::click(b, x, y, "left", 0),
         "current" => devtools::click(b, x, y, "left", 0),
         // qutebrowser tabs.background = true: `tab` opens in the background
-        "tab" | "tab-bg" | "tab-fg" | "window" => match href {
-            Some(u) => window::open(u, target == "tab-fg" || target == "window"),
-            // shortcut: non-link elements just get a click; qutebrowser fakes ctrl+click
+        "tab" | "tab-bg" | "tab-fg" => match href {
+            Some(u) => window::open_related(u, target == "tab-fg"),
+            // non-links get Ctrl-click (qutebrowser), so JS routers that honour it open a
+            // new tab; CDP modifiers: 2 = Ctrl, 8 = Shift (Ctrl+Shift = foreground tab)
+            None => devtools::click(b, x, y, "left", if target == "tab-fg" { 10 } else { 2 }),
+        },
+        "window" => match href {
+            Some(u) => window::open(u, true),
             None => devtools::click(b, x, y, "left", 0),
         },
         "hover" => devtools::hover(b, x, y),

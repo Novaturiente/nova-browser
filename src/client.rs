@@ -31,7 +31,7 @@ fn new_tab_disposition(d: WindowOpenDisposition) -> Option<bool> {
 wrap_task! {
     struct OpenTab { url: String, foreground: bool, opener: Browser }
     impl Task {
-        fn execute(&self) { window::in_owner(&self.opener, || window::open(&self.url, self.foreground)); }
+        fn execute(&self) { window::in_owner(&self.opener, || window::open_related(&self.url, self.foreground)); }
     }
 }
 
@@ -133,12 +133,12 @@ wrap_context_menu_handler! {
             let s = |x: CefStringUserfree| CefString::from(&x).to_string();
             let (link, src, sel) = (s(p.link_url()), s(p.source_url()), s(p.selection_text()));
             window::in_owner(b, || match command_id - MENU_ID_USER_FIRST {
-                0 => window::open(&link, true),
-                1 => window::open(&link, false),
+                0 => window::open_related(&link, true),
+                1 => window::open_related(&link, false),
                 2 => window::open_window(Some(link)),
                 3 => crate::clipboard::write(&link, false),
                 4 => crate::downloads::start(b, &link),
-                5 => window::open(&src, true),
+                5 => window::open_related(&src, true),
                 6 => crate::downloads::start(b, &src),
                 7 => crate::clipboard::write(&src, false),
                 _ => window::open(&commands::url_or_search(sel.trim()), true),
@@ -160,6 +160,7 @@ wrap_client! {
         fn keyboard_handler(&self) -> Option<KeyboardHandler> { Some(TabKeys::new()) }
         fn download_handler(&self) -> Option<DownloadHandler> { Some(TabDownloads::new()) }
         fn context_menu_handler(&self) -> Option<ContextMenuHandler> { Some(TabMenu::new()) }
+        fn find_handler(&self) -> Option<FindHandler> { Some(TabFind::new()) }
         fn on_process_message_received(
             &self,
             browser: Option<&mut Browser>,
@@ -194,6 +195,12 @@ wrap_client! {
                 // main frame only (renderer.rs); a page can only misreport its own scroll
                 let y = m.argument_list().map(|l| CefString::from(&l.string(0)).to_string()).unwrap_or_default();
                 if let Ok(y) = y.parse() { window::set_scroll(b, y); }
+                return 1;
+            }
+            if name == "nova.nav" {
+                // mouse back/forward button (renderer.rs); a page can only move its own tab
+                let dir = m.argument_list().map(|l| CefString::from(&l.string(0)).to_string()).unwrap_or_default();
+                window::in_owner(b, || window::go(b, if dir == "back" { -1 } else { 1 }));
                 return 1;
             }
             if name == "nova.creds" {
@@ -475,6 +482,23 @@ wrap_jsdialog_handler! {
         }
         fn on_reset_dialog_state(&self, browser: Option<&mut Browser>) {
             if let Some(b) = browser { crate::permissions::reset_dialogs(b); }
+        }
+    }
+}
+
+wrap_find_handler! {
+    struct TabFind {}
+    impl FindHandler {
+        fn on_find_result(&self, browser: Option<&mut Browser>, _identifier: ::std::os::raw::c_int, count: ::std::os::raw::c_int, _selection_rect: Option<&Rect>, active_match_ordinal: ::std::os::raw::c_int, final_update: ::std::os::raw::c_int) {
+            // the match position ("text: pos / total") once Chromium has counted every match
+            let Some(b) = browser else { return };
+            if final_update == 0 { return; }
+            let text = commands::search_text();
+            if text.is_empty() { return; }
+            window::in_owner(b, || match count {
+                0 => window::message("warning", &format!("Text '{text}' not found on page!")),
+                _ => window::message("info", &format!("{text}: {active_match_ordinal} / {count}")),
+            });
         }
     }
 }

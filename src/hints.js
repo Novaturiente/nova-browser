@@ -98,7 +98,9 @@
     e.scrollIntoView({ block: "nearest", inline: "nearest" });
     const r = e.getClientRects()[0] || e.getBoundingClientRect();
     const url = (x) => (x ? new URL(x, e.ownerDocument.baseURI).href : null);
-    const href = e.href instanceof SVGAnimatedString ? e.href.baseVal : e.getAttribute("href") !== null ? e.href : null;
+    // an element inside a link (card, thumbnail, span) opens that link
+    const a = e.closest("a[href], area[href]") || e;
+    const href = a.href instanceof SVGAnimatedString ? a.href.baseVal : a.getAttribute("href") !== null ? a.href : null;
     return {
       x: r.left + off.left + Math.min(r.width / 2, 20),
       y: r.top + off.top + r.height / 2,

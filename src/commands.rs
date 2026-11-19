@@ -37,8 +37,9 @@ fn expand(text: &str) -> String {
         .replace("{primary}", &primary)
 }
 
-/// `dark-toggle`: flip force-dark for this host now, and remember it in
-/// `<config>/darkmode_excludes` (the file config.ts reads with `readLines`).
+/// `dark-toggle`: flip force-dark for this host now, and remember it in the file config.ts
+/// reads with `readLines`: `<config>/darkmode_excludes` (hosts kept light) while dark mode
+/// is on everywhere, else `<config>/darkmode_sites` (hosts made dark).
 fn dark_toggle() -> Result<(), String> {
     const D: &str = "colors.webpage.darkmode.enabled";
     let (url, _) = window::active_url_title();
@@ -46,7 +47,9 @@ fn dark_toggle() -> Result<(), String> {
     if host.is_empty() {
         return Err("no host for this page".into());
     }
-    let file = config::path().with_file_name("darkmode_excludes");
+    let default = config::get().get(D).as_bool().unwrap_or(false);
+    let name = if default { "darkmode_excludes" } else { "darkmode_sites" };
+    let file = config::path().with_file_name(name);
     let mut lines: Vec<String> = std::fs::read_to_string(&file)
         .unwrap_or_default()
         .lines()
@@ -56,7 +59,8 @@ fn dark_toggle() -> Result<(), String> {
         .collect();
     let cfg = config::get();
     let dark = !cfg.get_for(D, &url).as_bool().unwrap_or(false);
-    if dark {
+    // the file lists the hosts that differ from the global setting
+    if dark == default {
         lines.retain(|l| *l != host);
     } else if !lines.contains(&host) {
         lines.push(host.clone());
@@ -65,7 +69,8 @@ fn dark_toggle() -> Result<(), String> {
         .map_err(|e| format!("{}: {e}", file.display()))?;
     cfg.set_runtime_for(&format!("*://{host}/*"), D, &dark.to_string())?;
     window::config_changed();
-    let still = dark
+    let still = default
+        && dark
         && lines
             .iter()
             .any(|l| l.starts_with("*.") && host.ends_with(&l[1..]));
@@ -204,6 +209,11 @@ const SCROLL_TO_PERC_JS: &str = "((p, x) => { let e = document.elementFromPoint(
 thread_local! {
     /// Last search (text, backward), for `n` / `N`.
     static SEARCH: RefCell<(String, bool)> = const { RefCell::new((String::new(), false)) };
+}
+
+/// Text of the last search (client.rs find results); empty once it was cleared.
+pub fn search_text() -> String {
+    SEARCH.with_borrow(|s| s.0.clone())
 }
 
 /// Find `text` in the active tab (Chromium find bar logic, highlighted by Chromium).

@@ -51,6 +51,24 @@ struct Tab {
     fresh: bool,
     /// Favicon as a data: URL (client.rs FaviconDone), empty until the page reports one.
     icon: String,
+    /// Unique per tab (browser ids change on hibernation); `opener` is the key of the
+    /// tab whose page opened this one (0 = none), so related tabs stack after it.
+    key: u64,
+    opener: u64,
+}
+
+thread_local! {
+    static TAB_KEY: Cell<u64> = const { Cell::new(0) };
+}
+
+/// Where a tab opened from tab `active` goes: right after it and the tabs it already opened.
+fn related_slot(tabs: &[Tab], active: usize) -> usize {
+    let Some(a) = tabs.get(active) else { return tabs.len() };
+    let mut at = active + 1;
+    while tabs.get(at).is_some_and(|t| t.opener == a.key) {
+        at += 1;
+    }
+    at.max(tabs.iter().take_while(|t| t.pinned).count())
 }
 
 /// Entries kept per direction in a saved session.
@@ -306,9 +324,15 @@ pub fn typed_open(current: bool, f: impl FnOnce()) {
     TYPED_NEXT.set(false);
 }
 
-fn add_tab(view: BrowserView, url: String, title: String, foreground: bool) {
+/// `related`: the active tab's page opened it, so it goes next to that tab, not at the end.
+fn add_tab(view: BrowserView, url: String, title: String, foreground: bool, related: bool) {
+    TAB_KEY.set(TAB_KEY.get() + 1);
     let n = S.with_borrow_mut(|s| {
-        s.tabs.push(Tab {
+        let (at, opener) = match related {
+            true => (related_slot(&s.tabs, s.active), s.tabs.get(s.active).map_or(0, |t| t.key)),
+            false => (s.tabs.len(), 0),
+        };
+        let tab = Tab {
             view,
             url,
             title,
@@ -331,8 +355,18 @@ fn add_tab(view: BrowserView, url: String, title: String, foreground: bool) {
             icon: String::new(),
             typed: TYPED_NEXT.get(),
             fresh: true,
-        });
-        s.tabs.len() - 1
+            key: TAB_KEY.get(),
+            opener,
+        };
+        s.tabs.insert(at, tab);
+        // indexes at or after the new tab moved right
+        if at <= s.active && s.tabs.len() > 1 {
+            s.active += 1;
+        }
+        if at <= s.last && s.tabs.len() > 1 {
+            s.last += 1;
+        }
+        at
     });
     if foreground || n == 0 {
         show(n);
@@ -344,12 +378,17 @@ fn add_tab(view: BrowserView, url: String, title: String, foreground: bool) {
 /// A background tab loads only when first shown (CEF creates the browser on
 /// attach), which is also what makes session restore lazy.
 pub fn open(url: &str, foreground: bool) {
-    open_titled(url, String::new(), foreground);
+    open_titled(url, String::new(), foreground, false);
 }
 
-fn open_titled(url: &str, title: String, foreground: bool) {
+/// A link of the active tab's page opened in a new tab: placed next to it.
+pub fn open_related(url: &str, foreground: bool) {
+    open_titled(url, String::new(), foreground, true);
+}
+
+fn open_titled(url: &str, title: String, foreground: bool, related: bool) {
     let view = browser_view(&mut TabClient::new(), url, KIND_FIXED, &page_settings());
-    add_tab(view, url.to_string(), title, foreground);
+    add_tab(view, url.to_string(), title, foreground, related);
 }
 
 /// Current tabs in session.rs's shape; None before the window exists.
@@ -459,7 +498,7 @@ fn restore_tabs(v: &serde_json::Value, clear: bool) {
     let tabs = v["tabs"].as_array().cloned().unwrap_or_default();
     for t in &tabs {
         let url = t["url"].as_str().unwrap_or("about:blank");
-        open_titled(url, t["title"].as_str().unwrap_or("").to_string(), false);
+        open_titled(url, t["title"].as_str().unwrap_or("").to_string(), false, false);
         S.with_borrow_mut(|s| {
             let tab = s.tabs.last_mut().unwrap();
             tab.fresh = false;
@@ -492,6 +531,7 @@ pub fn show(n: usize) {
         if old.is_some() {
             s.last = s.active;
             s.tabs[s.active].seen = std::time::Instant::now();
+            crate::passwords::hide(); // the list belongs to the field in the tab we leave
         }
         s.active = n;
         s.tabs[n].asleep = false;
@@ -583,7 +623,8 @@ pub fn remove(n: usize) {
             .push(tab.crashed.clone().unwrap_or_else(|| tab.url.clone()));
         s.last = s.last.min(s.tabs.len().saturating_sub(1));
         let was_active = n == s.active;
-        if n < s.active || (was_active && s.active == s.tabs.len() && s.active > 0) {
+        // closing the active tab focuses the one before it (left), like qutebrowser `prev`
+        if n < s.active || (was_active && s.active > 0) {
             s.active -= 1;
         }
         Some((
@@ -1869,7 +1910,7 @@ fn adopt_popup(view: BrowserView) {
         .map(|f| CefString::from(&f.url()).to_string())
         .unwrap_or_default();
     let foreground = !crate::client::take_background_popup();
-    add_tab(view, url, String::new(), foreground);
+    add_tab(view, url, String::new(), foreground, true);
 }
 
 // ---- layout and theme from config

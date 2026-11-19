@@ -310,6 +310,7 @@ fn aria_entry(gid: String, url: String) -> Dl {
 /// aria2 status poll (aria2.rs): update, add resumed/unknown ones, finish.
 pub fn aria2_update(items: Vec<Value>) {
     let mut done = Vec::new();
+    let mut retry = Vec::new();
     with(|l| {
         // magnet / .torrent / metalink: the real download continues under a new gid;
         // move our entry to it first, so the follow-up never shows up as a second one
@@ -365,6 +366,11 @@ pub fn aria2_update(items: Vec<Value>) {
                     d.end = now();
                     done.push((d.path.clone(), false, None));
                 }
+                // failed before any byte (e.g. Cloudflare 403s aria2 sending a browser UA):
+                // Chromium retries it as a real browser, like a download aria2 refused
+                "error" if d.received == 0 && ["http://", "https://", "ftp://"].iter().any(|s| d.url.starts_with(s)) => {
+                    retry.push((gid.to_string(), d.url.clone(), it["errorMessage"].as_str().unwrap_or("").to_string()));
+                }
                 "removed" | "error" => {
                     // cancelled (we only remove on download-cancel): drop the partial file, like Chromium
                     // (a torrent folder is left alone: it may hold files the user already had)
@@ -385,7 +391,15 @@ pub fn aria2_update(items: Vec<Value>) {
                 _ => {}
             }
         }
+        l.retain(|d| !retry.iter().any(|r| d.gid.as_deref() == Some(r.0.as_str())));
     });
+    for (_, url, why) in &retry {
+        window::message("warning", &format!("aria2 failed ({why}); using Chromium."));
+        FORCE_CHROMIUM.with_borrow_mut(|f| f.push(url.clone()));
+        if let Some(h) = window::active_browser().and_then(|b| b.host()) {
+            h.start_download(Some(&CefString::from(url.as_str())));
+        }
+    }
     for (p, failed, why) in &done {
         finished(p, *failed, why.as_deref());
     }
