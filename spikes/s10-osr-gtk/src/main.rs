@@ -38,6 +38,8 @@ struct Ui {
     backdrop: Option<gtk::Picture>,
     fixed: gtk::Fixed,
     popup: gtk::Picture,
+    /// input method (compose, CJK, emoji): preedit and commits go to CEF's IME calls
+    im: gtk::IMMulticontext,
 }
 
 thread_local! {
@@ -49,7 +51,10 @@ thread_local! {
     static FRAMES: Cell<u32> = const { Cell::new(0) };
     static SIZE: Cell<(i32, i32)> = const { Cell::new((0, 0)) };
     static POINTER: Cell<(f64, f64)> = const { Cell::new((0.0, 0.0)) };
-    static FIRST: Cell<bool> = const { Cell::new(true) };
+    static LAST_DMABUF: Cell<(i32, i32)> = const { Cell::new((0, 0)) };
+    /// inside filter_keypress of a key press: a one-char commit is plain typing
+    static IN_KEY: Cell<bool> = const { Cell::new(false) };
+    static COMPOSING: Cell<bool> = const { Cell::new(false) };
     static PUMPS: Cell<(u32, u32)> = const { Cell::new((0, 0)) }; // (asks, of which delay 0)
 }
 
@@ -72,9 +77,13 @@ fn page_size() -> (i32, i32) {
     }
 }
 
-fn scale() -> i32 {
-    UI.with_borrow(|u| u.as_ref().map_or(1, |u| u.page.scale_factor()))
+/// The surface's scale, fractional too (1.5 at 150 %); CEF renders at size x scale.
+fn scale() -> f64 {
+    UI.with_borrow(|u| u.as_ref().and_then(|u| u.window.surface()).map_or(1.0, |s| s.scale()))
 }
+
+/// CefRange::InvalidRange: "no replacement"
+const NO_RANGE: Range = Range { from: u32::MAX, to: u32::MAX };
 
 // ------------------------------------------------------------------ frames
 
@@ -85,9 +94,9 @@ fn dmabuf_texture(info: &AcceleratedPaintInfo) -> Result<gdk::Texture, String> {
     let (w, h) = (info.extra.coded_size.width, info.extra.coded_size.height);
     let n = info.plane_count.clamp(0, 4) as usize;
     let planes = &info.planes[..n];
-    if FIRST.replace(false) {
+    if LAST_DMABUF.replace((w, h)) != (w, h) {
         eprintln!(
-            "s10 first dmabuf: {w}x{h} visible={:?} planes={n} modifier={:#x} format={:?} stride={}",
+            "s10 dmabuf: {w}x{h} visible={:?} planes={n} modifier={:#x} format={:?} stride={}",
             (info.extra.visible_rect.width, info.extra.visible_rect.height),
             info.modifier,
             info.format,
@@ -155,12 +164,20 @@ wrap_render_handler! {
         fn screen_info(&self, _browser: Option<&mut Browser>, info: Option<&mut ScreenInfo>) -> ::std::os::raw::c_int {
             let Some(info) = info else { return 0 };
             let (w, h) = page_size();
-            info.device_scale_factor = scale() as f32;
+            info.device_scale_factor = std::env::var("SCALE").ok().and_then(|v| v.parse().ok()).unwrap_or(scale() as f32);
             info.depth = 24;
             info.depth_per_component = 8;
             info.rect = Rect { x: 0, y: 0, width: w, height: h };
             info.available_rect = info.rect.clone();
             1
+        }
+
+        fn on_ime_composition_range_changed(&self, _browser: Option<&mut Browser>, _range: Option<&Range>, bounds: Option<&[Rect]>) {
+            // the candidate window goes next to the text being composed
+            let Some(r) = bounds.and_then(|b| b.first()) else { return };
+            UI.with_borrow(|u| if let Some(u) = u {
+                u.im.set_cursor_location(&gdk::Rectangle::new(r.x, r.y, r.width, r.height));
+            });
         }
 
         fn on_popup_show(&self, _browser: Option<&mut Browser>, show: ::std::os::raw::c_int) {
@@ -224,6 +241,35 @@ wrap_client! {
         fn life_span_handler(&self) -> Option<LifeSpanHandler> {
             Some(NovaLifeSpan::new())
         }
+        fn display_handler(&self) -> Option<DisplayHandler> {
+            self.osr.then(NovaDisplay::new)
+        }
+    }
+}
+
+wrap_display_handler! {
+    struct NovaDisplay;
+    impl DisplayHandler {
+        fn on_cursor_change(
+            &self,
+            _browser: Option<&mut Browser>,
+            _cursor: ::std::os::raw::c_ulong,
+            type_: CursorType,
+            _custom_cursor_info: Option<&CursorInfo>,
+        ) -> ::std::os::raw::c_int {
+            // shortcut: common shapes only; a port maps all of CursorType (and custom images)
+            let name = match type_ {
+                CursorType::HAND => "pointer",
+                CursorType::IBEAM => "text",
+                CursorType::WAIT => "wait",
+                CursorType::PROGRESS => "progress",
+                CursorType::CROSS => "crosshair",
+                CursorType::NOTALLOWED => "not-allowed",
+                _ => "default",
+            };
+            UI.with_borrow(|u| if let Some(u) = u { u.page.set_cursor_from_name(Some(name)) });
+            1
+        }
     }
 }
 
@@ -256,6 +302,11 @@ fn browser_settings() -> BrowserSettings {
     }
 }
 
+/// CEF renders a frame when GTK's frame clock (the display's vsync) ticks.
+fn vsync() -> bool {
+    std::env::var("VSYNC").as_deref() != Ok("0")
+}
+
 fn start_url() -> CefString {
     s(&std::env::var("URL").unwrap_or_else(|_| "https://example.com/".into()))
 }
@@ -264,6 +315,8 @@ fn create_osr_browser() {
     let info = WindowInfo {
         windowless_rendering_enabled: 1,
         shared_texture_enabled: (mode() != Mode::Cpu) as i32,
+        // VSYNC=0: CEF's own 60 Hz timer, not in step with the display (judder)
+        external_begin_frame_enabled: vsync() as i32,
         runtime_style: RuntimeStyle::ALLOY,
         ..Default::default()
     };
@@ -352,7 +405,14 @@ wrap_app! {
         fn on_before_command_line_processing(&self, process_type: Option<&CefString>, command_line: Option<&mut CommandLine>) {
             let (Some(cmd), true) = (command_line, process_type.is_none_or(|t| t.to_string().is_empty())) else { return };
             let p = if std::env::var_os("WAYLAND_DISPLAY").is_some() { "wayland" } else { "x11" };
-            cmd.append_switch_with_value(Some(&s("ozone-platform")), Some(&s(p)));
+            if cmd.has_switch(Some(&s("ozone-platform"))) == 0 {
+                cmd.append_switch_with_value(Some(&s("ozone-platform")), Some(&s(p)));
+            }
+            // Off-screen, the page's scale is ours (screen_info); with this feature on,
+            // Chromium's Wayland code overrides it with 1 (spike: devicePixelRatio stayed 1)
+            if mode() != Mode::Windowed {
+                cmd.append_switch_with_value(Some(&s("disable-features")), Some(&s("WaylandFractionalScaleV1")));
+            }
             // GTK4 is already in this process: Chromium must not load GTK3 next to it
             cmd.append_switch_with_value(Some(&s("gtk-version")), Some(&s("4")));
             let port = std::env::var("CDP_PORT").unwrap_or_else(|_| "9310".into());
@@ -418,10 +478,58 @@ fn send_key(key: gdk::Key, code: u32, state: gdk::ModifierType, down: bool) {
         ..Default::default()
     };
     h.send_key_event(Some(&ev));
-    // typed text: a CHAR event (not for Ctrl/Alt shortcuts)
-    if down && ch != 0 && mods & (1 << 2 | 1 << 3) == 0 {
-        h.send_key_event(Some(&KeyEvent { type_: KeyEventType::CHAR, windows_key_code: ch as i32, ..ev }));
+}
+
+/// Typed text: a CHAR event (what the page sees as input after its keydown).
+fn send_char(c: char, mods: u32) {
+    let Some(h) = host() else { return };
+    let mut buf = [0u16; 2];
+    for &u in c.encode_utf16(&mut buf).iter() {
+        h.send_key_event(Some(&KeyEvent {
+            type_: KeyEventType::CHAR,
+            modifiers: mods,
+            windows_key_code: u as i32,
+            character: u,
+            unmodified_character: u,
+            ..Default::default()
+        }));
     }
+}
+
+fn im_wire(im: &gtk::IMMulticontext) {
+    im.connect_commit(|_, text| {
+        let mut it = text.chars();
+        match (IN_KEY.get() && !COMPOSING.get(), it.next(), it.next()) {
+            // plain typing: the key's own keydown went out already
+            (true, Some(c), None) => send_char(c, 0),
+            _ => {
+                if let Some(h) = host() {
+                    h.ime_commit_text(Some(&s(text)), Some(&NO_RANGE), 0);
+                }
+            }
+        }
+        COMPOSING.set(false);
+    });
+    im.connect_preedit_changed(|im| {
+        let Some(h) = host() else { return };
+        let (text, _, cursor) = im.preedit_string();
+        if text.is_empty() {
+            if COMPOSING.replace(false) {
+                h.ime_cancel_composition();
+            }
+            return;
+        }
+        COMPOSING.set(true);
+        let len = text.encode_utf16().count() as u32;
+        let underline = CompositionUnderline {
+            range: Range { from: 0, to: len },
+            color: 0xff00_0000,
+            style: CompositionUnderlineStyle::SOLID,
+            ..Default::default()
+        };
+        let caret = text.chars().take(cursor.max(0) as usize).map(char::len_utf16).sum::<usize>() as u32;
+        h.ime_set_composition(Some(&s(&text)), Some(&[underline]), Some(&NO_RANGE), Some(&Range { from: caret, to: caret }));
+    });
 }
 
 fn mouse(x: f64, y: f64, state: gdk::ModifierType) -> MouseEvent {
@@ -542,17 +650,38 @@ fn build_ui() {
         glib::Propagation::Stop
     });
     overlay.add_controller(scroll);
+    // keys: keydown to CEF first, then through the input method, which commits the text
+    // (one char: a CHAR event) or composes it (preedit: CEF's IME calls)
+    let im = gtk::IMMulticontext::new();
+    im.set_client_widget(Some(&overlay));
+    im_wire(&im);
     let keys = gtk::EventControllerKey::new();
-    keys.connect_key_pressed(|_, key, code, state| {
+    let im2 = im.clone();
+    keys.connect_key_pressed(move |c, key, code, state| {
         send_key(key, code, state, true);
+        IN_KEY.set(true);
+        let filtered = c.current_event().is_some_and(|e| im2.filter_keypress(&e));
+        IN_KEY.set(false);
+        let mods = modifiers(state);
+        if let (false, Some(ch), 0) = (filtered, key.to_unicode(), mods & (1 << 2 | 1 << 3)) {
+            send_char(ch, mods);
+        }
         glib::Propagation::Stop
     });
-    keys.connect_key_released(|_, key, code, state| send_key(key, code, state, false));
+    let im2 = im.clone();
+    keys.connect_key_released(move |c, key, code, state| {
+        if let Some(e) = c.current_event() {
+            im2.filter_keypress(&e);
+        }
+        send_key(key, code, state, false)
+    });
     window.add_controller(keys);
-    window.connect_is_active_notify(|w| {
+    let im2 = im.clone();
+    window.connect_is_active_notify(move |w| {
         if let Some(h) = host() {
             h.set_focus(w.is_active() as i32);
         }
+        if w.is_active() { im2.focus_in() } else { im2.focus_out() }
     });
     window.connect_close_request(|_| {
         match host() {
@@ -562,7 +691,25 @@ fn build_ui() {
         glib::Propagation::Stop
     });
     window.set_child(Some(&overlay));
+    if vsync() {
+        // shortcut: ticks every frame, also when the page is still; a port pauses the
+        // clock while nothing on the page moves
+        page.add_tick_callback(|_, _| {
+            if let Some(h) = host() {
+                h.send_external_begin_frame();
+            }
+            glib::ControlFlow::Continue
+        });
+    }
     window.connect_realize(|w| {
+        // fractional scale (wp-fractional-scale): CEF re-renders at the new density
+        w.surface().expect("surface").connect_scale_notify(|s| {
+            eprintln!("s10 scale {}", s.scale());
+            if let Some(h) = host() {
+                h.notify_screen_info_changed();
+                h.was_resized();
+            }
+        });
         // count frames GTK draws; a size change tells CEF to re-layout
         w.frame_clock().expect("frame clock").connect_after_paint(|_| {
             FRAMES.set(FRAMES.get() + 1);
@@ -583,7 +730,7 @@ fn build_ui() {
         });
     });
     window.present();
-    UI.with_borrow_mut(|u| *u = Some(Ui { window, page, backdrop, fixed, popup }));
+    UI.with_borrow_mut(|u| *u = Some(Ui { window, page, backdrop, fixed, popup, im }));
 }
 
 fn main() {
@@ -611,6 +758,21 @@ fn main() {
         ..Default::default()
     };
     assert_eq!(initialize(Some(args.as_main_args()), Some(&settings), Some(&mut app), std::ptr::null_mut()), 1);
+    if std::env::var_os("IMETEST").is_some() {
+        // CEF's IME side without an input method: compose "nihon", then commit 日本
+        glib::timeout_add_local_once(Duration::from_secs(5), || {
+            let Some(h) = host() else { return };
+            let ul = CompositionUnderline { range: Range { from: 0, to: 5 }, color: 0xff00_0000, style: CompositionUnderlineStyle::SOLID, ..Default::default() };
+            h.ime_set_composition(Some(&s("nihon")), Some(&[ul]), Some(&NO_RANGE), Some(&Range { from: 5, to: 5 }));
+            eprintln!("s10 ime composing");
+            glib::timeout_add_local_once(Duration::from_secs(2), || {
+                if let Some(h) = host() {
+                    h.ime_commit_text(Some(&s("日本")), Some(&NO_RANGE), 0);
+                    eprintln!("s10 ime committed");
+                }
+            });
+        });
+    }
     if osr {
         glib::timeout_add_local(Duration::from_secs(1), || {
             eprintln!("s10 paints={} frames={} pumps={:?}", PAINTS.replace(0), FRAMES.replace(0), PUMPS.replace((0, 0)));

@@ -1,0 +1,14 @@
+// tests/niri.kdl at 150 %: fractional-scale check for the S10 spike
+output "winit" { scale 1.5; }
+animations { off; }
+hotkey-overlay { skip-at-startup; }
+prefer-no-csd
+layout {
+    gaps 0
+    focus-ring { off; }
+    border { off; }
+    default-column-width { proportion 1.0; }
+}
+window-rule {
+    open-maximized true
+}
