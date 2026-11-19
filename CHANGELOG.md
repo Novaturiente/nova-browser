@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.15 (2026-11-20)
+
+- Tabs look like Safari again (as in 0.1.13): rounded squares, plain
+  inactive tabs, the active one raised with a soft shadow. The tab bar is
+  never thinner than 38 px.
+
 ## 0.1.14 (2026-11-20)
 
 - New interface: the window, tab bar, URL box, search pill, which-key, tab

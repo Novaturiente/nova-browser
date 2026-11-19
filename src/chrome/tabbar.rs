@@ -21,22 +21,20 @@ const DRAG_START: f64 = 4.0;
 pub const CSS: &str = "
 window.nova .nova-tabbar { background: var(--colors-tabs-bar-bg, #555); }
 window.nova .nova-tabbar .t {
-  border-radius: 999px; padding: var(--tabs-padding, 0 5px); padding-left: 10px; padding-right: 6px;
+  border-radius: 8px; padding: var(--tabs-padding, 0 5px); padding-left: 10px; padding-right: 6px;
   font: var(--fonts-tabs-unselected, 10pt monospace);
-  color: var(--colors-tabs-odd-fg);
-  background: color-mix(in srgb, var(--colors-tabs-selected-odd-bg) 35%, var(--colors-tabs-odd-bg));
-  transition: background 140ms ease, box-shadow 180ms ease;
+  color: color-mix(in srgb, var(--colors-tabs-odd-fg) 62%, transparent);
+  background: transparent;
+  transition: background 160ms ease-out, color 160ms ease-out, box-shadow 200ms ease-out;
 }
-window.nova .nova-tabbar .t.even { color: var(--colors-tabs-even-fg); }
 window.nova .nova-tabbar .t:hover {
-  background: color-mix(in srgb, var(--colors-tabs-selected-odd-bg) 70%, var(--colors-tabs-odd-bg));
+  color: color-mix(in srgb, var(--colors-tabs-odd-fg) 85%, transparent);
+  background: color-mix(in srgb, var(--colors-tabs-odd-fg) 7%, transparent);
 }
 window.nova .nova-tabbar .t.a {
   font: var(--fonts-tabs-selected, 10pt monospace);
   color: var(--colors-tabs-selected-odd-fg); background: var(--colors-tabs-selected-odd-bg);
-}
-window.nova .nova-tabbar .t.a.even {
-  color: var(--colors-tabs-selected-even-fg); background: var(--colors-tabs-selected-even-bg);
+  box-shadow: 0 1px 3px rgba(0,0,0,.28), 0 0 0 1px rgba(0,0,0,.25), inset 0 1px rgba(255,255,255,.07);
 }
 window.nova .nova-tabbar .t.e { box-shadow: inset 0 0 0 2px var(--colors-tabs-indicator-error); }
 window.nova .nova-tabbar .t.z { opacity: .5; }
@@ -47,7 +45,7 @@ window.nova .nova-tabbar .t.circle image { margin: 0; }
 window.nova .nova-tabbar .t .sp { color: var(--colors-tabs-indicator-start); margin-right: 6px; }
 window.nova .nova-tabbar .t.circle .sp { margin: 0; }
 window.nova .nova-tabbar .t button.x {
-  min-width: 16px; min-height: 16px; padding: 0; margin-left: 4px; border-radius: 999px;
+  min-width: 18px; min-height: 18px; padding: 0; margin-left: 4px; border-radius: 5px;
   border: none; box-shadow: none; background: none; color: inherit; opacity: 0;
   transition: opacity 140ms ease, background 140ms ease;
 }

@@ -1912,8 +1912,9 @@ fn apply_layout() {
         tabbar.set_vexpand(true);
         tabbar.set_hexpand(false);
     } else {
-        // + 8: room for the pill tabs' 4 px margin above and below (chrome/tabbar.rs)
-        let h = theme::bar_height(&cfg, "fonts.tabs.selected", "tabs.padding") + 8;
+        // + 8: room for the tabs' 4 px margin above and below (chrome/tabbar.rs); never
+        // thinner than Safari's 38 px
+        let h = (theme::bar_height(&cfg, "fonts.tabs.selected", "tabs.padding") + 8).max(38);
         tabbar.set_size_request(-1, h);
         tabbar.set_hexpand(true);
         tabbar.set_vexpand(false);
