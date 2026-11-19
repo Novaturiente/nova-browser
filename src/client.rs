@@ -263,7 +263,7 @@ wrap_client! {
                 ("menuclose", _) => window::close_popup(),
                 ("pwpick", Ok(i)) if i >= 0 => crate::passwords::on_click(i as usize),
                 ("answer", _) => crate::permissions::on_key(arg),
-                ("glassready", Ok(gen)) => window::glass_ready(b.identifier(), gen as u64),
+                ("size", _) => window::overlay_size(b.identifier(), arg),
                 _ => eprintln!("novabrowser: unknown UI message {text:?}"),
             });
             1

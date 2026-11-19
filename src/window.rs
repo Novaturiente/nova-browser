@@ -1,27 +1,31 @@
 //! Window layout (S2), the tab list, the HTML tab bar (also shows mode, keys,
-//! messages, progress) and the floating command palette overlay.
+//! messages, progress) and where the floating cards (overlay.rs) go.
 //!
 //! All state lives on the CEF UI thread. CEF calls that can call back into our
 //! handlers (attach, focus, close) run after the state borrow is dropped.
 use crate::client::{TabClient, UiClient};
 use crate::modes::{self, Mode};
+use crate::overlay::{Align, Anchor, Overlay};
 use crate::theme::{self, TitleFields};
 use crate::{config, devtools, history};
 use cef::*;
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
 const TABBAR_HTML: &str = include_str!("../ui/tabbar.html");
 const PALETTE_HTML: &str = include_str!("../ui/palette.html");
 const KEYHINT_HTML: &str = include_str!("../ui/keyhint.html");
 const POPUP_HTML: &str = include_str!("../ui/popup.html");
 const TOAST_HTML: &str = include_str!("../ui/toast.html");
 const PROMPT_HTML: &str = include_str!("../ui/prompt.html");
-/// Shared styles and helpers (glass backdrop, pop animation) for every UI page.
-const GLASS_HTML: &str = include_str!("../ui/glass.html");
+/// Theme variables for every UI page; the card look, fades and size reports for overlays.
+const THEME_HTML: &str = include_str!("../ui/theme.html");
+const CARD_HTML: &str = include_str!("../ui/card.html");
 
-/// A UI page as a data: URL, with the shared glass part in place of its marker.
+/// A UI page as a data: URL, with the shared parts in place of its marker.
 fn ui_url(html: &str) -> String {
-    data_url(&html.replacen("<!--glass-->", GLASS_HTML, 1)).to_string()
+    let html = html
+        .replacen("<!--theme-->", THEME_HTML, 1)
+        .replacen("<!--card-->", &format!("{THEME_HTML}{CARD_HTML}"), 1);
+    data_url(&html).to_string()
 }
 
 struct Tab {
@@ -91,15 +95,15 @@ struct State {
     mid: Option<Panel>,
     content: Option<Panel>,
     tabbar: Option<BrowserView>,
-    /// Command line + completion, floating over the content (hidden outside command mode).
-    palette: Option<(BrowserView, OverlayController)>,
-    keyhint: Option<(BrowserView, OverlayController)>,
+    /// Command line + completion, a card under the tab bar (hidden outside command mode).
+    palette: Option<Overlay>,
+    keyhint: Option<Overlay>,
     /// tab tooltip (can't take focus) and tab right-click menu (can)
-    tip: Option<(BrowserView, OverlayController)>,
-    menu: Option<(BrowserView, OverlayController)>,
-    /// messages (top-centre capsule) and prompt questions (sheet under the tab bar)
-    toast: Option<(BrowserView, OverlayController)>,
-    ask: Option<(BrowserView, OverlayController)>,
+    tip: Option<Overlay>,
+    menu: Option<Overlay>,
+    /// messages (top centre) and prompt questions (under the tab bar)
+    toast: Option<Overlay>,
+    ask: Option<Overlay>,
     /// bumped on every keyhint change; a delayed show only applies if still current
     keyhint_gen: u64,
     /// Palette shown as a thin strip (search: the page must stay visible).
@@ -173,9 +177,7 @@ impl Cur {
 /// Slot of the window owning browser `id` (a tab, a closing tab or one of its UI pages).
 fn owner(id: i32) -> Option<usize> {
     let has = |v: &Option<BrowserView>| v.as_ref().and_then(browser_id) == Some(id);
-    let has2 = |v: &Option<(BrowserView, OverlayController)>| {
-        v.as_ref().and_then(|p| browser_id(&p.0)) == Some(id)
-    };
+    let has2 = |o: &Option<Overlay>| o.as_ref().and_then(Overlay::id) == Some(id);
     WINS.with_borrow(|w| {
         w.iter().position(|s| {
             s.tabs.iter().any(|t| browser_id(&t.view) == Some(id))
@@ -833,10 +835,6 @@ pub fn set_loading(browser: &Browser, loading: bool, back: bool, fwd: bool) {
         f.execute_java_script(Some(&CefString::from(js.as_str())), None, 0);
     }
     apply_dark(browser);
-    // a backdrop ready for overlays shown while the page can't paint (alert, confirm)
-    if !loading && active_browser().is_some_and(|b| b.identifier() == browser.identifier()) {
-        page_shot(Some(browser.clone()), 0, |_| {});
-    }
 }
 
 pub fn set_scroll(browser: &Browser, y: i64) {
@@ -1511,38 +1509,120 @@ wrap_task! {
             let cleared = S.with_borrow_mut(|s| s.message_id == self.id && s.message.take().is_some());
             if cleared {
                 refresh();
-                if let Some((v, o)) = S.with_borrow(|s| s.toast.clone()) { hide_glass(&v, &o); }
+                if let Some(o) = S.with_borrow(|s| s.toast.clone()) { o.hide(); }
             }
         }
     }
 }
 
-/// Show (or hide, with None) the open question and its [key, label] answers as a sheet
+/// Content area in window coordinates (overlay bounds are window coordinates).
+fn content_rect() -> Option<Rect> {
+    let (mid, content) = S.with_borrow(|s| Some((s.mid.clone()?, s.content.clone()?)))?;
+    let (m, c) = (mid.bounds(), content.bounds());
+    Some(Rect { x: m.x + c.x, y: m.y + c.y, ..c })
+}
+
+// ---- where each card goes (window coordinates); the card's own page sets its size
+
+/// Top centre of the page, `gap` px under the tab bar.
+fn top_centre(gap: i32) -> Option<Anchor> {
+    let c = content_rect()?;
+    Some(Anchor::new(c.x + c.width / 2, c.y + gap, Align::Center, Align::Start))
+}
+
+/// Palette width: up to 720 px, 24 px clear of each side; search is a small card.
+fn palette_width(compact: bool) -> i32 {
+    let w = content_rect().map_or(720, |c| c.width - 48);
+    w.clamp(200, if compact { 420 } else { 720 })
+}
+
+/// The tallest the palette may get: the input plus `completion.height` (a percentage
+/// of the page's height or px), more for `:bindings`, and never past the page.
+fn palette_max_height(bindings: bool) -> i32 {
+    let page_h = content_rect().map_or(600, |c| c.height);
+    let list = match config::get().get("completion.height") {
+        serde_json::Value::String(p) => p
+            .trim_end_matches('%')
+            .parse::<f64>()
+            .map_or(300, |p| (page_h as f64 * p / 100.0) as i32),
+        v => v.as_i64().unwrap_or(300) as i32,
+    };
+    let list = if bindings { (page_h * 7 / 10).max(list) } else { list };
+    (46 + list).min(page_h - 16).max(46)
+}
+
+fn keyhint_anchor() -> Option<Anchor> {
+    let c = content_rect()?;
+    Some(Anchor::new(c.x + c.width - 8, c.y + c.height - 8, Align::End, Align::End))
+}
+
+/// After a relayout (window resize, tab bar moved): shown cards follow the page.
+fn place_overlays() {
+    let (palette, toast, ask, keyhint, compact) = S.with_borrow(|s| {
+        (s.palette.clone(), s.toast.clone(), s.ask.clone(), s.keyhint.clone(), s.compact)
+    });
+    let gap = if compact { 6 } else { 8 };
+    if let (Some(o), Some(a)) = (palette, top_centre(gap)) {
+        o.move_to(a);
+    }
+    if let (Some(o), Some(a)) = (toast, top_centre(8)) {
+        o.move_to(a);
+    }
+    if let (Some(o), Some(a)) = (ask, top_centre(8)) {
+        o.move_to(a);
+    }
+    if let (Some(o), Some(a)) = (keyhint, keyhint_anchor()) {
+        o.move_to(a);
+    }
+}
+
+/// "size w h" from an overlay page: the card takes its content's height, and the toast
+/// also its width (the others' width is set here).
+pub fn overlay_size(id: i32, arg: &str) {
+    let mut it = arg.split(' ').filter_map(|x| x.parse::<i32>().ok());
+    let (Some(w), Some(h)) = (it.next(), it.next()) else { return };
+    let (o, toast) = S.with_borrow(|s| {
+        let o = [&s.palette, &s.toast, &s.ask, &s.keyhint, &s.tip, &s.menu]
+            .into_iter()
+            .flatten()
+            .find(|o| o.id() == Some(id))
+            .cloned();
+        (o, s.toast.as_ref().and_then(Overlay::id) == Some(id))
+    });
+    let Some(o) = o else { return };
+    if toast {
+        let max_w = content_rect().map_or(w, |c| c.width - 16);
+        o.fit(w.min(max_w), h, true);
+    } else {
+        o.fit(w, h, false);
+    }
+}
+
+/// Show (or hide, with None) the open question and its [key, label] answers as a card
 /// under the tab bar; keys still answer it through prompt mode.
 pub fn set_prompt(p: Option<(String, Vec<[&'static str; 2]>)>) {
-    let Some((view, overlay)) = S.with_borrow_mut(|s| {
+    let Some(o) = S.with_borrow_mut(|s| {
         s.prompt = p.as_ref().map(|p| p.0.clone());
         s.ask.clone()
     }) else {
         return;
     };
     refresh();
-    let (Some((q, opts)), Some(c)) = (p, content_rect()) else {
-        return hide_glass(&view, &overlay);
+    let (Some((q, opts)), Some(c), Some(a)) = (p, content_rect(), top_centre(8)) else {
+        return o.hide();
     };
-    let px = theme::setting_px(&config::get(), "fonts.statusbar");
     let w = (c.width - 48).clamp(320, 540);
-    // shortcut: line count guessed from an average glyph width; prompt.html clamps to 3 lines
-    let lines = ((q.chars().count() as f64 * px * 0.55) as i32 / (w - 100) + 1).min(3);
-    // body padding 8 + 22, card padding 16 + 14, question, gap 14, buttons 32
-    let h = 8 + 22 + 30 + (20 * lines).max(30) + 14 + 32;
-    let r = Rect { x: c.x + (c.width - w) / 2, y: c.y, width: w, height: h };
+    // a first guess until the page reports: padding 16 + 14, the question's lines (20 px,
+    // at most 3; width from an average glyph), gap 14, buttons 32
+    let px = theme::setting_px(&config::get(), "fonts.prompts");
+    let lines = ((q.chars().count() as f64 * px * 0.55) as i32 / (w - 80) + 1).clamp(1, 3);
+    let h = 30 + (20 * lines).max(30) + 14 + 32;
     let js = format!("nova.ask({})", serde_json::json!({"q": q, "opts": opts}));
-    show_glass(&view, &overlay, r, js, false);
+    o.show(a, (w, h), &js);
 }
 
 /// Show a message for `messages.timeout` ms (`info`, `warning`, `error`, `find`) as a
-/// capsule at the top centre of the page; find positions go in the search pill instead.
+/// card at the top centre of the page; find positions go in the search card instead.
 pub fn message(level: &str, text: &str) {
     eprintln!("novabrowser: {level}: {text}");
     let id = S.with_borrow_mut(|s| {
@@ -1551,7 +1631,7 @@ pub fn message(level: &str, text: &str) {
         s.message_id
     });
     refresh();
-    // typing a search: the count goes in the search pill, which sits where the toast would
+    // typing a search: the count goes in the search card, which sits where the toast would
     if modes::mode() == Mode::Command && S.with_borrow(|s| s.compact) {
         let count = match level {
             "find" => text.split('\t').nth(1),
@@ -1569,200 +1649,16 @@ pub fn message(level: &str, text: &str) {
     }
 }
 
-/// The toast view sized to the text (the capsule fills it), at the top centre.
+/// The toast at the top centre; its page reports the message's width.
 fn show_toast(level: &str, text: &str) {
-    let (Some((view, overlay)), Some(c)) = (S.with_borrow(|s| s.toast.clone()), content_rect()) else {
+    let (Some(o), Some(a)) = (S.with_borrow(|s| s.toast.clone()), top_centre(8)) else {
         return;
     };
     let px = theme::setting_px(&config::get(), "fonts.statusbar");
-    // shortcut: width from an average glyph width (0.62 em); a long message ellipsizes
-    let chars = text.chars().count() as f64 + if level == "find" { 4.0 } else { 0.0 };
-    let w = ((chars * px * 0.62) as i32 + 72).clamp(160, (c.width - 40).max(160));
-    // capsule as tall as the text + 18, body padding 6 top and 14 bottom (shadow)
-    let h = (px * 1.25).ceil() as i32 + 18 + 20;
-    let r = Rect { x: c.x + (c.width - w) / 2, y: c.y + 4, width: w, height: h };
-    let js = format!("nova.toast({}, {})", js_str(level), js_str(text));
-    show_glass(&view, &overlay, r, js, false);
-}
-
-/// Content area in window coordinates (overlay bounds are window coordinates).
-fn content_rect() -> Option<Rect> {
-    let (mid, content) = S.with_borrow(|s| Some((s.mid.clone()?, s.content.clone()?)))?;
-    let (m, c) = (mid.bounds(), content.bounds());
-    Some(Rect { x: m.x + c.x, y: m.y + c.y, ..c })
-}
-
-thread_local! {
-    /// Per overlay (its browser id): bumped on every show and hide, so a late screenshot
-    /// or a delayed hide only applies if nothing happened to that overlay since.
-    static GLASS_GEN: RefCell<HashMap<i32, u64>> = RefCell::default();
-    /// Last screenshot per tab (browser id): the backdrop when a new one can't be taken
-    /// in time (a page blocked in alert()/confirm() never paints a new frame).
-    static SHOTS: RefCell<HashMap<i32, String>> = RefCell::default();
-}
-
-/// Screenshot the tab's page, give `f` a data: URL; after `wait_ms` without one, the
-/// tab's last screenshot (or None) instead. `f` runs once.
-fn page_shot(page: Option<Browser>, wait_ms: u64, f: impl FnOnce(Option<String>) + 'static) {
-    let Some(page) = page else { return f(None) };
-    let id = page.identifier();
-    let slot = CUR.get();
-    let f = std::rc::Rc::new(RefCell::new(Some(f)));
-    let f2 = f.clone();
-    let params = serde_json::json!({ "format": "jpeg", "quality": 80, "optimizeForSpeed": true });
-    devtools::call(&page, "Page.captureScreenshot", params, move |res| {
-        let img = res
-            .as_ref()
-            .and_then(|r| r["data"].as_str())
-            .map(|d| format!("data:image/jpeg;base64,{d}"));
-        if let Some(i) = &img {
-            SHOTS.with_borrow_mut(|s| s.insert(id, i.clone()));
-        }
-        if let Some(f) = f2.borrow_mut().take() {
-            in_slot(slot, || f(img));
-        }
-    });
-    nova_core::host::later(wait_ms, move || {
-        if let Some(f) = f.borrow_mut().take() {
-            in_slot(slot, || f(SHOTS.with_borrow(|s| s.get(&id).cloned())));
-        }
-    });
-}
-
-fn glass_gen(view: &BrowserView, bump: bool) -> u64 {
-    let id = browser_id(view).unwrap_or(-1);
-    GLASS_GEN.with_borrow_mut(|g| {
-        let n = g.entry(id).or_default();
-        if bump {
-            *n += 1;
-        }
-        *n
-    })
-}
-
-fn view_js(view: &BrowserView, js: &str) {
-    if let Some(f) = view.browser().and_then(|b| b.main_frame()) {
-        f.execute_java_script(Some(&CefString::from(js)), None, 0);
-    }
-}
-
-/// `r` moved inside the window (4 px margin).
-fn clamp_to_window(mut r: Rect) -> Rect {
-    if let Some(w) = S.with_borrow(|s| s.window.clone()) {
-        let b = w.bounds();
-        r.x = r.x.min(b.width - r.width - 4).max(4);
-        r.y = r.y.min(b.height - r.height - 4).max(0);
-    }
-    r
-}
-
-/// Where a "hidden" overlay waits: visible but far outside the window. A hidden CEF view
-/// stops painting, so showing it flashed white (or its last popup) for a frame; a parked
-/// one keeps painting, so it can be filled first and moved in once its frame is ready.
-const PARK_X: i32 = 100_000;
-
-fn parked(r: &Rect) -> Rect {
-    Rect { x: PARK_X, y: 0, width: r.width, height: r.height }
-}
-
-/// The overlay is on screen (not parked, not hidden).
-fn is_shown(o: &OverlayController) -> bool {
-    o.is_visible() != 0 && o.bounds().x < PARK_X
-}
-
-thread_local! {
-    /// Per overlay (browser id): the show waiting for its page's "glassready": its
-    /// generation, place on screen and whether it takes keys.
-    static GLASS_PENDING: RefCell<HashMap<i32, (u64, Rect, bool, OverlayController, BrowserView)>> = RefCell::default();
-}
-
-/// Show `overlay` at `r` (window coords, kept inside the window) over a screenshot of
-/// the page behind it (CEF views can't be transparent). `js` fills the page; it runs
-/// while the view is parked, and the view moves in once the page has painted it with
-/// its backdrop (glass.html nova.show). `focus`: the overlay takes keys (tab menu).
-fn show_glass(view: &BrowserView, overlay: &OverlayController, r: Rect, js: String, focus: bool) {
-    let r = clamp_to_window(r);
-    let gen = glass_gen(view, true);
-    let content = content_rect();
-    let (v, o) = (view.clone(), overlay.clone());
-    let finish = move |img: Option<String>| {
-        let glass = match (img, content) {
-            (Some(img), Some(c)) => serde_json::json!({
-                "img": img, "x": r.x - c.x, "y": r.y - c.y, "w": c.width, "h": c.height,
-            })
-            .to_string(),
-            _ => "null".to_string(),
-        };
-        glass_fill(&v, &o, gen, r, focus, &glass, &js);
-    };
-    page_shot(active_browser(), 350, finish);
-}
-
-/// Fill a parked overlay (`nova.show`), then move it to `r` when its page says
-/// "glassready" (or after 400 ms, should the parked view not paint).
-fn glass_fill(v: &BrowserView, o: &OverlayController, gen: u64, r: Rect, focus: bool, glass: &str, js: &str) {
-    if glass_gen(v, false) != gen {
-        return;
-    }
-    let id = browser_id(v).unwrap_or(-1);
-    if !is_shown(o) {
-        o.set_bounds(Some(&parked(&r)));
-        o.set_visible(1);
-    }
-    GLASS_PENDING.with_borrow_mut(|p| p.insert(id, (gen, r, focus, o.clone(), v.clone())));
-    view_js(v, &format!("nova.show({gen}, {glass}, () => {{ {js} }})"));
-    let slot = CUR.get();
-    nova_core::host::later(400, move || in_slot(slot, || glass_ready(id, gen)));
-}
-
-/// "glassready gen" from an overlay page: its frame is painted, put it on screen.
-pub fn glass_ready(id: i32, gen: u64) {
-    let Some((_, r, focus, o, v)) = GLASS_PENDING.with_borrow_mut(|p| {
-        p.get(&id).is_some_and(|e| e.0 == gen).then(|| p.remove(&id)).flatten()
-    }) else {
-        return;
-    };
-    if glass_gen(&v, false) != gen {
-        return;
-    }
-    o.set_bounds(Some(&r));
-    view_js(&v, "nova.play()");
-    if focus {
-        // a just-moved overlay ignores request_focus (same as the palette)
-        post_task(ThreadId::UI, Some(&mut FocusOverlay::new(v.clone(), o.clone())));
-    }
-}
-
-/// Fade the overlay's surface out (glass.html nova.out), then park the view.
-fn hide_glass(view: &BrowserView, overlay: &OverlayController) {
-    let gen = glass_gen(view, true);
-    if !is_shown(overlay) {
-        return;
-    }
-    view_js(view, "nova.out()");
-    post_delayed_task(ThreadId::UI, Some(&mut HideGlass::new(view.clone(), overlay.clone(), gen)), 160);
-}
-
-wrap_task! {
-    struct HideGlass { view: BrowserView, overlay: OverlayController, gen: u64 }
-    impl Task {
-        fn execute(&self) {
-            if glass_gen(&self.view, false) == self.gen {
-                self.overlay.set_bounds(Some(&parked(&self.overlay.bounds())));
-            }
-        }
-    }
-}
-
-wrap_task! {
-    struct FocusOverlay { view: BrowserView, overlay: OverlayController }
-    impl Task {
-        fn execute(&self) {
-            if is_shown(&self.overlay) {
-                self.view.request_focus();
-            }
-        }
-    }
+    // a first guess until the page reports (0.6 em per character)
+    let w = ((text.chars().count() as f64 * px * 0.6) as i32 + 60).max(120);
+    let h = (px * 1.25).ceil() as i32 + 16;
+    o.show(a, (w, h), &format!("nova.toast({}, {})", js_str(level), js_str(text)));
 }
 
 /// Show `text` once the window is up (startup config errors).
@@ -1771,73 +1667,35 @@ pub fn startup_message(level: &str, text: &str) {
 }
 
 fn palette_js(js: &str) {
-    let view = S.with_borrow(|s| s.palette.as_ref().map(|p| p.0.clone()));
-    if let Some(f) = view.and_then(|v| v.browser()).and_then(|b| b.main_frame()) {
-        f.execute_java_script(Some(&CefString::from(js)), None, 0);
+    if let Some(o) = S.with_borrow(|s| s.palette.clone()) {
+        o.js(js);
     }
 }
 
-/// `cmd-set-text`: open the floating palette with `text`. Search (`/`, `?`) gets a
-/// thin strip so the matches stay visible; everything else floats over a blurred
-/// screenshot of the page (CEF views can't be transparent).
+/// `cmd-set-text`: open the palette with `text`, a card under the tab bar. Search (`/`,
+/// `?`) is the input alone, so the matches stay visible.
 pub fn open_cmdline(text: &str) {
     modes::enter(Mode::Command);
     let compact = text.starts_with('/') || text.starts_with('?');
-    let Some((view, overlay, page)) = S.with_borrow_mut(|s| {
+    let Some(o) = S.with_borrow_mut(|s| {
         s.compact = compact;
-        let (v, o) = s.palette.clone()?;
-        Some((v, o, s.tabs.get(s.active).and_then(|t| t.view.browser())))
+        s.palette.clone()
     }) else {
         return;
     };
-    // a fade-out still running from the last close must not park it now
-    let gen = glass_gen(&view, true);
-    let Some(r) = palette_rect() else { return };
-    // filled and focused at once while parked (keys typed now must land in the input);
-    // it moves in with its backdrop (glass_fill)
-    if !is_shown(&overlay) {
-        overlay.set_bounds(Some(&parked(&r)));
-        overlay.set_visible(1);
-    }
-    palette_js(&format!("nova.cmdline({}, {compact})", js_str(text)));
-    // A just-shown overlay ignores focus requests; focus on the next UI task.
-    post_task(ThreadId::UI, Some(&mut FocusPalette::new()));
-    let content = content_rect();
-    let (v, o) = (view.clone(), overlay.clone());
-    page_shot(page, 350, move |img| {
-        if modes::mode() != Mode::Command {
-            return;
-        }
-        // the page itself behind the view; full mode also blurs it in (nova.backdrop)
-        let (glass, fill) = match (img, content) {
-            (Some(img), Some(c)) => (
-                serde_json::json!({"img": img, "x": r.x - c.x, "y": r.y - c.y, "w": c.width, "h": c.height}).to_string(),
-                if compact { "nova.backdrop(null)".to_string() } else { format!("nova.backdrop({})", js_str(&img)) },
-            ),
-            _ => ("null".into(), "nova.backdrop(null)".into()),
-        };
-        glass_fill(&v, &o, gen, r, false, &glass, &fill);
-    });
-}
-
-wrap_task! {
-    struct FocusPalette {}
-    impl Task {
-        fn execute(&self) {
-            let view = S.with_borrow(|s| s.palette.as_ref().map(|p| p.0.clone()));
-            if let (Some(v), Mode::Command) = (view, modes::mode()) {
-                v.request_focus();
-            }
-        }
-    }
+    let Some(a) = top_centre(if compact { 6 } else { 8 }) else { return };
+    let maxh = palette_max_height(text.starts_with(":bindings "));
+    let js = format!("nova.cmdline({}, {compact}, {maxh})", js_str(text));
+    o.show(a, (palette_width(compact), if compact { 38 } else { 46 }), &js);
+    o.focus();
 }
 
 /// Leave command mode and give focus back to the page.
 pub fn close_cmdline() {
     modes::enter(Mode::Normal);
     crate::completion::reset();
-    if let Some((v, o)) = S.with_borrow(|s| s.palette.clone()) {
-        hide_glass(&v, &o);
+    if let Some(o) = S.with_borrow(|s| s.palette.clone()) {
+        o.hide();
     }
     focus_active();
     refresh();
@@ -1874,11 +1732,6 @@ fn url_host(url: &str) -> Option<String> {
     (!host.is_empty()).then(|| host.to_string())
 }
 
-/// Show `overlay` at `r` (window coords, kept inside the window) and run `js` in it.
-fn popup_at(view: &BrowserView, overlay: &OverlayController, r: Rect, js: &str) {
-    show_glass(view, overlay, r, js.to_string(), false);
-}
-
 /// Tab bar's origin in window coordinates (it may sit inside `mid` when vertical).
 fn tabbar_origin() -> (i32, i32) {
     S.with_borrow(|s| {
@@ -1901,11 +1754,11 @@ fn tab_rect(arg: &str) -> Option<(usize, i32, i32, i32)> {
 
 /// "tip i left bottom right" from the tab bar: show title + URL under (or beside) tab i.
 pub fn tab_tip(arg: &str) {
-    let Some((view, overlay)) = S.with_borrow(|s| s.tip.clone()) else {
+    let Some(o) = S.with_borrow(|s| s.tip.clone()) else {
         return;
     };
     let Some((i, left, bottom, right)) = tab_rect(arg) else {
-        return hide_glass(&view, &overlay);
+        return o.hide();
     };
     let Some((title, url)) =
         S.with_borrow(|s| s.tabs.get(i).map(|t| (t.title.clone(), t.url.clone())))
@@ -1917,24 +1770,12 @@ pub fn tab_tip(arg: &str) {
         config::get().str("tabs.position").as_str(),
         "left" | "right"
     );
-    // body padding 2 + 14 (shadow), card padding 8 + 8, title 20, URL lines
-    let (w, h) = (440, 52 + 19 * (url.len() as i32 / 56 + 1).min(4));
-    let (x, y) = if vertical {
-        (ox + right + 6, oy + bottom - 24)
+    let a = if vertical {
+        Anchor::new(ox + right + 6, oy + bottom - 24, Align::Start, Align::Start)
     } else {
-        (ox + left, oy + bottom + 4)
+        Anchor::new(ox + left, oy + bottom + 4, Align::Start, Align::Start)
     };
-    popup_at(
-        &view,
-        &overlay,
-        Rect {
-            x,
-            y,
-            width: w,
-            height: h,
-        },
-        &format!("nova.tip({}, {})", js_str(&title), js_str(&url)),
-    );
+    o.show(a, (440, 60), &format!("nova.tip({}, {})", js_str(&title), js_str(&url)));
 }
 
 const MENU: &[(&str, &str, &str)] = &[
@@ -1953,66 +1794,50 @@ const MENU: &[(&str, &str, &str)] = &[
 
 /// "menu i x bottom right": the tab's right-click menu at the mouse.
 pub fn tab_menu(arg: &str) {
-    let Some((view, overlay)) = S.with_borrow(|s| s.menu.clone()) else {
+    let Some(o) = S.with_borrow(|s| s.menu.clone()) else {
         return;
     };
     let Some((i, x, bottom, _)) = tab_rect(arg) else {
         return;
     };
-    if let Some((v, o)) = S.with_borrow(|s| s.tip.clone()) {
-        hide_glass(&v, &o);
+    if let Some(t) = S.with_borrow(|s| s.tip.clone()) {
+        t.hide();
     }
     let (ox, oy) = tabbar_origin();
     let items: Vec<_> = MENU.iter().map(|(a, l, k)| [a, l, k]).collect();
-    // body padding 2 + 14, card padding 6 + 6, 26 px rows
-    let r = Rect {
-        x: ox + x - 8,
-        y: oy + bottom,
-        width: 240,
-        height: MENU.len() as i32 * 26 + 28,
-    };
-    let js = format!("nova.menu({i}, {})", serde_json::json!(items));
-    show_glass(&view, &overlay, r, js, true);
+    // card padding 6 + 6, 26 px rows
+    let a = Anchor::new(ox + x - 8, oy + bottom, Align::Start, Align::Start);
+    o.show(a, (220, MENU.len() as i32 * 26 + 12), &format!("nova.menu({i}, {})", serde_json::json!(items)));
+    o.focus();
 }
 
 /// Password suggestions (passwords.rs) under a login field; `field` is in the page's
 /// CSS px from the content's top-left. Uses the tooltip overlay (never takes focus,
 /// so typing stays in the field).
 pub fn suggest(field: Rect, data: &serde_json::Value) {
-    let Some((view, overlay, mid, content)) = S.with_borrow(|s| {
-        let (v, o) = s.tip.clone()?;
-        Some((v, o, s.mid.clone()?, s.content.clone()?))
-    }) else {
+    let (Some(o), Some(c)) = (S.with_borrow(|s| s.tip.clone()), content_rect()) else {
         return;
     };
-    let (m, c) = (mid.bounds(), content.bounds());
-    let n = data["rows"].as_array().map_or(0, |a| a.len()) as i32;
-    // body padding 2 + 14, card padding 6 + 6, header 26, 26 px rows
-    let r = Rect {
-        x: m.x + c.x + field.x - 8,
-        y: m.y + c.y + field.y + field.height + 2,
-        width: 360,
-        height: 54 + n.min(8) * 26,
-    };
-    // already up (the selection moved): redraw in place, no new screenshot or entrance
-    if is_shown(&overlay) {
-        glass_gen(&view, true); // cancels a fade-out in progress
-        overlay.set_bounds(Some(&clamp_to_window(r)));
-        return view_js(&view, &format!("nova.surface().classList.remove('out'); nova.suggest({data})"));
+    let a = Anchor::new(c.x + field.x, c.y + field.y + field.height + 2, Align::Start, Align::Start);
+    let js = format!("nova.suggest({data})");
+    // already up (the selection moved): redraw in place, no new entrance
+    if o.shown() {
+        o.move_to(a);
+        return o.js(&js);
     }
-    popup_at(&view, &overlay, r, &format!("nova.suggest({data})"));
+    let n = data["rows"].as_array().map_or(0, |a| a.len()) as i32;
+    o.show(a, (340, 40 + n.min(8) * 26), &js);
 }
 
 pub fn suggest_hide() {
-    if let Some((v, o)) = S.with_borrow(|s| s.tip.clone()) {
-        hide_glass(&v, &o);
-        view_js(&v, "nova.suggest(null)");
+    if let Some(o) = S.with_borrow(|s| s.tip.clone()) {
+        o.hide();
     }
 }
 
 pub fn close_popup() {
-    if let Some((v, o)) = S.with_borrow(|s| s.menu.clone()) {
-        hide_glass(&v, &o);
+    if let Some(o) = S.with_borrow(|s| s.menu.clone()) {
+        o.hide();
     }
     focus_active();
 }
@@ -2062,8 +1887,8 @@ fn update_keyhint() {
         s.keyhint_gen
     });
     if rows.is_empty() {
-        if let Some((v, o)) = S.with_borrow(|s| s.keyhint.clone()) {
-            hide_glass(&v, &o);
+        if let Some(o) = S.with_borrow(|s| s.keyhint.clone()) {
+            o.hide();
         }
     } else {
         post_delayed_task(ThreadId::UI, Some(&mut ShowKeyhint::new(generation)), 350);
@@ -2071,74 +1896,25 @@ fn update_keyhint() {
 }
 
 fn show_keyhint(generation: u64) {
-    let Some((view, overlay, mid, content)) = S.with_borrow(|s| {
+    let Some(o) = S.with_borrow(|s| {
         if s.keyhint_gen != generation {
             return None;
         }
-        let (v, o) = s.keyhint.clone()?;
-        Some((v, o, s.mid.clone()?, s.content.clone()?))
+        s.keyhint.clone()
     }) else {
         return;
     };
     let (prefix, rows) = modes::keyhint();
+    let (Some(a), Some(c)) = (keyhint_anchor(), content_rect()) else { return };
     if rows.is_empty() {
         return;
     }
-    let cfg = config::get();
-    let row_h = (theme::setting_px(&cfg, "fonts.keyhint") * 1.6).ceil() as i32;
-    let (m, c) = (mid.bounds(), content.bounds());
-    // body padding 12 + 14, card padding 8 + 8
-    let h = (rows.len() as i32 * row_h + 42).min(c.height - 24);
-    let w = 420.min(c.width - 24);
-    let r = Rect {
-        x: m.x + c.x + c.width - w,
-        y: m.y + c.y + c.height - h,
-        width: w,
-        height: h,
-    };
+    let row_h = (theme::setting_px(&config::get(), "fonts.keyhint") * 1.6).ceil() as i32;
+    // card padding 8 + 8
+    let h = (rows.len() as i32 * row_h + 16).min(c.height - 16);
     let js = format!("nova.keyhint({}, {})", js_str(&prefix), serde_json::json!(rows));
-    show_glass(&view, &overlay, r, js, false);
-}
-
-/// Move the palette to its place after a relayout (parked stays parked, resized).
-fn place_palette() {
-    let (Some(r), Some((_, o))) = (palette_rect(), S.with_borrow(|s| s.palette.clone())) else {
-        return;
-    };
-    o.set_bounds(Some(&if is_shown(&o) { r } else { parked(&r) }));
-}
-
-/// Full content area, or a search pill at the top centre when compact.
-fn palette_rect() -> Option<Rect> {
-    let Some((mid, content, compact)) = S.with_borrow(|s| {
-        Some((
-            s.mid.clone()?,
-            s.content.clone()?,
-            s.compact,
-        ))
-    }) else {
-        return None;
-    };
-    // Overlay bounds are window coordinates; content sits in mid, mid in the window.
-    let (m, c) = (mid.bounds(), content.bounds());
-    let r = Rect {
-        x: m.x + c.x,
-        y: m.y + c.y,
-        ..c
-    };
-    let cfg = config::get();
-    let b = if compact {
-        // pill: padding 6 top, 12 bottom (shadow), the bar as tall as the status font + 22
-        let w = (r.width - 32).clamp(1, 560);
-        let h = theme::bar_height(&cfg, "fonts.statusbar", "statusbar.padding") + 22 + 18;
-        Rect { x: r.x + (r.width - w) / 2, y: r.y, width: w, height: h.clamp(1, r.height.max(1)) }
-    } else {
-        r
-    };
-    Some(b)
-}
-
-wrap_task! {
+    o.show(a, (420.min(c.width - 16), h), &js);
+}wrap_task! {
     struct Relayout { slot: usize }
     impl Task {
         fn execute(&self) { in_slot(self.slot, apply_layout); }
@@ -2256,9 +2032,19 @@ fn apply_layout() {
     tabbar.set_visible(show as i32);
     tb.invalidate_layout();
     window.layout();
-    place_palette();
+    place_overlays();
     push_theme();
     focus_active(); // re-parenting moves focus off the page
+}
+
+/// The cards' and the tab bar's background (ARGB), the colours of ui/theme.html's
+/// `--card` and the bar; a colour that isn't `#hex` gets the dark default.
+fn ui_colors() -> (u32, u32) {
+    let cfg = config::get();
+    (
+        argb(&cfg.str("colors.completion.even.bg")).unwrap_or(0xff2a_2a2c),
+        argb(&cfg.str("colors.tabs.bar.bg")).unwrap_or(0xff1c_1c1e),
+    )
 }
 
 /// Send the CSS variables and layout facts to every UI page.
@@ -2268,24 +2054,21 @@ fn push_theme() {
     let json = serde_json::json!({
         "vars": theme::vars(&cfg),
         "vertical": vertical,
-        "listHeight": match cfg.get("completion.height") {
-            serde_json::Value::String(p) if p.ends_with('%') => format!("{}vh", p.trim_end_matches('%')),
-            v => format!("{}px", v.as_i64().unwrap_or(300)),
-        },
     })
     .to_string();
-    let views = S.with_borrow(|s| {
-        [
-            s.tabbar.clone(),
-            s.palette.as_ref().map(|c| c.0.clone()),
-            s.keyhint.as_ref().map(|c| c.0.clone()),
-            s.tip.as_ref().map(|c| c.0.clone()),
-            s.menu.as_ref().map(|c| c.0.clone()),
-            s.toast.as_ref().map(|c| c.0.clone()),
-            s.ask.as_ref().map(|c| c.0.clone()),
-        ]
+    let (tabbar, overlays) = S.with_borrow(|s| {
+        let o = [&s.palette, &s.keyhint, &s.tip, &s.menu, &s.toast, &s.ask];
+        (s.tabbar.clone(), o.into_iter().flatten().cloned().collect::<Vec<_>>())
     });
-    for v in views.into_iter().flatten() {
+    let (card, bar) = ui_colors();
+    if let Some(t) = &tabbar {
+        t.set_background_color(bar);
+    }
+    for o in &overlays {
+        o.set_color(card);
+    }
+    let views = overlays.into_iter().map(|o| o.view).chain(tabbar);
+    for v in views {
         let Some(b) = v.browser() else { continue };
         // force-dark (colors.webpage.darkmode) is for web pages; it would invert a light theme
         devtools::send(
@@ -2368,7 +2151,7 @@ wrap_window_delegate! {
     impl ViewDelegate {
         fn preferred_size(&self, _view: Option<&mut View>) -> Size { Size { width: 1200, height: 800 } }
         fn on_layout_changed(&self, _view: Option<&mut View>, bounds: Option<&Rect>) {
-            in_slot(self.slot, place_palette);
+            in_slot(self.slot, place_overlays);
             // vertical tab bar width is a percentage of the window: re-layout on resize
             let w = bounds.map_or(0, |b| b.width);
             let (_, size) = bar_sizes(w);
@@ -2397,8 +2180,11 @@ wrap_window_delegate! {
                 }))
                 .expect("box layout");
             let _ = layout;
-            let ui = BrowserSettings::default();
-            let tabbar = browser_view(&mut UiClient::new(), &ui_url(TABBAR_HTML), KIND_TABBAR, &ui);
+            // UI views paint their background colour until their page has painted (CEF's
+            // default is white): the bar's and the cards' own colours (overlay.rs)
+            let (card, bar) = ui_colors();
+            let ui = |background_color| BrowserSettings { background_color, ..Default::default() };
+            let tabbar = browser_view(&mut UiClient::new(), &ui_url(TABBAR_HTML), KIND_TABBAR, &ui(bar));
             let mid = panel_create(None).expect("panel");
             mid.set_to_box_layout(Some(&BoxLayoutSettings {
                 horizontal: 1,
@@ -2407,30 +2193,21 @@ wrap_window_delegate! {
             }));
             let content = panel_create(None).expect("panel");
             content.set_to_fill_layout();
-            let keyhint = browser_view(&mut UiClient::new(), &ui_url(KEYHINT_HTML), KIND_FIXED, &ui);
-            let kh_overlay = window
-                .add_overlay_view(Some(&mut View::from(&keyhint)), DockingMode::CUSTOM, 0)
-                .expect("keyhint overlay");
-            let toast = browser_view(&mut UiClient::new(), &ui_url(TOAST_HTML), KIND_FIXED, &ui);
-            let toast_overlay = window.add_overlay_view(Some(&mut View::from(&toast)), DockingMode::CUSTOM, 0).expect("toast overlay");
-            let ask = browser_view(&mut UiClient::new(), &ui_url(PROMPT_HTML), KIND_FIXED, &ui);
-            let ask_overlay = window.add_overlay_view(Some(&mut View::from(&ask)), DockingMode::CUSTOM, 0).expect("prompt overlay");
-            let tip = browser_view(&mut UiClient::new(), &ui_url(POPUP_HTML), KIND_FIXED, &ui);
-            let tip_overlay = window.add_overlay_view(Some(&mut View::from(&tip)), DockingMode::CUSTOM, 0).expect("tip overlay");
-            let menu = browser_view(&mut UiClient::new(), &ui_url(POPUP_HTML), KIND_FIXED, &ui);
-            let menu_overlay = window.add_overlay_view(Some(&mut View::from(&menu)), DockingMode::CUSTOM, 1).expect("menu overlay");
-            // Added last so it stays on top (cef_window.h); positioned by place_palette.
-            let palette = browser_view(&mut UiClient::new(), &ui_url(PALETTE_HTML), KIND_FIXED, &ui);
-            let overlay = window
-                .add_overlay_view(Some(&mut View::from(&palette)), DockingMode::CUSTOM, 1) // can_activate: takes keys
-                .expect("palette overlay");
+            let card_view = |html| browser_view(&mut UiClient::new(), &ui_url(html), KIND_FIXED, &ui(card));
+            let keyhint = Overlay::new(&window, card_view(KEYHINT_HTML), false);
+            let toast = Overlay::new(&window, card_view(TOAST_HTML), false);
+            let ask = Overlay::new(&window, card_view(PROMPT_HTML), false);
+            let tip = Overlay::new(&window, card_view(POPUP_HTML), false);
+            let menu = Overlay::new(&window, card_view(POPUP_HTML), true);
+            // added last so it stays on top (cef_window.h)
+            let palette = Overlay::new(&window, card_view(PALETTE_HTML), true);
             let (start, startup) = S.with_borrow_mut(|s| {
-                s.palette = Some((palette, overlay));
-                s.keyhint = Some((keyhint, kh_overlay));
-                s.tip = Some((tip, tip_overlay));
-                s.menu = Some((menu, menu_overlay));
-                s.toast = Some((toast, toast_overlay));
-                s.ask = Some((ask, ask_overlay));
+                s.palette = Some(palette);
+                s.keyhint = Some(keyhint);
+                s.tip = Some(tip);
+                s.menu = Some(menu);
+                s.toast = Some(toast);
+                s.ask = Some(ask);
                 s.window = Some(window.clone());
                 s.mid = Some(mid);
                 s.content = Some(content);

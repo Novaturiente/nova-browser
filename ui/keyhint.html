@@ -1,21 +1,18 @@
 <!doctype html>
 <meta charset="utf-8">
 <title>keyhint</title>
-<!--glass-->
-<script>document.documentElement.classList.add("tight");</script>
+<!--card-->
 <style>
-  /* Which-key: keys that can follow the pending prefix, a glass card bottom-right. */
-  html, body { margin: 0; height: 100%; overflow: hidden; }
-  body { box-sizing: border-box; padding: 12px 12px 14px; -webkit-font-smoothing: antialiased;
-         font: var(--fonts-keyhint, 10pt monospace); color: var(--colors-keyhint-fg, var(--ink)); }
-  #list { --rise: 10px; --origin: 100% 100%; height: 100%; box-sizing: border-box; padding: 8px 12px; border-radius: 14px; overflow: hidden; }
+  /* Which-key: keys that can follow the pending prefix, a card bottom-right of the page.
+     window.rs sets the width; the card takes the rows' height. */
+  #list { padding: 8px 12px; font: var(--fonts-keyhint, 10pt monospace); color: var(--colors-keyhint-fg, var(--ink)); }
   .row { display: flex; gap: 14px; white-space: nowrap; line-height: 1.6; }
   .k { flex: 0 0 auto; min-width: 4ch; }
   .p { opacity: .45; }
   .s { color: var(--colors-keyhint-suffix-fg, var(--accent)); font-weight: bold; }
   .c { flex: 1; overflow: hidden; text-overflow: ellipsis; opacity: .75; }
 </style>
-<body><div id="list" class="glass pop"></div>
+<body><div id="list" class="fade"></div>
 <script>
   nova.theme = nova.vars;
   // nova.keyhint(prefix, [[rest, command], ...])
@@ -29,7 +26,7 @@
       r.append(k, el("c", cmd));
       return r;
     }));
-    nova.in();
+    nova.fit();
   };
   nova.send("ready");
 </script>

@@ -65,7 +65,10 @@ fn dark_toggle() -> Result<(), String> {
     } else if !lines.contains(&host) {
         lines.push(host.clone());
     }
-    crate::write_atomic(&file, (lines.join("\n") + "\n").as_bytes())
+    // a fresh profile has no config dir yet
+    file.parent()
+        .map_or(Ok(()), std::fs::create_dir_all)
+        .and_then(|()| crate::write_atomic(&file, (lines.join("\n") + "\n").as_bytes()))
         .map_err(|e| format!("{}: {e}", file.display()))?;
     cfg.set_runtime_for(&format!("*://{host}/*"), D, &dark.to_string())?;
     window::config_changed();

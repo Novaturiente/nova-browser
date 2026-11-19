@@ -1,0 +1,31 @@
+<style>
+  /* Shared by every overlay page (after theme.html; window.rs ui_url). The view is the
+     card (src/overlay.rs): an opaque rectangle in the card colour, which is also the
+     view's own background, so a frame CEF shows before the page has painted looks the
+     same as the empty card. The content fades in and out (`.fade`); the card itself
+     can't (views can't fade or be transparent). */
+  html, body { margin: 0; overflow: hidden; background: var(--card); -webkit-font-smoothing: antialiased; }
+  /* the card's edge */
+  body::after { content: ""; position: fixed; inset: 0; border: 1px solid var(--hairline); pointer-events: none; }
+  .fade { animation: fade-in 140ms var(--ease-out) both; }
+  .fade.out { animation: fade-out 100ms ease-in both; }
+  @keyframes fade-in { from { opacity: 0; transform: translateY(-3px); } }
+  @keyframes fade-out { to { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .fade, .fade.out { animation-duration: 1ms; } }
+</style>
+<script>
+  // The faded element, also the one whose natural size the card takes: `.fade`.
+  nova.surface = () => document.querySelector(".fade") || document.body;
+  nova.in = () => { const s = nova.surface(); s.classList.remove("out"); s.style.animation = "none"; void s.offsetWidth; s.style.animation = ""; };
+  nova.out = () => nova.surface().classList.add("out");
+  // Report the content's natural size when it changes; window.rs sizes the card to it.
+  let sent = "";
+  const report = () => {
+    const r = nova.surface().getBoundingClientRect();
+    const s = `size ${Math.ceil(r.width)} ${Math.ceil(r.height)}`;
+    if (s !== sent && r.width > 0) { sent = s; nova.send(s); }
+  };
+  addEventListener("DOMContentLoaded", () => new ResizeObserver(report).observe(nova.surface()));
+  // after a refill: report even an unchanged size, so window.rs's estimate gets corrected
+  nova.fit = () => { sent = ""; requestAnimationFrame(report); };
+</script>

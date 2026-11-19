@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Popups rebuilt as solid cards: the URL box is a drop-down card under the
+  tab bar, messages, questions, which-key and tab menus are cards too. No
+  more white flash, no box round them and no blurred page behind the URL
+  box (it showed old colours). The URL box takes keys at once, also when
+  reopened quickly, and closes when you click the page.
+- `dark-toggle` works in a fresh profile (it failed when the config folder
+  did not exist yet).
+
 ## 0.1.12 (2026-11-19)
 
 - The URL box takes keys again as soon as it opens, and Escape closes it.

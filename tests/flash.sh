@@ -32,7 +32,7 @@ done
 # local http pages (dark-toggle needs a host; data: pages never go dark)
 mkdir -p "$tmp/www"
 echo "<title>light</title><body style='background:#fff;margin:0'><h1 style='font:40px sans-serif;padding:40px'>Light page</h1>" >"$tmp/www/light.html"
-echo "<title>ask</title><body style='background:#fff'><script>setTimeout(()=>confirm('Proceed?'),300)</script>" >"$tmp/www/ask.html"
+echo "<title>ask</title><body style='background:#fff'><script>setTimeout(()=>confirm('Proceed?'),1000)</script>" >"$tmp/www/ask.html"
 python3 -u -m http.server 0 --bind 127.0.0.1 --directory "$tmp/www" >"$tmp/http.log" 2>&1 &
 http_pid=$!
 for _ in $(seq 50); do port=$(grep -oE 'port [0-9]+' "$tmp/http.log" | grep -oE '[0-9]+'); [ -n "$port" ] && break; sleep 0.1; done
@@ -85,9 +85,14 @@ black="data:text/html,<title>black</title><body style='background:%23000'>"
 "$bin" --cmd "open $www/light.html" >/dev/null; sleep 1.5
 step() { mark "$1"; "$bin" --cmd "$2" >/dev/null; sleep "${3:-1.2}"; }
 key() { mark "$1"; wtype "${@:2}"; sleep 1.2; }
+# "goto" steps load a page (a brightness jump of their own): shown, not checked
 step "urlbox-open-light" "cmd-set-text :open "
 step "urlbox-close" "mode-leave" 0.8
+step "search-open-light" "cmd-set-text /"
+step "search-close-light" "mode-leave" 0.8
 step "toast-light" "message-info Hello from the test" 1.5
+key "keyhint-g-light" g
+key "keyhint-esc-light" -k Escape
 step "dark-toggle-on" "dark-toggle" 1.8
 step "dark-toggle-off" "dark-toggle" 1.8
 step "goto-dark" "open $dark" 1.5
@@ -98,7 +103,8 @@ step "search-close" "mode-leave" 0.8
 step "toast-dark" "message-error Something failed" 1.5
 key "keyhint-g" g
 key "keyhint-esc" -k Escape
-step "goto-ask" "open $www/ask.html" 1.5
+step "goto-ask" "open $www/ask.html" 0.9
+mark "prompt-show"; sleep 1.2
 key "prompt-answer" n
 # wf-recorder stops at its next frame: give it one; mkv stays readable even if killed
 kill -INT $rec; "$bin" --cmd "message-info end" >/dev/null
@@ -140,15 +146,18 @@ def runs(seq):
             prev = [v, 1]; out.append(prev)
     return " ".join(f"{v}" + (f"x{n}" if n > 1 else "") for v, n in out)
 bad = 0
-for t, name in marks:
+ends = [float(t) - t0 for t, _ in marks[1:]] + [1e9]
+for (t, name), end in zip(marks, ends):
     t = float(t) - t0
     shown, flashed = None, []
     for region, (rts, rys) in regions.items():
-        seq = [y for tt, y in zip(rts, rys) if t - 0.1 <= tt <= t + 0.9]
+        # up to the next step, which may show its own card
+        seq = [y for tt, y in zip(rts, rys) if t - 0.1 <= tt <= min(t + 0.9, end - 0.02)]
         if not seq: continue
         lo, hi = min(seq[0], seq[-1]) - 12, max(seq[0], seq[-1]) + 12
         if any(y < lo or y > hi for y in seq): flashed.append((region, seq))
         if region == "full": shown = seq
+    if name.strip().startswith("goto"): flashed = []
     bad += bool(flashed)
     region, seq = flashed[0] if flashed else ("full", shown or [])
     print(f"{'FLASH' if flashed else 'ok   '} {name.strip():20} {region:6} {runs(seq)}")

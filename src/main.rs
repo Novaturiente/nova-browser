@@ -10,6 +10,7 @@ mod hints;
 mod ipc;
 mod modes;
 mod net;
+mod overlay;
 mod passwords;
 mod permissions;
 mod renderer;

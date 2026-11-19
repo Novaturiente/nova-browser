@@ -1,24 +1,20 @@
 <!doctype html>
 <meta charset="utf-8">
 <title>prompt</title>
-<!--glass-->
+<!--card-->
 <style>
-  /* Questions (permissions, dialogs, save password) as a glass sheet under the tab bar:
-     the question, then pill buttons (minor answers, No, then the accent Yes on the right).
+  /* Questions (permissions, dialogs, save password) as a card under the tab bar: the
+     question, then buttons (minor answers, No, then the accent Yes on the right).
      Never focused: keys reach it through prompt mode (y/n/A/N, Escape = no); clicks send
-     "answer <key>". window.rs sizes the view (set_prompt). */
-  html, body { margin: 0; height: 100%; overflow: hidden; }
-  body { box-sizing: border-box; padding: 8px 16px 22px; -webkit-font-smoothing: antialiased;
-         font: var(--fonts-prompts, var(--fonts-statusbar, 10pt sans-serif)); color: var(--ink); }
-  #card { --rise: -16px; --shadow: 0 8px 18px rgba(0, 0, 0, .26), 0 1px 3px rgba(0, 0, 0, .18); height: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 14px;
-          padding: 16px 16px 14px 18px; border-radius: 16px; }
-  #top { display: flex; align-items: flex-start; gap: 12px; min-height: 0; }
+     "answer <key>". window.rs sets the width; the card takes the content's height. */
+  #card { display: flex; flex-direction: column; gap: 14px; padding: 16px 16px 14px 18px;
+          font: var(--fonts-prompts, var(--fonts-statusbar, 10pt sans-serif)); color: var(--ink); }
+  #top { display: flex; align-items: flex-start; gap: 12px; }
   #badge { flex: 0 0 30px; height: 30px; border-radius: 9px; display: grid; place-items: center;
-           font-weight: 700; font-size: 15px; color: #fff; background: var(--accent);
-           box-shadow: 0 2px 6px color-mix(in srgb, var(--accent) 40%, transparent); }
+           font-weight: 700; font-size: 15px; color: #fff; background: var(--accent); }
   #q { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;
        overflow-wrap: anywhere; line-height: 20px; padding-top: 5px; font-size: 1.05em; }
-  #opts { display: flex; justify-content: flex-end; gap: 8px; margin-top: auto; }
+  #opts { display: flex; justify-content: flex-end; gap: 8px; }
   button { font: inherit; font-size: .95em; min-width: 84px; height: 32px; padding: 0 16px; border-radius: 999px; cursor: pointer;
            border: 1px solid var(--hairline); color: inherit; order: 1;
            background: color-mix(in srgb, var(--ink) 9%, transparent);
@@ -28,12 +24,11 @@
   /* answer "no": tinted with the error colour */
   button.no { order: 2; color: var(--colors-messages-error-bg, #ff453a); }
   /* answer "yes": the accent, rightmost */
-  button.yes { order: 3; font-weight: 600; border-color: transparent; background: var(--accent); color: #fff;
-               box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 35%, transparent); }
+  button.yes { order: 3; font-weight: 600; border-color: transparent; background: var(--accent); color: #fff; }
   button.yes:hover { filter: brightness(1.1); background: var(--accent); }
   kbd { font: inherit; opacity: .5; margin-left: .45em; font-size: .9em; }
 </style>
-<body><div id="card" class="glass pop"><div id="top"><div id="badge">?</div><div id="q"></div></div><div id="opts"></div></div>
+<body><div id="card" class="fade"><div id="top"><div id="badge">?</div><div id="q"></div></div><div id="opts"></div></div>
 <script>
   nova.theme = nova.vars;
   // nova.ask({q, opts: [[key, label], ...]}): y = yes (accent), n = no (red), others neutral
@@ -46,7 +41,7 @@
       b.onmousedown = (e) => { e.preventDefault(); nova.send("answer " + key); };
       return b;
     }));
-    nova.in();
+    nova.fit();
   };
   nova.send("ready");
 </script>
