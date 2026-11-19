@@ -1,30 +1,38 @@
 <!doctype html>
 <meta charset="utf-8">
 <title>popup</title>
+<!--glass-->
+<script>document.documentElement.classList.add("tight");</script>
 <style>
-  /* Tab tooltip (title + URL) and the tab right-click menu. Theme vars from nova.theme. */
+  /* Tab tooltip (title + URL), the tab right-click menu and the password list, as glass
+     menus over the page. Theme vars from nova.theme; window.rs sizes and fades the view. */
   html, body { margin: 0; height: 100%; overflow: hidden; }
-  body { box-sizing: border-box; padding: 6px; font: var(--fonts-tooltip, var(--fonts-statusbar, 10pt sans-serif));
-         background: var(--colors-tooltip-bg, #222); color: var(--colors-tooltip-fg, #eee);
-         border: 1px solid var(--colors-completion-category-border-top, #444); }
-  body.menu { background: var(--colors-contextmenu-menu-bg, #222); color: var(--colors-contextmenu-menu-fg, #eee);
-              font: var(--fonts-contextmenu, var(--fonts-statusbar, 10pt sans-serif)); }
-  .t { font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 2px 4px; }
-  .u { opacity: .7; word-break: break-all; padding: 2px 4px; }
-  .i { padding: 0 10px; height: 28px; line-height: 28px; border-radius: 6px; cursor: default; display: flex; }
-  .i span { flex: 1; } .i kbd { opacity: .5; font: inherit; }
-  .i.sel { background: var(--colors-contextmenu-selected-bg, #444); color: var(--colors-contextmenu-selected-fg, #fff); }
+  body { box-sizing: border-box; padding: 2px 12px 14px; -webkit-font-smoothing: antialiased;
+         font: var(--fonts-tooltip, var(--fonts-statusbar, 10pt sans-serif)); color: var(--ink); }
+  body.menu { font: var(--fonts-contextmenu, var(--fonts-statusbar, 10pt sans-serif)); }
+  #c { --rise: -4px; --origin: 0 0; height: 100%; box-sizing: border-box; padding: 6px; border-radius: 11px; overflow: hidden; }
+  body:not(.menu) #c { padding: 8px 10px; }
+  .t { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 1px 2px; }
+  .u { opacity: .6; word-break: break-all; padding: 2px; font-size: .92em; }
+  body.menu .u { padding: 4px 10px 6px; font-size: .85em; letter-spacing: .02em; }
+  .i { padding: 0 10px; height: 26px; line-height: 26px; border-radius: 6px; cursor: default; display: flex;
+       transition: background 80ms; }
+  .i span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .i kbd { opacity: .45; font: inherit; font-size: .9em; padding-left: 12px; }
+  .i.sel { background: var(--colors-contextmenu-selected-bg, var(--accent)); color: var(--colors-contextmenu-selected-fg, #fff); }
+  .i.sel kbd { opacity: .75; }
+  .sep { height: 1px; margin: 4px 10px; background: var(--hairline); }
 </style>
-<body><div id="c"></div>
+<body><div id="c" class="glass pop"></div>
 <script>
   const c = document.getElementById("c");
   let items = [], sel = 0, tab = -1;
-  nova.theme = (t) => { for (const [k, v] of Object.entries(t.vars)) document.documentElement.style.setProperty(k, v); };
+  nova.theme = nova.vars;
   const el = (cls, text) => Object.assign(document.createElement("div"), { className: cls, textContent: text });
-  nova.tip = (title, url) => { document.body.className = ""; c.replaceChildren(el("t", title), el("u", url)); };
+  nova.tip = (title, url) => { document.body.className = ""; c.replaceChildren(el("t", title), el("u", url)); nova.in(); };
   // nova.menu(tab, [[action, label, key], ...])
   nova.menu = (t, list) => {
-    tab = t; items = list; sel = 0; document.body.className = "menu"; draw();
+    tab = t; items = list; sel = 0; document.body.className = "menu"; draw(); nova.in();
   };
   const draw = () => c.replaceChildren(...items.map(([a, label, key], i) => {
     const d = el("i" + (i === sel ? " sel" : ""), "");
@@ -36,15 +44,19 @@
   const pick = (i) => nova.send("menuact " + tab + " " + items[i][0]);
   // nova.suggest({title, rows: [{a, b, sel}]}): password suggestions; never focused,
   // keys come through the browser (Down/Up/Enter/Escape), clicks via "pwpick i".
+  let shown = false;
   nova.suggest = (d) => {
     items = []; document.body.className = "menu";
-    if (!d) return c.replaceChildren();
+    if (!d) { shown = false; return; }
     c.replaceChildren(el("u", d.title), ...d.rows.map((r, i) => {
       const x = el("i" + (r.sel ? " sel" : ""), "");
       x.append(Object.assign(document.createElement("span"), { textContent: r.a }), Object.assign(document.createElement("kbd"), { textContent: r.b }));
       x.onmousedown = (e) => { e.preventDefault(); nova.send("pwpick " + i); };
       return x;
     }));
+    // moving the selection redraws the list: animate only its first appearance
+    if (!shown) nova.in();
+    shown = true;
   };
   addEventListener("keydown", (e) => {
     if (!items.length) return;

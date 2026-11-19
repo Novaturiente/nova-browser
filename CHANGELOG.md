@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- New Safari-style look. The tab bar has rounded tabs with a close
+  button on hover, a spinner and a progress line while loading, and
+  tabs that grow in and shrink out. The command palette is a floating
+  search field with one card per completion category and a sliding
+  selection. Search (`/`, `?`) is a pill that shows the match count.
+  Messages appear as a toast at the top, and questions (permissions,
+  dialogs, saving a password) as a sheet with buttons you can click.
+  Small popups are frosted glass over the page and fade in and out.
+- Find shows the match position (`3 / 17`).
+- Tabs opened from a page open next to it; closing the active tab
+  focuses the tab to its left.
+- Hints: `F` on an element inside a link opens that link; other
+  elements get a Ctrl-click.
+- The mouse back and forward buttons navigate.
+- aria2 downloads that fail before the first byte are retried by
+  Chromium.
+- The saved-password list hides when you switch tabs.
+- `dark-toggle` with dark mode off by default saves the site in
+  `darkmode_sites` (read it in `config.ts` to keep it after a restart).
 - Downloads through aria2: the RPC secret is now passed in a private
   (0600) config file instead of on aria2c's command line, where other
   local users could read it.

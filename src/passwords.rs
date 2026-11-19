@@ -909,7 +909,7 @@ fn ask_locked(browser: &Browser, b: Backend, url: &str, user: String, pass: Stri
         format!(" for {user}")
     };
     let text = format!(
-        "Save this login{who} on {} to {}? (unlocks the vault) [y]es [n]o",
+        "Save this login{who} on {} to {}? (unlocks the vault)",
         host(url),
         label(b)
     );
@@ -948,8 +948,8 @@ fn ask(
         format!(" for {user}")
     };
     let text = match &existing {
-        Some(_) => format!("Update the {} password{who} on {h}? [y]es [n]o", label(b)),
-        None => format!("Save this login{who} on {h} to {}? [y]es [n]o", label(b)),
+        Some(_) => format!("Update the {} password{who} on {h}?", label(b)),
+        None => format!("Save this login{who} on {h} to {}?", label(b)),
     };
     let url = url.to_string();
     crate::permissions::ask(browser, text, move |yes| {

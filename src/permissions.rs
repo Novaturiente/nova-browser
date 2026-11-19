@@ -46,8 +46,12 @@ struct Pending {
     origin: String,
     settings: Vec<&'static str>,
     text: String,
+    /// answer buttons [key, label]; keys are what `on_key` takes
+    opts: Vec<[&'static str; 2]>,
     cb: Callback,
 }
+
+const YES_NO: [[&str; 2]; 2] = [["y", "Yes"], ["n", "No"]];
 
 thread_local! {
     static QUEUE: RefCell<VecDeque<Pending>> = const { RefCell::new(VecDeque::new()) };
@@ -152,7 +156,8 @@ pub fn hung(browser: &Browser, cb: &UnresponsiveProcessCallback) {
             browser: browser.identifier(),
             origin: String::new(),
             settings: Vec::new(),
-            text: "This page isn't responding. Kill it? [y]es [n]o, keep waiting".into(),
+            text: "This page isn't responding. Kill it?".into(),
+            opts: vec![["y", "Kill page"], ["n", "Keep waiting"]],
             cb: Callback::Hang(cb.clone()),
         })
     });
@@ -227,7 +232,7 @@ fn handle(
         Decision::Deny => answer(&cb, false),
         Decision::Ask => {
             let text = format!(
-                "Allow {origin} to {}? [y]es [n]o [A]lways [N]ever",
+                "Allow {origin} to {}?",
                 what.join(" and ")
             );
             QUEUE.with_borrow_mut(|q| {
@@ -236,6 +241,7 @@ fn handle(
                     origin: origin.to_string(),
                     settings,
                     text,
+                    opts: vec![["y", "Allow"], ["n", "Don't Allow"], ["A", "Always"], ["N", "Never"]],
                     cb,
                 })
             });
@@ -255,15 +261,14 @@ pub fn dialog(
     cb: &JsdialogCallback,
 ) {
     let host = crate::commands::host(origin).to_string();
-    let (keys, input) = if kind == JsdialogType::ALERT {
-        ("[y]/[n] to close", String::new())
+    let (note, input, opts) = if kind == JsdialogType::ALERT {
+        (String::new(), String::new(), vec![["y", "OK"]])
     } else if kind == JsdialogType::PROMPT {
-        ("[y]es (answer \"{default}\") [n]o", default.to_string())
+        (format!(" (OK answers \"{default}\")"), default.to_string(), vec![["y", "OK"], ["n", "Cancel"]])
     } else {
-        ("[y]es [n]o", String::new())
+        (String::new(), String::new(), vec![["y", "OK"], ["n", "Cancel"]])
     };
-    let keys = keys.replace("{default}", default);
-    let text = format!("{host} says: {message} {keys}");
+    let text = format!("{host} says: {message}{note}");
     let cb = Callback::Dialog(cb.clone(), input);
     QUEUE.with_borrow_mut(|q| {
         q.push_back(Pending {
@@ -271,6 +276,7 @@ pub fn dialog(
             origin: origin.to_string(),
             settings: Vec::new(),
             text,
+            opts,
             cb,
         })
     });
@@ -291,6 +297,7 @@ pub fn ask(browser: &Browser, text: String, f: impl Fn(bool) + 'static) {
             origin: String::new(),
             settings: Vec::new(),
             text,
+            opts: YES_NO.to_vec(),
             cb: Callback::Ask(id, std::rc::Rc::new(f)),
         })
     });
@@ -300,7 +307,7 @@ pub fn ask(browser: &Browser, text: String, f: impl Fn(bool) + 'static) {
 /// Navigating away from a page with a beforeunload handler.
 pub fn leave_page(browser: &Browser, is_reload: bool, cb: &JsdialogCallback) {
     let text = format!(
-        "{} this page? Changes you made may not be saved. [y]es [n]o",
+        "{} this page? Changes you made may not be saved.",
         if is_reload { "Reload" } else { "Leave" }
     );
     let cb = Callback::Dialog(cb.clone(), String::new());
@@ -310,6 +317,7 @@ pub fn leave_page(browser: &Browser, is_reload: bool, cb: &JsdialogCallback) {
             origin: String::new(),
             settings: Vec::new(),
             text,
+            opts: vec![["y", if is_reload { "Reload" } else { "Leave" }], ["n", "Stay"]],
             cb,
         })
     });
@@ -340,9 +348,9 @@ fn show_later() {
 
 /// Show the oldest open prompt, or leave prompt mode when there is none.
 fn show() {
-    let text = QUEUE.with_borrow(|q| q.front().map(|p| p.text.clone()));
-    let on = text.is_some();
-    window::set_prompt(text);
+    let front = QUEUE.with_borrow(|q| q.front().map(|p| (p.text.clone(), p.opts.clone())));
+    let on = front.is_some();
+    window::set_prompt(front);
     match (on, modes::mode() == modes::Mode::Prompt) {
         (true, false) => {
             if modes::mode() == modes::Mode::Command {

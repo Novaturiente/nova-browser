@@ -262,6 +262,7 @@ wrap_client! {
                 ("menuact", _) => window::tab_menu_action(arg),
                 ("menuclose", _) => window::close_popup(),
                 ("pwpick", Ok(i)) if i >= 0 => crate::passwords::on_click(i as usize),
+                ("answer", _) => crate::permissions::on_key(arg),
                 _ => eprintln!("novabrowser: unknown UI message {text:?}"),
             });
             1
@@ -497,7 +498,8 @@ wrap_find_handler! {
             if text.is_empty() { return; }
             window::in_owner(b, || match count {
                 0 => window::message("warning", &format!("Text '{text}' not found on page!")),
-                _ => window::message("info", &format!("{text}: {active_match_ordinal} / {count}")),
+                // the first answer of a new search can carry ordinal 0
+                _ => window::message("find", &format!("{text}\t{} / {count}", active_match_ordinal.max(1))),
             });
         }
     }

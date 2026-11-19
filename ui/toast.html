@@ -1,0 +1,40 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>toast</title>
+<!--glass-->
+<script>document.documentElement.classList.add("tight");</script>
+<style>
+  /* Messages (info / warning / error / find) as a glass capsule at the top centre of the
+     page. Never focused; window.rs sizes the view to the text and fades it (nova.out). */
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body { box-sizing: border-box; padding: 6px 12px 14px; -webkit-font-smoothing: antialiased; }
+  #t { --rise: -14px; height: 100%; box-sizing: border-box; display: flex; align-items: center; gap: 9px; padding: 0 16px 0 7px;
+       border-radius: 999px; white-space: nowrap; overflow: hidden; color: var(--ink);
+       font: var(--fonts-messages-info, var(--fonts-statusbar, 10pt sans-serif)); }
+  #m { overflow: hidden; text-overflow: ellipsis; }
+  #i { flex: 0 0 22px; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+       font-weight: 700; font-size: 12px; color: #fff; background: var(--accent); }
+  #t.warning #i { background: var(--colors-messages-warning-bg, #ff9f0a); color: var(--colors-messages-warning-fg, #000); }
+  #t.error #i { background: var(--colors-messages-error-bg, #ff453a); color: var(--colors-messages-error-fg, #fff); }
+  #t.find #i { background: color-mix(in srgb, var(--ink) 16%, transparent); color: var(--ink); }
+  #t b { font-variant-numeric: tabular-nums; font-weight: normal; padding: 1px 8px; margin-left: 2px; border-radius: 999px;
+         background: color-mix(in srgb, var(--ink) 10%, transparent); color: color-mix(in srgb, var(--ink) 75%, transparent); }
+</style>
+<body><div id="t" class="glass pop"><span id="i"></span><span id="m"></span></div>
+<script>
+  nova.theme = nova.vars;
+  // nova.toast(level, text); find: text = "query\tpos" (pos like "3 / 12")
+  nova.toast = (level, text) => {
+    const t = document.getElementById("t");
+    t.className = "glass pop " + level;
+    document.getElementById("i").textContent = { info: "i", warning: "!", error: "\u2715", find: "\u2315" }[level] || "i";
+    const m = document.getElementById("m");
+    if (level === "find") {
+      const [q, pos] = text.split("\t");
+      m.replaceChildren(q, " ", Object.assign(document.createElement("b"), { textContent: pos || "" }));
+    } else m.textContent = text;
+    nova.in();
+  };
+  nova.send("ready");
+</script>
+</body>

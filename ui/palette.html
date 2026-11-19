@@ -1,47 +1,86 @@
 <!doctype html>
 <meta charset="utf-8">
 <title>palette</title>
+<!--glass-->
 <style>
-  /* Floating command line + completion (Zen-style). Colours/fonts are CSS variables
-     from config (theme.rs), set by nova.theme. CEF views can't be transparent, so the
-     page behind is a blurred screenshot (nova.backdrop). */
+  /* Floating "Smart Search" field + completion cards (Safari-style). Colours/fonts are CSS
+     variables from config (theme.rs), set by nova.theme. CEF views can't be transparent:
+     full mode shows the page behind as a blurred screenshot (nova.backdrop); search (/, ?)
+     is a small pill over the page whose backdrop is the page itself (nova.glass). */
   html, body { margin: 0; height: 100%; overflow: hidden; }
-  body { background: var(--colors-tabs-bar-bg, #111); font: var(--fonts-completion-entry, 10pt monospace);
-         color: var(--colors-completion-fg, #fff); }
-  #bg { position: fixed; inset: -24px; width: calc(100% + 48px); height: calc(100% + 48px);
-        object-fit: cover; filter: blur(10px) brightness(.45); opacity: 0; transition: opacity 90ms; }
-  #bg.on { opacity: 1; }
-  #card { position: relative; margin: 10vh auto 0; width: min(760px, 86vw); box-sizing: border-box;
-          border-radius: 14px; overflow: hidden; background: var(--colors-completion-even-bg, #222);
-          border: 1px solid var(--colors-completion-category-border-top, #444);
-          box-shadow: 0 18px 50px rgba(0, 0, 0, .55); }
-  body.compact { background: var(--colors-completion-even-bg, #222); }
-  body.compact #card { margin: 0; width: 100%; height: 100%; border-radius: 0; border: 0; box-shadow: none;
-                       display: flex; align-items: center; }
-  body.compact #list, body.compact #title { display: none; }
-  #cmd::placeholder { color: inherit; opacity: .45; }
-  #cmd { display: block; width: 100%; box-sizing: border-box; padding: 12px 16px; border: 0; outline: 0;
-         background: transparent; color: var(--colors-statusbar-command-fg, inherit);
-         font: var(--fonts-statusbar, 11pt monospace); font-size: 1.15em; }
-  #title { padding: 6px 16px 3px; font: var(--fonts-completion-category, bold 10pt monospace);
-           color: var(--colors-completion-category-fg); border-top: 1px solid var(--colors-completion-category-border-top, #333); }
-  #title:empty, #list:empty { display: none; }
-  #list { max-height: var(--palette-list-height, 40vh); overflow-y: auto; scrollbar-width: none; padding: 0 6px 6px; }
+  body { font: var(--fonts-completion-entry, 10pt sans-serif); color: var(--ink); -webkit-font-smoothing: antialiased; }
+  #bg { position: fixed; inset: -40px; width: calc(100% + 80px); height: calc(100% + 80px);
+        object-fit: cover; filter: blur(18px) saturate(1.4) brightness(.55); opacity: 0; transform: scale(1.02);
+        transition: opacity 220ms var(--ease-out), transform 320ms var(--ease-spring); }
+  #bg.on { opacity: 1; transform: none; }
+  body.closing #bg { opacity: 0; transition-duration: 150ms; }
+  /* Floating pieces over the blurred page: the input is a pill, each completion
+     category its own card below it; one list for the keys (the core moves `sel`). */
+  #card { --origin: 50% 0; position: relative; margin: 12vh auto 0; width: min(720px, 86vw); box-sizing: border-box;
+          display: flex; flex-direction: column; gap: 10px; }
+  #bar { display: flex; align-items: center; gap: 12px; padding: 0 18px 0 14px; height: 50px; border-radius: 14px;
+         transition: box-shadow 200ms, border-color 200ms; }
+  body:not(.compact) #bar:focus-within { border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+                      box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent), 0 14px 34px rgba(0, 0, 0, .30); }
+  #icon { flex: 0 0 auto; width: 24px; height: 24px; display: grid; place-items: center; font-size: 15px;
+          color: color-mix(in srgb, var(--ink) 55%, transparent); }
+  /* search: the overlay is a pill under the tab bar (window.rs place_palette) */
+  body.compact #card { --origin: 50% 0; margin: 0; width: 100%; height: 100%; padding: 6px 12px 14px; box-sizing: border-box; }
+  body.compact #bar { height: 100%; border-radius: 999px; --shadow: 0 4px 10px rgba(0, 0, 0, .20), 0 1px 2px rgba(0, 0, 0, .18); }
+  body.compact #list, body.compact #bg { display: none; }
+  #count { flex: 0 0 auto; padding: 2px 9px; border-radius: 999px; font-variant-numeric: tabular-nums; font-size: .9em;
+           color: color-mix(in srgb, var(--ink) 70%, transparent); background: color-mix(in srgb, var(--ink) 9%, transparent);
+           animation: cap 220ms var(--ease-spring); }
+  #count.none { color: var(--colors-messages-error-bg, #ff453a); background: color-mix(in srgb, var(--colors-messages-error-bg, #ff453a) 14%, transparent); }
+  @keyframes cap { from { opacity: 0; transform: scale(.85); } }
+  #count:empty { display: none; }
+  #cmd::placeholder { color: inherit; opacity: .42; }
+  #cmd { flex: 1; min-width: 0; box-sizing: border-box; padding: 0; border: 0; outline: 0; background: transparent;
+         color: var(--colors-statusbar-command-fg, var(--ink)); caret-color: var(--accent);
+         font: var(--fonts-statusbar, 11pt sans-serif); font-size: 1.15em; }
+  /* the cards share the height; a big one scrolls inside itself, so every card keeps its
+     rounded border */
+  #list { position: relative; max-height: var(--palette-list-height, 40vh); overflow: hidden;
+          display: flex; flex-direction: column; gap: 10px;
+          /* room for the cards' shadows inside the scroll box, which clips them */
+          padding: 0 22px 30px; margin: 0 -22px; }
+  #list:empty { display: none; }
   body.tall #list { max-height: 70vh; }
-  .cat { padding: 6px 10px 3px; font: var(--fonts-completion-category, bold 10pt monospace);
-         color: var(--colors-completion-category-fg); }
-  .row { display: flex; padding: 5px 10px; white-space: nowrap; border-radius: 8px; }
-  .row.sel { color: var(--colors-completion-item-selected-fg); background: var(--colors-completion-item-selected-bg); }
-  .a { flex: 0 1 60%; overflow: hidden; text-overflow: ellipsis; padding-right: 12px; }
-  .b { flex: 1; overflow: hidden; text-overflow: ellipsis; opacity: .65; }
+  /* min-height: shrink is weighted by size; every card keeps its header and ~3 rows */
+  .grp { position: relative; flex: 0 1 auto; min-height: 9em; overflow-y: auto; scrollbar-width: none;
+         padding: 0 6px 6px; border-radius: 14px; scroll-padding: 34px 0 8px;
+         animation: grp-in 300ms var(--ease-spring) both; }
+  .grp:nth-child(2) { animation-delay: 30ms; } .grp:nth-child(3) { animation-delay: 60ms; } .grp:nth-child(n+4) { animation-delay: 90ms; }
+  @keyframes grp-in { from { opacity: 0; transform: translateY(-6px); } }
+  #list.still .grp { animation: none; }
+  .grp.small { flex-shrink: 0; }
+  .cat { position: relative; z-index: 3; display: flex; gap: 8px; align-items: baseline; padding: 10px 10px 5px;
+         font: var(--fonts-completion-category, 600 9pt sans-serif); letter-spacing: .02em;
+         color: color-mix(in srgb, var(--colors-completion-category-fg, var(--ink)) 70%, transparent); }
+  .cat small { font: inherit; font-weight: normal; opacity: .6; }
+  /* the selection highlight slides between rows (positioned in the selected row's card) */
+  #hl { position: absolute; left: 0; top: 0; z-index: 1; border-radius: 9px; pointer-events: none;
+        background: var(--colors-completion-item-selected-bg, var(--accent));
+        transition: transform 180ms var(--ease-spring), width 180ms, height 180ms; }
+  #hl.jump { transition: none; }
+  @media (prefers-reduced-motion: reduce) { #hl { transition: none; } .grp { animation: none; } }
+  .row { position: relative; z-index: 2; display: flex; align-items: center; gap: 10px; padding: 6px 12px;
+         white-space: nowrap; border-radius: 9px; cursor: default; }
+  .row:not(.sel):hover { background: color-mix(in srgb, var(--ink) 6%, transparent); }
+  .row.sel { color: var(--colors-completion-item-selected-fg, #fff); }
+  .row img, .row .fi { flex: 0 0 16px; width: 16px; height: 16px; border-radius: 4px; }
+  .row .fi { background: color-mix(in srgb, currentColor 14%, transparent); }
+  .a { flex: 0 1 60%; overflow: hidden; text-overflow: ellipsis; }
+  .b { flex: 1; overflow: hidden; text-overflow: ellipsis; opacity: .55; }
+  .row.sel .b { opacity: .8; }
 </style>
 <body>
 <img id="bg" alt="">
-<div id="card"><input id="cmd" spellcheck="false"><div id="title"></div><div id="list"></div></div>
+<div id="card" class="pop"><div id="bar" class="glass"><span id="icon"></span><input id="cmd" spellcheck="false"><span id="count"></span></div><div id="list"></div></div>
 <script>
   const $ = (id) => document.getElementById(id);
   nova.theme = (t) => {
-    for (const [k, v] of Object.entries(t.vars)) document.documentElement.style.setProperty(k, v);
+    nova.vars(t);
     document.documentElement.style.setProperty("--palette-list-height", t.listHeight);
   };
   // Page screenshot (data: URL) shown blurred behind the card; null clears it.
@@ -51,34 +90,90 @@
     bg.onload = () => { bg.className = "on"; };
     bg.src = url;
   };
-  // Completion: nova.complete({title, items: [[text, description]], sel}) or null.
+  // Completion: nova.complete({title, items: [[text, description]], sel, cats}) or null.
+  // One card per category (cats[i]; none = one card titled s.title). Rows with a web
+  // address get the site icon from nova.icons (window.rs: the open tabs' favicons).
   const list = $("list");
-  // cats (optional): category per item; a header row goes where it changes.
+  const icons = new Map();
+  const site = (u) => { try { return new URL(u).host; } catch { return ""; } };
+  const urlOf = (a, b) => [a, b].find((x) => /^https?:\/\//.test(x || "")) || "";
+  const hl = document.createElement("div");
+  hl.id = "hl";
+  let lastItems = null;
   nova.complete = (s) => {
-    $("title").textContent = s ? s.title : "";
+    const items = s ? s.items : [];
     const cats = (s && s.cats) || [];
-    list.replaceChildren(...(s ? s.items : []).flatMap(([a, b], i) => {
-      const head = [];
-      if (cats[i] && cats[i] !== cats[i - 1]) {
-        const h = document.createElement("div");
-        h.className = "cat";
-        h.textContent = cats[i];
-        head.push(h);
+    // same list, only `sel` moved: slide the highlight, don't rebuild
+    if (s && lastItems === JSON.stringify([items, cats])) return select(s.sel, true);
+    // a list that was already showing changes as you type: no card entrance each key
+    list.classList.toggle("still", !!lastItems && !!s);
+    lastItems = s ? JSON.stringify([items, cats]) : null;
+    const count = {};
+    cats.forEach((c) => { count[c] = (count[c] || 0) + 1; });
+    const groups = [];
+    let grp = null;
+    items.forEach(([a, b], i) => {
+      const cat = cats[i] || (s && s.title) || "";
+      if (!grp || cat !== (cats[i - 1] || (s && s.title) || "")) {
+        grp = document.createElement("div");
+        grp.className = "grp glass";
+        if (cat) {
+          const h = document.createElement("div");
+          h.className = "cat";
+          h.append(cat);
+          if (count[cat]) h.append(Object.assign(document.createElement("small"), { textContent: count[cat] }));
+          grp.append(h);
+        }
+        groups.push(grp);
       }
       const row = document.createElement("div");
-      row.className = i === s.sel ? "row sel" : "row";
+      row.className = "row";
+      const u = urlOf(a, b);
+      if (u) {
+        row.dataset.u = site(u);
+        const src = icons.get(row.dataset.u);
+        row.append(src ? Object.assign(document.createElement("img"), { src }) : Object.assign(document.createElement("span"), { className: "fi" }));
+      }
       for (const [cls, text] of [["a", a], ["b", b]]) {
         const d = document.createElement("div");
         d.className = cls;
         d.textContent = text;
         row.append(d);
       }
-      return [...head, row];
-    }));
-    if (s) list.querySelectorAll(".row")[s.sel]?.scrollIntoView({ block: "nearest" });
+      grp.append(row);
+    });
+    // short cards keep their size; the long ones shrink and scroll
+    for (const g of groups) g.classList.toggle("small", g.querySelectorAll(".row").length <= 4);
+    list.replaceChildren(...groups);
+    if (s) select(s.sel, false);
   };
-  // cmd-set-text: show the input with text, cursor at the end. compact = search (no backdrop).
-  // `:open [-t|-b|-w] ` is kept out of sight (o/O just ask for an address, like Zen);
+  const select = (sel, slide) => {
+    const rows = list.querySelectorAll(".row");
+    rows.forEach((r, i) => r.classList.toggle("sel", i === sel));
+    const r = rows[sel];
+    hl.style.display = r ? "" : "none";
+    if (!r) return;
+    const g = r.parentElement;
+    // into another card: no slide (the cards scroll on their own)
+    if (hl.parentElement !== g) { g.append(hl); slide = false; }
+    r.scrollIntoView({ block: "nearest" });
+    const lr = g.getBoundingClientRect(), rr = r.getBoundingClientRect();
+    hl.classList.toggle("jump", !slide);
+    hl.style.width = rr.width + "px";
+    hl.style.height = rr.height + "px";
+    hl.style.transform = `translate(${rr.left - lr.left - g.clientLeft}px, ${rr.top - lr.top - g.clientTop + g.scrollTop}px)`;
+  };
+  // nova.icons({host: data-url}): site icons from the open tabs
+  nova.icons = (m) => {
+    for (const [h, src] of Object.entries(m)) {
+      icons.set(h, src);
+      for (const r of list.querySelectorAll(".row")) {
+        if (r.dataset.u === h && r.querySelector(".fi")) r.querySelector(".fi").replaceWith(Object.assign(document.createElement("img"), { src }));
+      }
+    }
+  };
+  // cmd-set-text: show the input with text, cursor at the end. compact = search.
+  // `:open [-t|-b|-w] ` is kept out of sight (o/O just ask for an address, like Safari);
   // the core always gets and sends the full command line.
   let pre = "";
   const OPEN = /^:(?:open(?: -[tbw])*|bindings|profile-new) /;
@@ -88,16 +183,29 @@
     pre = m ? m[0] : "";
     c.value = text.slice(pre.length);
     document.body.classList.toggle("tall", pre === ":bindings ");
-    c.placeholder = !pre ? "" : pre === ":bindings " ? "Filter key bindings…  (Esc closes)" : pre === ":profile-new " ? "Name for the new profile…" : / -[tw]/.test(pre) ? "Open in new tab…" : / -b/.test(pre) ? "Open in background tab…" : "Search or enter address…";
+    const search = document.body.classList.contains("compact");
+    c.placeholder = search ? "Find on page" : !pre ? "" : pre === ":bindings " ? "Filter key bindings…  (Esc closes)" : pre === ":profile-new " ? "Name for the new profile…" : / -[tw]/.test(pre) ? "Open in new tab…" : / -b/.test(pre) ? "Open in background tab…" : "Search or enter website name";
     c.setSelectionRange(c.value.length, c.value.length);
+    $("icon").textContent = search || pre.startsWith(":open") ? "\u2315" : "\u203a";
+    if (search && !c.value.slice(1)) $("count").textContent = "";
   };
+  // search position "3 / 12" while typing a search (window.rs message, level find)
+  nova.count = (t) => { $("count").textContent = t; $("count").className = t === "no match" ? "none" : ""; };
   nova.cmdline = (text, compact) => {
     document.body.className = compact ? "compact" : "";
+    $("count").textContent = "";
+    lastItems = null;
+    nova.in();
     nova.complete(null);
     c.focus();
     show(text);
     nova.send("text " + text);
   };
+  // closing: the card fades with the backdrop, then window.rs hides the view
+  const out = nova.out;
+  nova.out = () => { document.body.classList.add("closing"); out(); };
+  const _in = nova.in;
+  nova.in = () => { document.body.classList.remove("closing"); _in(); };
   // Completion / history: replace the text, keep the cursor at the end, don't report it as typed.
   nova.setText = (text) => show(text);
 

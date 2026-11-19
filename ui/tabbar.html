@@ -1,78 +1,138 @@
 <!doctype html>
 <meta charset="utf-8">
 <title>tabbar</title>
+<!--glass-->
 <style>
-  /* Colours/fonts/sizes are CSS variables from config (theme.rs), set by nova.theme. */
+  /* Safari-style compact tab bar. Colours/fonts/sizes are CSS variables from config
+     (theme.rs), set by nova.theme. window.rs adds 12 px to the bar height for the
+     6 px margin above and below the tabs. */
   html, body { margin: 0; height: 100%; }
-  body { display: flex; overflow: hidden; background: var(--colors-tabs-bar-bg, #555);
-         user-select: none; cursor: default; }
-  body.vertical { flex-direction: column; overflow-y: auto; }
-  .t { flex: 1 1 0; min-width: 0; max-width: var(--tabs-max-width, none); box-sizing: border-box;
-       padding: var(--tabs-padding, 0 5px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-       text-align: var(--tabs-title-alignment, left); font: var(--fonts-tabs-unselected, 10pt monospace);
-       color: var(--colors-tabs-odd-fg); background: var(--colors-tabs-odd-bg);
-       border-left: var(--tabs-indicator-width, 3px) solid transparent; }
-  body:not(.vertical) .t { min-width: min(var(--tabs-min-width, 0px), 100%); }
-  body.vertical .t { flex: 0 0 auto; max-width: none; }
-  .t:nth-child(even) { color: var(--colors-tabs-even-fg); background: var(--colors-tabs-even-bg); }
-  .t.a { font: var(--fonts-tabs-selected, 10pt monospace);
-         color: var(--colors-tabs-selected-odd-fg); background: var(--colors-tabs-selected-odd-bg); }
-  .t.a:nth-child(even) { color: var(--colors-tabs-selected-even-fg); background: var(--colors-tabs-selected-even-bg); }
-  .t.l { border-left-color: var(--colors-tabs-indicator-start); }
-  .t.d { border-left-color: var(--colors-tabs-indicator-stop); }
-  .t.e { border-left-color: var(--colors-tabs-indicator-error); }
-  .t.z { opacity: .5; }
-  .t img { width: 1.2em; height: 1.2em; vertical-align: -0.25em; margin-right: .4em; }
-  body:not(.vertical) .t.n:not(.a) { flex: 0 0 auto; min-width: 0; }
-  .t img:last-child { margin-right: 0; }
-  /* Status (no status bar): mode, pending keys, message at the end; load progress as a line. */
+  body { display: flex; overflow: hidden; background: var(--colors-tabs-bar-bg, #1c1c1e);
+         user-select: none; cursor: default; -webkit-font-smoothing: antialiased; }
+  body.vertical { flex-direction: column; overflow-y: auto; scrollbar-width: none; }
   #tabs { display: contents; }
-  /* Tabs overflow inside their own box, so many tabs can't push #info (prompts!) off the bar. */
-  body:not(.vertical) #tabs { display: flex; flex: 1 1 0; min-width: 0; overflow: hidden; }
+  /* Tabs overflow inside their own box, so many tabs can't push #info off the bar. */
+  body:not(.vertical) #tabs { display: flex; flex: 1 1 0; min-width: 0; overflow: hidden; gap: 0;
+                              padding: 6px 4px 6px 8px; box-sizing: border-box; }
+  .t { --fg: var(--colors-tabs-odd-fg, #f2f2f7);
+       position: relative; flex: 1 1 0; min-width: 0; max-width: var(--tabs-max-width, none); box-sizing: border-box;
+       display: flex; align-items: center; justify-content: center; gap: 7px; margin: 0 1px; border-radius: 8px;
+       padding: 0 28px; white-space: nowrap; overflow: hidden;
+       font: var(--fonts-tabs-unselected, 10pt sans-serif); color: color-mix(in srgb, var(--fg) 62%, transparent);
+       background: transparent;
+       transition: background 160ms var(--ease-out), color 160ms, box-shadow 200ms var(--ease-out),
+                   flex-grow 260ms var(--ease-spring), padding 260ms var(--ease-spring),
+                   width 260ms var(--ease-spring), margin 260ms var(--ease-spring), opacity 200ms; }
+  body:not(.vertical) .t { min-width: min(var(--tabs-min-width, 0px), 100%); }
+  /* hairline between two plain tabs (Safari), hidden next to the active or hovered one */
+  .t + .t::before { content: ""; position: absolute; left: -1.5px; top: 25%; bottom: 25%; width: 1px;
+                    background: color-mix(in srgb, var(--fg) 16%, transparent); transition: opacity 160ms; }
+  .t.a::before, .t.a + .t::before, .t:hover::before, .t:hover + .t::before, .t.out::before, .t.out + .t::before { opacity: 0; }
+  .t:not(.a):hover { background: color-mix(in srgb, var(--fg) 7%, transparent); color: color-mix(in srgb, var(--fg) 85%, transparent); }
+  .t.a { font: var(--fonts-tabs-selected, 10pt sans-serif);
+         color: var(--colors-tabs-selected-odd-fg, #fff);
+         background: color-mix(in srgb, var(--colors-tabs-selected-odd-bg, #3a3a3c) 100%, transparent);
+         box-shadow: 0 1px 3px rgba(0, 0, 0, .28), 0 0 0 .5px rgba(0, 0, 0, .25),
+                     inset 0 1px 0 color-mix(in srgb, #fff 7%, transparent); }
+  /* opening grows in, closing shrinks out (the element stays until it has, .out) */
+  .t.new { animation: tin 300ms var(--ease-spring); }
+  @keyframes tin { from { flex-grow: .001; opacity: 0; transform: scale(.9); } }
+  .t.out { flex-grow: .001 !important; padding: 0 !important; margin: 0 !important; min-width: 0 !important;
+           opacity: 0; pointer-events: none; }
+  body:not(.vertical) .t.n.out { width: 0 !important; }
+  @media (prefers-reduced-motion: reduce) { .t { transition: background 120ms; } .t.new { animation: none; } }
+  .t span { min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: var(--tabs-title-alignment, center); }
+  .t img { flex: 0 0 auto; width: 16px; height: 16px; border-radius: 3px; }
+  /* loading: a spinner in the icon's place */
+  .sp { flex: 0 0 auto; width: 13px; height: 13px; border-radius: 50%; box-sizing: border-box;
+        border: 2px solid color-mix(in srgb, currentColor 22%, transparent);
+        border-top-color: var(--accent); animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  /* close button on hover, left like Safari */
+  .x { position: absolute; left: 6px; top: 50%; width: 18px; height: 18px; margin-top: -9px; border-radius: 5px;
+       display: grid; place-items: center; font-size: 13px; line-height: 1; opacity: 0; transform: scale(.8);
+       transition: opacity 120ms, transform 160ms var(--ease-spring), background 120ms; }
+  .t:hover .x { opacity: .75; transform: none; }
+  .x:hover { opacity: 1 !important; background: color-mix(in srgb, var(--fg) 16%, transparent); }
+  /* load progress along the tab's bottom edge */
+  .t::after { content: ""; position: absolute; left: 10px; bottom: 2px; height: 2px; border-radius: 2px;
+              width: calc((100% - 20px) * var(--p, 0)); background: var(--accent); opacity: 0;
+              transition: width 240ms var(--ease-out), opacity 300ms; }
+  .t.l::after { opacity: .9; }
+  /* a crashed tab: a red ring inside; a hibernated one is dimmed */
+  .t.e { box-shadow: inset 0 0 0 1.5px var(--colors-tabs-indicator-error, #ff453a); }
+  .t.z { opacity: .45; }
+  /* pinned tabs (not the focused one, which shows its title) are icon squares */
+  body:not(.vertical) .t.n:not(.a) { flex: 0 0 auto; width: calc(100vh - 12px); min-width: 0; padding: 0; }
+  body:not(.vertical) .t.n:not(.a) img + span, body:not(.vertical) .t.n:not(.a) .sp + span,
+  body:not(.vertical) .t.n:not(.a) .x { display: none; }
+  body.vertical .t { flex: 0 0 auto; max-width: none; margin: 1px 8px; padding: 7px 10px 7px 30px;
+                     justify-content: flex-start; }
+  body.vertical .t span { text-align: left; }
   /* named profile, always first in the bar */
-  #profile { flex: 0 0 auto; align-self: center; margin: 0 6px; padding: 1px 10px; border-radius: 999px;
-             font: var(--fonts-tabs-selected, inherit); font-weight: bold;
-             background: var(--colors-tabs-indicator-start, #48f); color: var(--colors-tabs-bar-bg, #000); }
+  #profile { flex: 0 0 auto; align-self: center; margin: 0 2px 0 10px; padding: 2px 10px; border-radius: 999px;
+             font: var(--fonts-tabs-selected, inherit); font-weight: 600;
+             background: var(--accent); color: var(--colors-tabs-bar-bg, #000); }
   #profile:empty { display: none; }
-  body.vertical #profile { align-self: stretch; margin: 6px 8px; text-align: center; }
-  #info { margin-left: auto; display: flex; align-items: center; gap: 6px; padding: 0 8px; flex: 0 1 auto;
-          min-width: 0; font: var(--fonts-statusbar, 10pt monospace); white-space: nowrap; }
-  body.vertical #info { margin: auto 0 0; padding: 6px 8px; flex-wrap: wrap; white-space: normal;
-                        position: sticky; bottom: 0; background: var(--colors-tabs-bar-bg, #555); }
+  body.vertical #profile { align-self: stretch; margin: 8px; text-align: center; }
+  /* Status (no status bar): mode, pending keys, downloads as small capsules at the end. */
+  #info { margin-left: auto; display: flex; align-items: center; gap: 6px; padding: 0 10px 0 4px; flex: 0 1 auto;
+          min-width: 0; font: var(--fonts-statusbar, 10pt sans-serif); white-space: nowrap; }
+  body.vertical #info { margin: auto 0 0; padding: 8px; flex-wrap: wrap; white-space: normal;
+                        position: sticky; bottom: 0; background: var(--colors-tabs-bar-bg, #1c1c1e); }
+  #info span { padding: 2px 10px; border-radius: 999px; overflow: hidden; text-overflow: ellipsis;
+               font-size: .9em; transition: background 160ms, color 160ms; animation: cap 240ms var(--ease-spring); }
+  @keyframes cap { from { opacity: 0; transform: scale(.85); } }
   #info span:empty { display: none; }
-  #info span { padding: 1px 9px; border-radius: 999px; overflow: hidden; text-overflow: ellipsis; }
-  #mode { color: var(--colors-statusbar-normal-fg); background: var(--colors-statusbar-normal-bg); }
+  #mode { color: var(--colors-statusbar-normal-fg); background: color-mix(in srgb, var(--colors-statusbar-normal-fg, #fff) 10%, transparent); }
   #mode.insert { color: var(--colors-statusbar-insert-fg); background: var(--colors-statusbar-insert-bg); }
   #mode.passthrough { color: var(--colors-statusbar-passthrough-fg); background: var(--colors-statusbar-passthrough-bg); }
   #mode.command { color: var(--colors-statusbar-command-fg); background: var(--colors-statusbar-command-bg); }
-  #keys { color: var(--colors-statusbar-normal-fg); background: var(--colors-statusbar-normal-bg); }
-  #msg { min-width: 0; }
-  #dl { color: var(--colors-statusbar-normal-fg); background: var(--colors-statusbar-normal-bg); cursor: pointer;
-        font-variant-numeric: tabular-nums; }
+  #keys { color: var(--colors-statusbar-normal-fg); background: color-mix(in srgb, var(--accent) 22%, transparent);
+          font-variant-numeric: tabular-nums; }
+  #dl { color: var(--colors-statusbar-normal-fg); background: color-mix(in srgb, var(--colors-statusbar-normal-fg, #fff) 10%, transparent);
+        cursor: pointer; font-variant-numeric: tabular-nums; }
   #dl.run { color: var(--colors-downloads-start-fg, inherit); background: var(--colors-downloads-start-bg, inherit); }
   #dl.done { color: var(--colors-downloads-stop-fg, inherit); background: var(--colors-downloads-stop-bg, inherit); }
   #dl.fail { color: var(--colors-downloads-error-fg, inherit); background: var(--colors-downloads-error-bg, inherit); }
-  #msg.error { color: var(--colors-messages-error-fg); background: var(--colors-messages-error-bg); }
-  #msg.warning { color: var(--colors-messages-warning-fg); background: var(--colors-messages-warning-bg); }
-  #msg.prompt { color: var(--colors-prompts-fg); background: var(--colors-prompts-bg); border: var(--colors-prompts-border, none); }
-  #msg.info { color: var(--colors-messages-info-fg); background: var(--colors-messages-info-bg); }
-  #progress { position: fixed; left: 0; bottom: 0; height: 2px; width: 0; transition: width 120ms;
-              background: var(--colors-statusbar-progress-bg); }
-  body.vertical #progress { top: 0; bottom: auto; }
 </style>
 <body>
-<div id="profile"></div><div id="tabs"></div><div id="info"><span id="msg"></span><span id="keys"></span><span id="dl" title="Downloads"></span><span id="mode"></span></div><div id="progress"></div>
+<div id="profile"></div><div id="tabs"></div><div id="info"><span id="keys"></span><span id="dl" title="Downloads"></span><span id="mode"></span></div>
 <script>
   const $ = (id) => document.getElementById(id);
-  nova.theme = (t) => {
-    for (const [k, v] of Object.entries(t.vars)) document.documentElement.style.setProperty(k, v);
-    document.body.classList.toggle("vertical", t.vertical);
-  };
-  // Core → UI: nova.apply({tabs: [{t: label, a: active, l: loading, p: progress, e: crashed}],
-  //   status: {mode, modename, cmd, keys, level, msg, loading, p, crashed}}).
-  let tipTimer, dragFrom = -1;
+  nova.theme = (t) => { nova.vars(t); document.body.classList.toggle("vertical", t.vertical); };
+  // Core → UI: nova.apply({tabs: [{k: key, t: label, i: icon, a: active, l: loading, p: progress,
+  //   e: crashed, n: pinned, z: asleep}], status: {mode, modename, cmd, keys, dl, dlc, profile}}).
+  let tipTimer, dragFrom = -1, first = true;
+  // tab key (stable per tab, window.rs) -> its element: updated in place, so opening,
+  // closing and moving can animate
+  const els = new Map();
+  const idx = (d) => Number(d.dataset.i);
   // drag a tab onto another to move it there (the press already focused it, so move the active tab)
   document.onmouseup = () => { dragFrom = -1; };
+  const make = (k) => {
+    const d = document.createElement("div");
+    els.set(k, d);
+    if (!first) { d.classList.add("new"); d.addEventListener("animationend", () => d.classList.remove("new"), { once: true }); }
+    d.onmousedown = (e) => {
+      const i = idx(d);
+      clearTimeout(tipTimer);
+      nova.send("tip -1");
+      if (e.target.classList.contains("x")) { e.preventDefault(); if (e.button === 0) nova.send("close " + i); return; }
+      if (e.button === 0) { dragFrom = i; nova.send("tab " + i); }
+      if (e.button === 1) { e.preventDefault(); nova.send("close " + i); }
+      if (e.button === 2) { const r = d.getBoundingClientRect(); nova.send(`menu ${i} ${Math.round(e.clientX)} ${Math.round(r.bottom)} ${Math.round(r.right)}`); }
+    };
+    d.onmouseup = (e) => { if (e.button === 0 && dragFrom >= 0 && dragFrom !== idx(d)) nova.send("move " + idx(d)); };
+    d.oncontextmenu = (e) => e.preventDefault();
+    // hover: full title + URL after a short wait
+    d.onmouseenter = () => {
+      clearTimeout(tipTimer);
+      tipTimer = setTimeout(() => { const r = d.getBoundingClientRect(); nova.send(`tip ${idx(d)} ${Math.round(r.left)} ${Math.round(r.bottom)} ${Math.round(r.right)}`); }, 600);
+    };
+    d.onmouseleave = () => { clearTimeout(tipTimer); nova.send("tip -1"); };
+    return d;
+  };
   nova.apply = (s) => {
     const st = s.status;
     $("profile").textContent = st.profile;
@@ -81,30 +141,34 @@
     $("keys").textContent = st.keys;
     $("dl").textContent = st.dl;
     $("dl").className = st.dlc;
-    $("msg").textContent = st.msg;
-    $("msg").className = st.level;
-    $("progress").style.width = st.loading ? Math.max(3, Math.round(st.p * 100)) + "%" : "0";
-    $("tabs").replaceChildren(...s.tabs.map((tab, i) => {
-      const d = document.createElement("div");
-      d.className = "t" + (tab.a ? " a" : "") + (tab.e ? " e" : tab.l ? " l" : " d") + (tab.n ? " n" : "") + (tab.z ? " z" : "");
-      if (tab.i) { const img = document.createElement("img"); img.src = tab.i; d.append(img); }
-      d.append(tab.t);
-      d.onmousedown = (e) => {
-        clearTimeout(tipTimer);
-        if (e.button === 0) { dragFrom = i; nova.send("tab " + i); }
-        if (e.button === 1) { e.preventDefault(); nova.send("close " + i); }
-        if (e.button === 2) { const r = d.getBoundingClientRect(); nova.send(`menu ${i} ${Math.round(e.clientX)} ${Math.round(r.bottom)} ${Math.round(r.right)}`); }
-      };
-      d.onmouseup = (e) => { if (e.button === 0 && dragFrom >= 0 && dragFrom !== i) nova.send("move " + i); };
-      d.oncontextmenu = (e) => e.preventDefault();
-      // hover: full title + URL after a short wait
-      d.onmouseenter = () => {
-        clearTimeout(tipTimer);
-        tipTimer = setTimeout(() => { const r = d.getBoundingClientRect(); nova.send(`tip ${i} ${Math.round(r.left)} ${Math.round(r.bottom)} ${Math.round(r.right)}`); }, 450);
-      };
-      d.onmouseleave = () => { clearTimeout(tipTimer); nova.send("tip -1"); };
-      return d;
-    }));
+    const box = $("tabs"), live = new Set();
+    s.tabs.forEach((tab, i) => {
+      live.add(tab.k);
+      const d = els.get(tab.k) || make(tab.k);
+      d.dataset.i = i;
+      const cls = "t" + (tab.a ? " a" : "") + (tab.e ? " e" : tab.l ? " l" : "") + (tab.n ? " n" : "") + (tab.z ? " z" : "") + (d.classList.contains("new") ? " new" : "");
+      if (d.className !== cls) d.className = cls;
+      d.style.setProperty("--p", tab.l ? Math.max(0.04, tab.p) : 1);
+      const sig = [tab.l, tab.i, tab.t].join("\n");
+      if (d.dataset.sig !== sig) {
+        d.dataset.sig = sig;
+        const icon = tab.l ? Object.assign(document.createElement("i"), { className: "sp" })
+          : tab.i ? Object.assign(document.createElement("img"), { src: tab.i }) : null;
+        const label = document.createElement("span"); label.textContent = tab.t;
+        const x = Object.assign(document.createElement("b"), { className: "x", textContent: "\u2715", title: "Close tab" });
+        d.replaceChildren(x, ...(icon ? [icon] : []), label);
+      }
+      // keep DOM order = tab order (moves keep the element); closing ones stay where they were
+      const want = [...box.children].filter((x) => !x.classList.contains("out"))[i];
+      if (want !== d) box.insertBefore(d, want || null);
+    });
+    for (const [k, d] of els) {
+      if (live.has(k)) continue;
+      els.delete(k);
+      d.classList.add("out");
+      setTimeout(() => d.remove(), 280);
+    }
+    first = false;
     document.querySelector(".t.a")?.scrollIntoView({ block: "nearest", inline: "nearest" });
   };
   $("dl").onmousedown = (e) => { e.stopPropagation(); nova.send("run downloads"); };
