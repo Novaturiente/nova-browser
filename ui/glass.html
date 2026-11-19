@@ -16,8 +16,10 @@
            border: 1px solid var(--hairline);
            box-shadow: var(--shadow, 0 14px 34px rgba(0, 0, 0, .30), 0 2px 6px rgba(0, 0, 0, .18)),
                        inset 0 1px 0 color-mix(in srgb, #fff 8%, transparent); }
-  /* small overlays: the view clips the shadow at its edge, so it must fit the padding */
-  :root.tight { --shadow: 0 4px 10px rgba(0, 0, 0, .20), 0 1px 2px rgba(0, 0, 0, .18); }
+  /* small overlays: the view is exactly the card (window.rs glass_pad), so no margin
+     shows a frozen screenshot of a page that has changed since (a box round the card) */
+  :root.tight body { padding: 0 !important; }
+  :root.tight { --shadow: 0 0 0 transparent; }
   .pop { animation: glass-in 280ms var(--ease-spring) both; transform-origin: var(--origin, 50% 0); }
   .pop.out { animation: glass-out 150ms ease-in both; }
   @keyframes glass-in { from { opacity: 0; transform: translateY(var(--rise, -8px)) scale(.94); } }

@@ -835,10 +835,6 @@ pub fn set_loading(browser: &Browser, loading: bool, back: bool, fwd: bool) {
         f.execute_java_script(Some(&CefString::from(js.as_str())), None, 0);
     }
     apply_dark(browser);
-    // a backdrop ready for overlays shown while the page can't paint (alert, confirm)
-    if !loading && active_browser().is_some_and(|b| b.identifier() == browser.identifier()) {
-        page_shot(Some(browser.clone()), 0, |_| {});
-    }
 }
 
 pub fn set_scroll(browser: &Browser, y: i64) {
@@ -1571,6 +1567,12 @@ pub fn message(level: &str, text: &str) {
     }
 }
 
+/// `message` after `ms`, in this window.
+pub fn message_later(ms: u64, level: &'static str, text: String) {
+    let slot = CUR.get();
+    nova_core::host::later(ms, move || in_slot(slot, || message(level, &text)));
+}
+
 /// The toast view sized to the text (the capsule fills it), at the top centre.
 fn show_toast(level: &str, text: &str) {
     let (Some((view, overlay)), Some(c)) = (S.with_borrow(|s| s.toast.clone()), content_rect()) else {
@@ -1598,16 +1600,14 @@ thread_local! {
     /// Per overlay (its browser id): bumped on every show and hide, so a late screenshot
     /// or a delayed hide only applies if nothing happened to that overlay since.
     static GLASS_GEN: RefCell<HashMap<i32, u64>> = RefCell::default();
-    /// Last screenshot per tab (browser id): the backdrop when a new one can't be taken
-    /// in time (a page blocked in alert()/confirm() never paints a new frame).
-    static SHOTS: RefCell<HashMap<i32, String>> = RefCell::default();
 }
 
-/// Screenshot the tab's page, give `f` a data: URL; after `wait_ms` without one, the
-/// tab's last screenshot (or None) instead. `f` runs once.
+/// Screenshot the tab's page, give `f` a data: URL; after `wait_ms` without one, None
+/// (the theme colour): an older screenshot can show the page as it was, e.g. light
+/// before dark mode was switched on (a page blocked in alert() never paints a new one).
+/// `f` runs once.
 fn page_shot(page: Option<Browser>, wait_ms: u64, f: impl FnOnce(Option<String>) + 'static) {
     let Some(page) = page else { return f(None) };
-    let id = page.identifier();
     let slot = CUR.get();
     let f = std::rc::Rc::new(RefCell::new(Some(f)));
     let f2 = f.clone();
@@ -1617,18 +1617,43 @@ fn page_shot(page: Option<Browser>, wait_ms: u64, f: impl FnOnce(Option<String>)
             .as_ref()
             .and_then(|r| r["data"].as_str())
             .map(|d| format!("data:image/jpeg;base64,{d}"));
-        if let Some(i) = &img {
-            SHOTS.with_borrow_mut(|s| s.insert(id, i.clone()));
-        }
         if let Some(f) = f2.borrow_mut().take() {
             in_slot(slot, || f(img));
         }
     });
     nova_core::host::later(wait_ms, move || {
         if let Some(f) = f.borrow_mut().take() {
-            in_slot(slot, || f(SHOTS.with_borrow(|s| s.get(&id).cloned())));
+            in_slot(slot, || f(None));
         }
     });
+}
+
+/// `r` kept in the window, less the card's margin: callers size cards with the shadow
+/// margin the pages once had; the view is now exactly the card.
+fn fit_card(view: &BrowserView, r: Rect) -> Rect {
+    let r = clamp_to_window(r);
+    let (t, rt, b, l) = glass_pad(view);
+    Rect { x: r.x + l, y: r.y + t, width: (r.width - l - rt).max(1), height: (r.height - t - b).max(1) }
+}
+
+/// Margin (top, right, bottom, left) round the card in the rect callers give
+/// show_glass: what the overlay page's body padding was before the view fit the card.
+fn glass_pad(view: &BrowserView) -> (i32, i32, i32, i32) {
+    let id = browser_id(view);
+    let is = |o: &Option<(BrowserView, OverlayController)>| o.as_ref().and_then(|o| browser_id(&o.0)) == id;
+    S.with_borrow(|s| {
+        if is(&s.toast) {
+            (6, 12, 14, 12)
+        } else if is(&s.ask) {
+            (8, 16, 22, 16)
+        } else if is(&s.keyhint) {
+            (12, 12, 14, 12)
+        } else if is(&s.tip) || is(&s.menu) {
+            (2, 12, 14, 12)
+        } else {
+            (0, 0, 0, 0)
+        }
+    })
 }
 
 fn glass_gen(view: &BrowserView, bump: bool) -> u64 {
@@ -1702,7 +1727,7 @@ thread_local! {
 /// while the view is parked, and the view moves in once the page has painted it with
 /// its backdrop (glass.html nova.show). `focus`: the overlay takes keys (tab menu).
 fn show_glass(view: &BrowserView, overlay: &OverlayController, r: Rect, js: String, focus: bool) {
-    let r = clamp_to_window(r);
+    let r = fit_card(view, r);
     let gen = glass_gen(view, true);
     let content = content_rect();
     let (v, o) = (view.clone(), overlay.clone());
@@ -2023,7 +2048,7 @@ pub fn suggest(field: Rect, data: &serde_json::Value) {
     // already up (the selection moved): redraw in place, no new screenshot or entrance
     if is_shown(&overlay) {
         glass_gen(&view, true); // cancels a fade-out in progress
-        overlay.set_bounds(Some(&clamp_to_window(r)));
+        overlay.set_bounds(Some(&fit_card(&view, r)));
         return view_js(&view, &format!("nova.surface().classList.remove('out'); nova.suggest({data})"));
     }
     popup_at(&view, &overlay, r, &format!("nova.suggest({data})"));
@@ -2164,10 +2189,10 @@ fn palette_rect() -> Option<Rect> {
     };
     let cfg = config::get();
     let b = if compact {
-        // pill: padding 6 top, 12 bottom (shadow), the bar as tall as the status font + 22
-        let w = (r.width - 32).clamp(1, 560);
-        let h = theme::bar_height(&cfg, "fonts.statusbar", "statusbar.padding") + 22 + 18;
-        Rect { x: r.x + (r.width - w) / 2, y: r.y, width: w, height: h.clamp(1, r.height.max(1)) }
+        // exactly the pill (6 px under the tab bar), as tall as the status font + 22
+        let w = (r.width - 56).clamp(1, 536);
+        let h = theme::bar_height(&cfg, "fonts.statusbar", "statusbar.padding") + 22;
+        Rect { x: r.x + (r.width - w) / 2, y: r.y + 6, width: w, height: h.clamp(1, r.height.max(1)) }
     } else {
         r
     };
