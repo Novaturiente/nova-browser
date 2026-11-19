@@ -14,9 +14,7 @@ out=$(realpath -m "$2")
 shift 2
 tmp=$(mktemp -d /tmp/nova-shot.XXXXXX)
 export XDG_CONFIG_HOME=$tmp/config XDG_DATA_HOME=$tmp/data XDG_STATE_HOME=$tmp/state XDG_CACHE_HOME=$tmp/cache
-mkdir -p $XDG_DATA_HOME/novabrowser $XDG_CONFIG_HOME/novabrowser && touch $XDG_DATA_HOME/novabrowser/welcomed
-# SHOT_CONFIG: a config dir to copy (config.ts, darkmode_* ...), e.g. your own
-[ -n "${SHOT_CONFIG:-}" ] && cp -r "$SHOT_CONFIG"/. $XDG_CONFIG_HOME/novabrowser/
+mkdir -p $XDG_DATA_HOME/novabrowser && touch $XDG_DATA_HOME/novabrowser/welcomed
 q() { "$bin" --query state 2>/dev/null; }
 wait_for() { for _ in $(seq $(( ${2:-10} * 5 ))); do q | grep -q -- "$1" && return 0; sleep 0.2; done; return 1; }
 page() {

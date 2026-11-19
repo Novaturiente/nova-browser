@@ -79,11 +79,9 @@ fn dark_toggle() -> Result<(), String> {
     } else {
         ""
     };
-    // after the page has repainted, so the toast's backdrop shows it in its new colours
-    window::message_later(
-        250,
+    window::message(
         "info",
-        format!(
+        &format!(
             "Dark mode {} for {host}{note}",
             if dark { "on" } else { "off" }
         ),

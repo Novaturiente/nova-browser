@@ -27,9 +27,8 @@
   #icon { flex: 0 0 auto; width: 24px; height: 24px; display: grid; place-items: center; font-size: 15px;
           color: color-mix(in srgb, var(--ink) 55%, transparent); }
   /* search: the overlay is a pill under the tab bar (window.rs palette_rect) */
-  /* the view is exactly the pill: no margin round it showing a frozen page */
-  body.compact #card { --origin: 50% 0; margin: 0; width: 100%; height: 100%; padding: 0; box-sizing: border-box; }
-  body.compact #bar { height: 100%; border-radius: 999px; --shadow: 0 0 0 transparent; }
+  body.compact #card { --origin: 50% 0; margin: 0; width: 100%; height: 100%; padding: 6px 12px 14px; box-sizing: border-box; }
+  body.compact #bar { height: 100%; border-radius: 999px; --shadow: 0 4px 10px rgba(0, 0, 0, .20), 0 1px 2px rgba(0, 0, 0, .18); }
   body.compact #list, body.compact #bg { display: none; }
   #count { flex: 0 0 auto; padding: 2px 9px; border-radius: 999px; font-variant-numeric: tabular-nums; font-size: .9em;
            color: color-mix(in srgb, var(--ink) 70%, transparent); background: color-mix(in srgb, var(--ink) 9%, transparent);
