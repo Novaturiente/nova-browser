@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.10 (2026-11-19)
+
+- Popups (toast, search pill, which-key, palette, menus) no longer flash
+  white or show a dark box around them before their content appears.
+- A tab restored with an empty URL opens `about:blank` instead of a dead
+  tab that ignored every key.
+
 ## 0.1.9 (2026-11-19)
 
 - New Safari-style look. The tab bar has rounded tabs with a close
