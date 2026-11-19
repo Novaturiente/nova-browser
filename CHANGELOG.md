@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.14 (2026-11-20)
 
 - New interface: the window, tab bar, URL box, search pill, which-key, tab
   menu, password list, questions and messages are native GTK, the same as
