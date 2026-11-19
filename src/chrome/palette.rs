@@ -16,7 +16,7 @@ pub const CSS: &str = "
 window.nova .nova-palette { font: var(--fonts-completion-entry); color: var(--colors-completion-fg); }
 window.nova .nova-palette .p-bar {
   min-height: 52px; padding: 0 20px 0 14px; border-radius: 12px;
-  background: var(--colors-completion-even-bg);
+  background: color-mix(in srgb, var(--colors-completion-even-bg) 72%, transparent);
   border: 1px solid var(--colors-completion-category-border-top);
   box-shadow: 0 14px 40px rgba(0,0,0,.5);
 }
@@ -33,7 +33,7 @@ window.nova .nova-palette text > placeholder { color: inherit; opacity: .45; }
 window.nova .nova-palette .p-count { opacity: .6; font-feature-settings: \"tnum\"; }
 window.nova .nova-palette .p-grp {
   padding: 0 6px 6px; border-radius: 12px;
-  background: var(--colors-completion-even-bg);
+  background: color-mix(in srgb, var(--colors-completion-even-bg) 72%, transparent);
   border: 1px solid var(--colors-completion-category-border-top);
   box-shadow: 0 6px 16px rgba(0,0,0,.35);
 }

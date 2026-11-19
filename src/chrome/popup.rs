@@ -13,12 +13,12 @@ window.nova .nova-pop {
   padding: 6px;
   border: 1px solid var(--colors-completion-category-border-top);
   border-radius: 14px;
-  background: var(--colors-tooltip-bg);
+  background: color-mix(in srgb, var(--colors-tooltip-bg) 85%, transparent);
   color: var(--colors-tooltip-fg);
   font: var(--fonts-tooltip, var(--fonts-statusbar));
 }
 window.nova .nova-pop.menu {
-  background: var(--colors-contextmenu-menu-bg);
+  background: color-mix(in srgb, var(--colors-contextmenu-menu-bg) 85%, transparent);
   color: var(--colors-contextmenu-menu-fg);
   font: var(--fonts-contextmenu, var(--fonts-statusbar));
 }

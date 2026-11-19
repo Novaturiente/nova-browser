@@ -16,7 +16,7 @@ window.nova .nova-prompt {
 window.nova .nova-prompt .card {
   padding: 10px 22px 10px 10px;
   border-radius: 28px;
-  background: var(--colors-prompts-bg);
+  background: color-mix(in srgb, var(--colors-prompts-bg) 85%, transparent);
   border: 1px solid var(--colors-completion-category-border-top);
   box-shadow: 0 4px 14px rgba(0,0,0,.35);
 }

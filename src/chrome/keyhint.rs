@@ -5,7 +5,7 @@ use gtk::prelude::*;
 
 pub const CSS: &str = "
 window.nova .nova-keyhint {
-  background: var(--colors-keyhint-bg);
+  background: color-mix(in srgb, var(--colors-keyhint-bg) 85%, transparent);
   color: var(--colors-keyhint-fg);
   font: var(--fonts-keyhint);
   padding: 8px 12px;

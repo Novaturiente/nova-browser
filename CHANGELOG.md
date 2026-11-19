@@ -5,6 +5,9 @@
 - Tabs look like Safari again (as in 0.1.13): rounded squares, plain
   inactive tabs, the active one raised with a soft shadow. The tab bar is
   never thinner than 38 px.
+- The URL box and its result cards are see-through: the blurred page shows
+  behind them. Menus, tooltips, which-key, questions and messages are
+  slightly see-through too.
 
 ## 0.1.14 (2026-11-20)
 

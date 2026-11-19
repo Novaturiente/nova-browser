@@ -10,7 +10,7 @@ pub const CSS: &str = "
 window.nova .nova-toast {
   border-radius: 999px;
   font: var(--fonts-messages-info, var(--fonts-statusbar));
-  background: var(--colors-messages-info-bg);
+  background: color-mix(in srgb, var(--colors-messages-info-bg) 85%, transparent);
   color: var(--colors-messages-info-fg);
   border: 1px solid var(--colors-completion-category-border-top);
   box-shadow: 0 2px 5px rgba(0,0,0,.35);
