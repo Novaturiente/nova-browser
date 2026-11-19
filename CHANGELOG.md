@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.11 (2026-11-19)
+
+- Popups (URL bar, palette, toast, which-key, menus) no longer flash
+  white or show the old page on their first show or after the page
+  changed (for example the dark-mode toggle message).
+- Small palette cards (e.g. two bookmarks) are only as tall as their rows.
+
 ## 0.1.10 (2026-11-19)
 
 - Popups (toast, search pill, which-key, palette, menus) no longer flash
