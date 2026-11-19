@@ -427,12 +427,22 @@ fn window_closing() {
         h.close_browser(1);
     }
     // act on some other open window from now on
-    if let Some(i) = WINS.with_borrow(|w| w.iter().position(|s| s.window.is_some())) {
-        CUR.set(i);
-        if !QUITTING.get() {
-            crate::session::save_now();
+    match WINS.with_borrow(|w| w.iter().position(|s| s.window.is_some())) {
+        Some(i) => {
+            CUR.set(i);
+            if !QUITTING.get() {
+                crate::session::save_now();
+            }
         }
+        // none had a browser to close (else the last one's on_before_close quits)
+        None if crate::client::browsers_open() == 0 => quit_message_loop(),
+        None => {}
     }
+}
+
+/// No window is open (the process quits once their browsers are gone too).
+pub fn none_open() -> bool {
+    WINS.with_borrow(|w| w.iter().all(|s| s.window.is_none()))
 }
 
 thread_local! {
@@ -456,13 +466,14 @@ pub fn typed_open(current: bool, f: impl FnOnce()) {
     TYPED_NEXT.set(false);
 }
 
-/// `related`: the active tab's page opened it, so it goes next to that tab, not at the end.
-fn add_tab(page: Page, url: String, title: String, foreground: bool, related: bool) {
+/// `opener`: the index of the tab whose page opened it, so it goes next to that tab,
+/// not at the end.
+fn add_tab(page: Page, url: String, title: String, foreground: bool, opener: Option<usize>) {
     TAB_KEY.set(TAB_KEY.get() + 1);
     let n = S.with_borrow_mut(|s| {
-        let (at, opener) = match related {
-            true => (related_slot(&s.tabs, s.active), s.tabs.get(s.active).map_or(0, |t| t.key)),
-            false => (s.tabs.len(), 0),
+        let (at, opener) = match opener {
+            Some(o) => (related_slot(&s.tabs, o), s.tabs.get(o).map_or(0, |t| t.key)),
+            None => (s.tabs.len(), 0),
         };
         let tab = Tab {
             page,
@@ -524,18 +535,24 @@ fn open_titled(url: &str, title: String, foreground: bool, related: bool) {
     // a browser created with no URL never gets a page and ignores every key (a saved
     // popup that never loaded comes back as "")
     let url = if url.is_empty() { "about:blank" } else { url };
-    add_tab(Page::new(url), url.to_string(), title, foreground, related);
+    let opener = related.then(|| S.with_borrow(|s| s.active));
+    add_tab(Page::new(url), url.to_string(), title, foreground, opener);
 }
 
 /// A popup (target=_blank, window.open) or DevTools has its browser now (page.rs): a tab
 /// next to the tab that opened it.
-pub fn adopt_popup(page: Page, foreground: bool) {
-    let url = page
-        .browser()
-        .and_then(|b| b.main_frame())
-        .map(|f| CefString::from(&f.url()).to_string())
-        .unwrap_or_default();
-    add_tab(page, url, String::new(), foreground, true);
+pub fn adopt_popup(page: Page, foreground: bool, opener: &Browser) {
+    let Some(b) = page.browser() else { return };
+    let url = b.main_frame().map(|f| CefString::from(&f.url()).to_string()).unwrap_or_default();
+    let id = opener.identifier();
+    let at = S.with_borrow(|s| s.tabs.iter().position(|t| bid(&t.page) == Some(id)).unwrap_or(s.active));
+    if !foreground {
+        // not on screen until shown: no frames meanwhile
+        if let Some(h) = b.host() {
+            h.was_hidden(1);
+        }
+    }
+    add_tab(page, url, String::new(), foreground, Some(at));
 }
 
 /// `devtools`: close the DevTools tab the active tab opened, else open one next to it.
@@ -566,8 +583,14 @@ pub fn session_json() -> Option<Value> {
 fn window_json() -> Option<Value> {
     S.with_borrow(|s| {
         s.window.as_ref()?;
-        // data: tabs are our snapshot pages (downloads, bookmarks): stale after a restart
-        let tabs = s.tabs.iter().filter(|t| !t.url.starts_with("data:")).map(tab_json).collect();
+        // data: tabs are our snapshot pages (downloads, bookmarks): stale after a restart;
+        // DevTools belong to a page of this run
+        let tabs = s
+            .tabs
+            .iter()
+            .filter(|t| !t.url.starts_with("data:") && !t.url.starts_with("devtools:"))
+            .map(tab_json)
+            .collect();
         Some(crate::session::window(tabs, s.active))
     })
 }
@@ -770,7 +793,8 @@ pub fn remove(n: usize) {
             }
         };
         let Some(url) = reopen else {
-            // closing the window closes its browsers; quit follows in on_before_close
+            // the window's other browsers close with it; quit follows in on_before_close
+            release(tab.page);
             if let Some(w) = window {
                 w.close();
             }
@@ -829,7 +853,9 @@ pub fn set_url(browser: &Browser, url: String) {
         let typed = std::mem::take(&mut t.typed);
         let fresh = std::mem::take(&mut t.fresh);
         if t.crashed.is_none() && (t.url != url || typed || fresh) {
-            history::visit(&url, typed);
+            if !url.starts_with("devtools:") {
+                history::visit(&url, typed);
+            }
             t.url = url;
             t.scroll = 0;
         }

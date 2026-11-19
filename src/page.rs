@@ -23,9 +23,17 @@ pub struct Inner {
     browser: RefCell<Option<Browser>>,
     /// URL to load when the browser is created (first show); None once created
     pending: RefCell<Option<String>>,
-    /// last size told to CEF, in logical px
+    /// last size told to CEF, in logical px, and the scale with it
     size: Cell<(i32, i32)>,
+    scale: Cell<f64>,
     pointer: Cell<(f64, f64)>,
+    /// click count of the last press (its release repeats it)
+    clicks: Cell<i32>,
+    /// touchpad scroll not yet sent (Chromium takes whole pixels)
+    wheel: Cell<(f64, f64)>,
+    /// hardware codes of keys whose press the page got (modes.rs eats some presses;
+    /// the page must not see their release)
+    down: RefCell<Vec<u32>>,
     /// inside the input method's filter for a key press: a one-char commit is typing
     in_key: Cell<bool>,
     composing: Cell<bool>,
@@ -99,7 +107,11 @@ impl Page {
             browser: RefCell::new(None),
             pending: RefCell::new(None),
             size: Cell::new((0, 0)),
+            scale: Cell::new(0.0),
             pointer: Cell::new((0.0, 0.0)),
+            clicks: Cell::new(1),
+            wheel: Cell::new((0.0, 0.0)),
+            down: RefCell::new(Vec::new()),
             in_key: Cell::new(false),
             composing: Cell::new(false),
         });
@@ -170,40 +182,43 @@ impl Page {
         });
         w.add_controller(motion);
 
+        // presses with their click count from GTK; releases raw, because a click gesture
+        // gives up past the drag threshold (text selection, scrollbar drags)
         let click = gtk::GestureClick::new();
         click.set_button(0);
-        let button = |g: &gtk::GestureClick| match g.current_button() {
-            2 => Some(MouseButtonType::MIDDLE),
-            3 => Some(MouseButtonType::RIGHT),
-            1 => Some(MouseButtonType::LEFT),
-            _ => None, // side buttons: the renderer turns them into back/forward
-        };
         let m = me.clone();
         click.connect_pressed(move |g, n, x, y| {
-            let (Some(p), Some(b)) = (m(), button(g)) else { return };
+            let (Some(p), Some(b)) = (m(), button(g.current_button())) else { return };
             p.focus();
+            p.0.clicks.set(n);
             if let Some(h) = p.host() {
                 h.send_mouse_click_event(Some(&mouse(x, y, g.current_event_state())), b, 0, n);
             }
         });
-        let m = me.clone();
-        click.connect_released(move |g, n, x, y| {
-            let (Some(p), Some(b)) = (m(), button(g)) else { return };
-            if let Some(h) = p.host() {
-                h.send_mouse_click_event(Some(&mouse(x, y, g.current_event_state())), b, 1, n);
-            }
-        });
         w.add_controller(click);
+        let up = gtk::EventControllerLegacy::new();
+        let m = me.clone();
+        up.connect_event(move |_, e| {
+            let Some(p) = m() else { return glib::Propagation::Proceed };
+            let Some(b) = e.downcast_ref::<gdk::ButtonEvent>().filter(|_| e.event_type() == gdk::EventType::ButtonRelease) else {
+                return glib::Propagation::Proceed;
+            };
+            let (Some(b), Some(h)) = (button(b.button()), p.host()) else { return glib::Propagation::Proceed };
+            let (x, y) = p.0.pointer.get();
+            h.send_mouse_click_event(Some(&mouse(x, y, e.modifier_state())), b, 1, p.0.clicks.get());
+            glib::Propagation::Proceed
+        });
+        w.add_controller(up);
 
         let scroll = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::BOTH_AXES);
         let m = me.clone();
         scroll.connect_scroll(move |c, dx, dy| {
             let Some(p) = m() else { return glib::Propagation::Proceed };
-            // a wheel notch is 1.0 here; Chromium wants pixels (Chrome: 100 a notch)
-            let k = if c.unit() == gdk::ScrollUnit::Wheel { -100.0 } else { -1.0 };
+            let (px, rest) = wheel_px(p.0.wheel.get(), dx, dy, c.unit() == gdk::ScrollUnit::Wheel);
+            p.0.wheel.set(rest);
             let (x, y) = p.0.pointer.get();
-            if let Some(h) = p.host() {
-                h.send_mouse_wheel_event(Some(&mouse(x, y, c.current_event_state())), (dx * k) as i32, (dy * k) as i32);
+            if let Some(h) = p.host().filter(|_| px != (0, 0)) {
+                h.send_mouse_wheel_event(Some(&mouse(x, y, c.current_event_state())), px.0, px.1);
             }
             glib::Propagation::Stop
         });
@@ -216,6 +231,7 @@ impl Page {
         keys.connect_key_pressed(move |c, key, code, state| {
             let Some(p) = m() else { return glib::Propagation::Proceed };
             p.send_key(key, code, state, true);
+            p.0.down.borrow_mut().push(code);
             p.0.in_key.set(true);
             let filtered = c.current_event().is_some_and(|e| p.0.im.filter_keypress(&e));
             p.0.in_key.set(false);
@@ -231,6 +247,10 @@ impl Page {
             if let Some(e) = c.current_event() {
                 p.0.im.filter_keypress(&e);
             }
+            let mut down = p.0.down.borrow_mut();
+            let Some(i) = down.iter().position(|c| *c == code) else { return };
+            down.remove(i);
+            drop(down);
             p.send_key(key, code, state, false);
         });
         w.add_controller(keys);
@@ -313,10 +333,12 @@ impl Page {
     fn check_size(&self) {
         let w = &self.0.widget;
         let size = (w.width(), w.height());
-        if size.0 <= 0 || size == self.0.size.get() {
+        let scale = self.scale();
+        if size.0 <= 0 || (size == self.0.size.get() && scale == self.0.scale.get()) {
             return;
         }
         self.0.size.set(size);
+        self.0.scale.set(scale);
         if let Some(h) = self.host() {
             h.notify_screen_info_changed();
             h.was_resized();
@@ -326,10 +348,19 @@ impl Page {
     fn send_key(&self, key: gdk::Key, code: u32, state: gdk::ModifierType, down: bool) {
         let Some(h) = self.host() else { return };
         let ch = key.to_unicode().map_or(0, |c| c as u32 as u16);
+        let mut vk = crate::keys_vk::vk(key);
+        if vk == 0 {
+            // a non-Latin layout: the key's code on the first layout (Ctrl+C on с), as Chromium does
+            let first = self.0.widget.display().translate_key(code, state, 0);
+            vk = first.map_or(0, |(k, ..)| crate::keys_vk::vk(k));
+        }
+        if self.0.composing.get() {
+            vk = 0xE5; // VKEY_PROCESSKEY: the input method has this key, not the page
+        }
         h.send_key_event(Some(&KeyEvent {
             type_: if down { KeyEventType::RAWKEYDOWN } else { KeyEventType::KEYUP },
             modifiers: modifiers(state),
-            windows_key_code: crate::keys_vk::vk(key),
+            windows_key_code: vk,
             native_key_code: code as i32,
             character: ch,
             unmodified_character: ch,
@@ -410,6 +441,7 @@ fn window_info() -> WindowInfo {
 /// `on_before_popup`: make the popup windowless with a page of its own; it becomes a
 /// tab of `opener`'s window in `created`.
 pub fn popup(opener: &Browser, foreground: bool, info: &mut WindowInfo, client: &mut Option<Client>) {
+    // shortcut: a popup CEF cancels after this (on_before_popup_aborted) stays in ADOPT/KEEP; rare, a few KB
     let p = Page::blank();
     *info = WindowInfo { size: info.size, ..window_info() };
     *client = Some(crate::client::TabClient::new(p.0.pid));
@@ -439,7 +471,13 @@ thread_local! {
 
 /// `on_after_created` for the page `pid`: it has its browser now.
 pub fn created(pid: u64, browser: &Browser) {
-    let Some(p) = page(pid) else { return };
+    // its tab was closed (or its window) while CEF was creating it
+    let Some(p) = page(pid) else {
+        if let Some(h) = browser.host() {
+            h.close_browser(1);
+        }
+        return;
+    };
     p.0.browser.replace(Some(browser.clone()));
     if let Some(h) = browser.host() {
         h.was_resized();
@@ -450,7 +488,7 @@ pub fn created(pid: u64, browser: &Browser) {
     let adopt = ADOPT.with_borrow_mut(|a| a.remove(&pid));
     KEEP.with_borrow_mut(|k| k.retain(|x| x.0.pid != pid));
     if let Some((opener, foreground)) = adopt {
-        crate::window::in_owner(&opener, || crate::window::adopt_popup(p, foreground));
+        crate::window::in_owner(&opener, || crate::window::adopt_popup(p, foreground, &opener));
     }
 }
 
@@ -478,9 +516,7 @@ pub fn context_menu(browser: &Browser, x: i32, y: i32, model: &MenuModel, cb: &R
         if std::mem::take(&mut sep) {
             list.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
         }
-        // "&Back": a mnemonic marker; "&&" is a literal &
-        let label = CefString::from(&model.label_at(i)).to_string().replace("&&", "\0").replace('&', "").replace('\0', "&");
-        let b = gtk::Button::with_label(&label);
+        let b = gtk::Button::with_label(&menu_label(&CefString::from(&model.label_at(i)).to_string()));
         b.add_css_class("flat");
         if let Some(l) = b.child().and_downcast::<gtk::Label>() {
             l.set_xalign(0.0);
@@ -510,6 +546,11 @@ pub fn context_menu(browser: &Browser, x: i32, y: i32, model: &MenuModel, cb: &R
     });
     pop.popup();
     true
+}
+
+/// "&Back" -> "Back": `&` marks a mnemonic, "&&" is a literal &.
+fn menu_label(s: &str) -> String {
+    s.replace("&&", "\0").replace('&', "").replace('\0', "&")
 }
 
 /// Mouse cursor over `browser`'s page.
@@ -559,11 +600,15 @@ fn dmabuf_texture(info: &AcceleratedPaintInfo) -> Result<gdk::Texture, String> {
     let fourcc = if info.format == ColorType::BGRA_8888 { 0x3432_5241 } else { 0x3432_4241 };
     let (w, h) = (info.extra.coded_size.width, info.extra.coded_size.height);
     let planes = &info.planes[..info.plane_count.clamp(0, 4) as usize];
-    let fds: Vec<OwnedFd> = planes
+    let owned: Vec<OwnedFd> = planes
         .iter()
         .map(|p| unsafe { BorrowedFd::borrow_raw(p.fd) }.try_clone_to_owned())
         .collect::<Result<_, _>>()
         .map_err(|e| format!("dup: {e}"))?;
+    let raw: Vec<i32> = owned.iter().map(|f| f.as_raw_fd()).collect();
+    // closed by the texture's release, or here if GTK refuses the buffer (it may not
+    // call the release then)
+    let fds = std::sync::Arc::new(std::sync::Mutex::new(Some(owned)));
     let display = gdk::Display::default().ok_or("no display")?;
     let mut b = gdk::DmabufTextureBuilder::new()
         .set_display(&display)
@@ -573,12 +618,16 @@ fn dmabuf_texture(info: &AcceleratedPaintInfo) -> Result<gdk::Texture, String> {
         .set_modifier(info.modifier)
         .set_premultiplied(true)
         .set_n_planes(planes.len() as u32);
-    for (i, (p, fd)) in planes.iter().zip(&fds).enumerate() {
-        b = unsafe { b.set_fd(i as u32, fd.as_raw_fd()) }
+    for (i, (p, fd)) in planes.iter().zip(&raw).enumerate() {
+        b = unsafe { b.set_fd(i as u32, *fd) }
             .set_stride(i as u32, p.stride)
             .set_offset(i as u32, p.offset as u32);
     }
-    unsafe { b.build_with_release_func(move || drop(fds)) }.map_err(|e| e.to_string())
+    let release = fds.clone();
+    unsafe { b.build_with_release_func(move || drop(release.lock().map(|mut f| f.take()))) }.map_err(|e| {
+        drop(fds.lock().map(|mut f| f.take()));
+        e.to_string()
+    })
 }
 
 wrap_render_handler! {
@@ -635,7 +684,7 @@ wrap_render_handler! {
             height: ::std::os::raw::c_int,
         ) {
             // only without GPU buffers (shared textures failed): BGRA in memory
-            let Some(p) = page(self.pid) else { return };
+            let Some(p) = page(self.pid).filter(|_| !buffer.is_null() && width > 0 && height > 0) else { return };
             let len = (width * height * 4) as usize;
             let bytes = glib::Bytes::from(unsafe { std::slice::from_raw_parts(buffer, len) });
             let t = gdk::MemoryTexture::new(width, height, gdk::MemoryFormat::B8g8r8a8Premultiplied, &bytes, (width * 4) as usize);
@@ -667,10 +716,31 @@ const SHIFT: u32 = 1 << 1;
 const CTRL: u32 = 1 << 2;
 const ALT: u32 = 1 << 3;
 
+/// CEF mouse button for GTK button `n`; side buttons: None (the renderer turns them
+/// into back/forward).
+fn button(n: u32) -> Option<MouseButtonType> {
+    match n {
+        1 => Some(MouseButtonType::LEFT),
+        2 => Some(MouseButtonType::MIDDLE),
+        3 => Some(MouseButtonType::RIGHT),
+        _ => None,
+    }
+}
+
+/// Scroll (`dx`, `dy`: notches for a wheel, else touchpad pixels) as whole Chromium
+/// pixels (100 a notch, like Chrome; up/left positive) plus what is left for next time.
+fn wheel_px(rest: (f64, f64), dx: f64, dy: f64, notches: bool) -> ((i32, i32), (f64, f64)) {
+    let k = if notches { -100.0 } else { -1.0 };
+    let (x, y) = (rest.0 + dx * k, rest.1 + dy * k);
+    let (ix, iy) = (x.trunc(), y.trunc());
+    ((ix as i32, iy as i32), (x - ix, y - iy))
+}
+
 /// CEF event flags from GTK's modifier state.
 fn modifiers(state: gdk::ModifierType) -> u32 {
     use gdk::ModifierType as M;
     [
+        (M::LOCK_MASK, 1 << 0),
         (M::SHIFT_MASK, SHIFT),
         (M::CONTROL_MASK, CTRL),
         (M::ALT_MASK, ALT),
@@ -687,4 +757,46 @@ fn modifiers(state: gdk::ModifierType) -> u32 {
 
 fn mouse(x: f64, y: f64, state: gdk::ModifierType) -> MouseEvent {
     MouseEvent { x: x as i32, y: y as i32, modifiers: modifiers(state) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wheel_keeps_fractions() {
+        // one notch down = 100 px up the page's scroll (Chromium sign)
+        assert_eq!(wheel_px((0.0, 0.0), 0.0, 1.0, true).0, (0, -100));
+        // touchpad: 0.4 px twice, then 0.4 more crosses a whole pixel
+        let (px, r) = wheel_px((0.0, 0.0), 0.0, 0.4, false);
+        assert_eq!(px, (0, 0));
+        let (px, r) = wheel_px(r, 0.0, 0.4, false);
+        assert_eq!(px, (0, 0));
+        let (px, r) = wheel_px(r, 0.0, 0.4, false);
+        assert_eq!(px, (0, -1));
+        assert!((r.1 + 0.2).abs() < 1e-9);
+    }
+
+    #[test]
+    fn modifier_flags() {
+        use gdk::ModifierType as M;
+        assert_eq!(modifiers(M::empty()), 0);
+        assert_eq!(modifiers(M::SHIFT_MASK | M::CONTROL_MASK), SHIFT | CTRL);
+        assert_eq!(modifiers(M::LOCK_MASK | M::ALT_MASK), 1 | ALT);
+        assert_eq!(modifiers(M::BUTTON1_MASK), 1 << 4);
+    }
+
+    #[test]
+    fn menu_labels() {
+        assert_eq!(menu_label("&Back"), "Back");
+        assert_eq!(menu_label("Save &As…"), "Save As…");
+        assert_eq!(menu_label("Fish && Chips"), "Fish & Chips");
+    }
+
+    #[test]
+    fn buttons() {
+        assert!(button(1) == Some(MouseButtonType::LEFT));
+        assert!(button(3) == Some(MouseButtonType::RIGHT));
+        assert!(button(8).is_none());
+    }
 }

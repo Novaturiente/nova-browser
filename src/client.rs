@@ -8,6 +8,11 @@ thread_local! {
     static OPEN: Cell<i32> = const { Cell::new(0) };
 }
 
+/// Live CEF browsers (tabs whose page was created and not closed yet).
+pub fn browsers_open() -> i32 {
+    OPEN.get()
+}
+
 fn new_tab_disposition(d: WindowOpenDisposition) -> Option<bool> {
     // Some(foreground)
     if d == WindowOpenDisposition::NEW_BACKGROUND_TAB {
@@ -516,7 +521,8 @@ wrap_life_span_handler! {
                 crate::passwords::forget(b);
             }
             OPEN.set(OPEN.get() - 1);
-            if OPEN.get() == 0 { quit_message_loop(); }
+            // tabs load lazily: a window can be open with no browser for a moment
+            if OPEN.get() == 0 && window::none_open() { quit_message_loop(); }
         }
     }
 }
