@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.9 (2026-11-19)
 
 - New Safari-style look. The tab bar has rounded tabs with a close
   button on hover, a spinner and a progress line while loading, and
