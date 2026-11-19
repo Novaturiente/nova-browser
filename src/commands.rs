@@ -465,13 +465,7 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
         }
         "fullscreen" => window::toggle_fullscreen(),
         "devtools" => {
-            let h = need()?.host().ok_or("no active tab")?;
-            if h.has_dev_tools() != 0 {
-                h.close_dev_tools();
-            } else {
-                // no client: our key bindings stay out of DevTools
-                h.show_dev_tools(Some(&WindowInfo::default()), None, None, None);
-            }
+            window::toggle_devtools(&need()?);
         }
         "mode-enter" => modes::enter(match cmd.args.first().map(String::as_str) {
             Some("insert") => modes::Mode::Insert,

@@ -7,7 +7,7 @@ arch=(x86_64)
 url="https://github.com/Novaturiente/nova-browser"
 license=(GPL-3.0-or-later)
 # libcef.so's runtime deps (same set Arch's cef/electron packages pull in)
-depends=(sqlite gtk3 nss alsa-lib libxss libxkbcommon libdrm mesa libcups at-spi2-core)
+depends=(sqlite gtk3 gtk4 libadwaita nss alsa-lib libxss libxkbcommon libdrm mesa libcups at-spi2-core)
 makedepends=(cargo cmake ninja)
 optdepends=('wl-clipboard: primary selection and paste on Wayland'
             'xclip: primary selection and paste on X11'

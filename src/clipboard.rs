@@ -1,26 +1,17 @@
-//! Clipboard. Copy goes through Chromium's own clipboard (works on Wayland and
-//! X11, no extra tools); the primary selection and reading (for `{clipboard}`)
-//! use `wl-copy`/`wl-paste`, else `xclip`, off the UI thread.
+//! Clipboard. Copy goes through GTK (our window owns the clipboard; works on Wayland
+//! and X11, no extra tools); reading (for `{clipboard}`) uses `wl-paste`, else
+//! `xclip`, off the UI thread.
 use cef::*;
+use gtk::prelude::*;
 use std::io::{Read, Write};
 use std::process::{Command, Stdio};
 
 pub fn write(text: &str, primary: bool) {
-    let Some(ui) = (!primary).then(crate::window::tabbar_browser).flatten() else {
+    let Some(d) = gtk::gdk::Display::default() else {
         return write_external(text.to_string(), primary);
     };
-    // a copy event in our own tab-bar page; userGesture lets execCommand reach the clipboard
-    let js = format!(
-        "document.addEventListener('copy',e=>{{e.clipboardData.setData('text/plain',{});e.preventDefault()}},{{once:true}});document.execCommand('copy')",
-        serde_json::Value::from(text)
-    );
-    let text = text.to_string();
-    let params = serde_json::json!({"expression": js, "userGesture": true, "returnByValue": true});
-    crate::devtools::call(&ui, "Runtime.evaluate", params, move |r| {
-        if r.and_then(|r| r["result"]["value"].as_bool()) != Some(true) {
-            write_external(text, false);
-        }
-    });
+    let c = if primary { d.primary_clipboard() } else { d.clipboard() };
+    c.set_text(text);
 }
 
 /// (program, args) tried in order: Wayland tool first, then X11.

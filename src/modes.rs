@@ -1,6 +1,8 @@
-//! Modes and key dispatch, decided in `on_pre_key_event` (PLAN.md §3 Keys).
+//! Modes and key dispatch, decided in a capture-phase GTK key handler on each window
+//! before the page or the chrome sees the key (PLAN.md §3 Keys).
 use crate::keys::{self, Key, Keymap, Mods, Outcome, Parser};
 use crate::{commands, config, hints, window};
+use gtk::{gdk, glib, prelude::*};
 use std::cell::RefCell;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -129,11 +131,46 @@ enum Act {
     Prompt(String),
 }
 
-/// A RAWKEYDOWN for a web tab. Returns true to consume it (the page sees nothing).
-pub fn on_key(vk: i32, character: u16, cef_mods: u32) -> bool {
-    let Some(key) = keys::key_from_cef(vk, character, cef_mods) else {
-        return false;
-    };
+/// Capture-phase key handling for window `slot`: keys we don't eat go on to the
+/// focused widget (the page, or the palette's entry in command mode).
+pub fn attach_keys(win: &gtk::Window, slot: usize) {
+    let c = gtk::EventControllerKey::new();
+    c.set_propagation_phase(gtk::PropagationPhase::Capture);
+    c.connect_key_pressed(move |_, keyval, _code, state| {
+        let Some(key) = key_from_event(keyval, state) else {
+            return glib::Propagation::Proceed;
+        };
+        match window::in_slot(slot, || on_key(key)) {
+            true => glib::Propagation::Stop,
+            false => glib::Propagation::Proceed,
+        }
+    });
+    win.add_controller(c);
+}
+
+fn key_from_event(keyval: gdk::Key, state: gdk::ModifierType) -> Option<Key> {
+    let mut mods = Mods::NONE;
+    for (bit, m) in [
+        (gdk::ModifierType::SHIFT_MASK, Mods::SHIFT),
+        (gdk::ModifierType::CONTROL_MASK, Mods::CTRL),
+        (gdk::ModifierType::ALT_MASK, Mods::ALT),
+        (gdk::ModifierType::SUPER_MASK, Mods::META),
+        (gdk::ModifierType::META_MASK, Mods::META),
+    ] {
+        if state.contains(bit) {
+            mods |= m;
+        }
+    }
+    let name = keyval.name().map(|n| n.to_string()).unwrap_or_default();
+    keys::key_from_gdk(&name, keyval.to_unicode(), mods)
+}
+
+/// A key press in a window. Returns true to consume it (the page sees nothing).
+pub fn on_key(key: Key) -> bool {
+    // the tab's right-click menu: j/k/arrows/Tab/Enter/Escape are its own
+    if key.mods == Mods::default() && window::menu_key(&key.name) {
+        return true;
+    }
     // password suggestions open under a login field: Down/Up/Enter/Escape are theirs
     if key.mods == keys::Mods::default() && crate::passwords::on_key(&key.name) {
         return true;
@@ -149,6 +186,7 @@ pub fn on_key(vk: i32, character: u16, cef_mods: u32) -> bool {
         // Only single-key bindings here, so typing "jk" in a form never triggers anything.
         Mode::Insert => single(&s.insert, &key),
         Mode::Passthrough => single(&s.passthrough, &key),
+        // the palette edits its own text and reports back
         Mode::Command => Act::Pass,
         Mode::Prompt => Act::Prompt(key.name.clone()),
         // shortcut: hint-mode keys are fixed (Escape leaves, label chars, Backspace); bindings come with config

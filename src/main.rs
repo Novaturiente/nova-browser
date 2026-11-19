@@ -10,8 +10,9 @@ mod downloads;
 mod hints;
 mod ipc;
 mod modes;
+mod keys_vk;
 mod net;
-mod overlay;
+mod page;
 mod passwords;
 mod permissions;
 mod renderer;
@@ -484,6 +485,8 @@ fn main() {
     }
     // the window is GTK; CEF's own loop (run_message_loop) is a glib loop on the default
     // context, so GTK runs inside it (driving CEF from a GTK loop spun a core: spike S10)
+    // Wayland app_id / X11 WM_CLASS = the .desktop file name (docks, Alt-Tab icons)
+    gtk::glib::set_prgname(Some("novabrowser"));
     gtk::init().expect("gtk init");
     adw::init().expect("libadwaita init");
     let profile = CefString::from(data.to_str().expect("utf-8 data dir"));

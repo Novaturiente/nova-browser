@@ -1,17 +1,11 @@
-//! CEF clients: `TabClient` for web pages, `UiClient` for our bars.
-//! Only `UiClient` handles `nova.send`, so web pages can't drive the browser.
-use crate::{adblock, commands, completion, modes, net, window};
+//! The CEF client for web pages. `pid` is the page (page.rs) the browser draws into.
+//! Our interface is native GTK (chrome/); web pages can't drive the browser.
+use crate::{adblock, commands, modes, net, window};
 use cef::*;
 use std::cell::Cell;
 
 thread_local! {
     static OPEN: Cell<i32> = const { Cell::new(0) };
-    /// Disposition of the popup being created (on_before_popup → on_popup_browser_view_created).
-    static BACKGROUND_POPUP: Cell<bool> = const { Cell::new(false) };
-}
-
-pub fn take_background_popup() -> bool {
-    BACKGROUND_POPUP.replace(false)
 }
 
 fn new_tab_disposition(d: WindowOpenDisposition) -> Option<bool> {
@@ -127,6 +121,10 @@ wrap_context_menu_handler! {
                 m.insert_separator_at(items.len());
             }
         }
+        fn run_context_menu(&self, browser: Option<&mut Browser>, _frame: Option<&mut Frame>, params: Option<&mut ContextMenuParams>, model: Option<&mut MenuModel>, callback: Option<&mut RunContextMenuCallback>) -> ::std::os::raw::c_int {
+            let (Some(b), Some(p), Some(m), Some(cb)) = (browser, params, model, callback) else { return 0 };
+            crate::page::context_menu(b, p.xcoord(), p.ycoord(), m, cb) as i32
+        }
         fn on_context_menu_command(&self, browser: Option<&mut Browser>, _frame: Option<&mut Frame>, params: Option<&mut ContextMenuParams>, command_id: ::std::os::raw::c_int, _event_flags: EventFlags) -> ::std::os::raw::c_int {
             let (Some(b), Some(p)) = (browser, params) else { return 0 };
             if !(MENU_ID_USER_FIRST..MENU_ID_USER_FIRST + 9).contains(&command_id) { return 0; }
@@ -149,15 +147,15 @@ wrap_context_menu_handler! {
 }
 
 wrap_client! {
-    pub struct TabClient {}
+    pub struct TabClient { pid: u64 }
     impl Client {
+        fn render_handler(&self) -> Option<RenderHandler> { Some(crate::page::PageRender::new(self.pid)) }
         fn display_handler(&self) -> Option<DisplayHandler> { Some(TabDisplay::new()) }
         fn load_handler(&self) -> Option<LoadHandler> { Some(TabLoad::new()) }
-        fn life_span_handler(&self) -> Option<LifeSpanHandler> { Some(NovaLifeSpan::new()) }
+        fn life_span_handler(&self) -> Option<LifeSpanHandler> { Some(NovaLifeSpan::new(self.pid)) }
         fn permission_handler(&self) -> Option<PermissionHandler> { Some(TabPermission::new()) }
         fn jsdialog_handler(&self) -> Option<JsdialogHandler> { Some(TabDialogs::new()) }
         fn request_handler(&self) -> Option<RequestHandler> { Some(TabRequest::new()) }
-        fn keyboard_handler(&self) -> Option<KeyboardHandler> { Some(TabKeys::new()) }
         fn download_handler(&self) -> Option<DownloadHandler> { Some(TabDownloads::new()) }
         fn context_menu_handler(&self) -> Option<ContextMenuHandler> { Some(TabMenu::new()) }
         fn find_handler(&self) -> Option<FindHandler> { Some(TabFind::new()) }
@@ -231,49 +229,14 @@ wrap_client! {
     }
 }
 
-wrap_client! {
-    pub struct UiClient {}
-    impl Client {
-        fn life_span_handler(&self) -> Option<LifeSpanHandler> { Some(NovaLifeSpan::new()) }
-        fn keyboard_handler(&self) -> Option<KeyboardHandler> { Some(UiKeys::new()) }
-        fn on_process_message_received(
-            &self,
-            browser: Option<&mut Browser>,
-            _frame: Option<&mut Frame>,
-            _source: ProcessId,
-            message: Option<&mut ProcessMessage>,
-        ) -> ::std::os::raw::c_int {
-            let (Some(b), Some(message)) = (browser, message) else { return 0 };
-            if CefString::from(&message.name()).to_string() != "nova.send" { return 0; }
-            let text = message.argument_list().map(|l| CefString::from(&l.string(0)).to_string()).unwrap_or_default();
-            let (cmd, arg) = text.split_once(' ').unwrap_or((&text, ""));
-            window::in_owner(b, || match (cmd, arg.parse::<i64>()) {
-                ("ready", _) => window::ui_ready(),
-                ("tab", Ok(n)) if n >= 0 => window::show(n as usize),
-                ("close", Ok(n)) if n >= 0 => window::close_user(n as usize, false),
-                ("move", Ok(n)) if n >= 0 => window::move_active(n + 1, false),
-                ("run", _) => { completion::record(arg); window::close_cmdline(); commands::run_from_bar(arg); }
-                ("text", _) => completion::on_text(arg),
-                ("complete", Ok(by)) => completion::select(by),
-                ("hist", Ok(by)) => completion::history_step(by),
-                ("cmdleave", _) => window::close_cmdline(),
-                ("tip", _) => window::tab_tip(arg),
-                ("menu", _) => window::tab_menu(arg),
-                ("menuact", _) => window::tab_menu_action(arg),
-                ("menuclose", _) => window::close_popup(),
-                ("pwpick", Ok(i)) if i >= 0 => crate::passwords::on_click(i as usize),
-                ("answer", _) => crate::permissions::on_key(arg),
-                ("size", _) => window::overlay_size(b.identifier(), arg),
-                _ => eprintln!("novabrowser: unknown UI message {text:?}"),
-            });
-            1
-        }
-    }
-}
-
 wrap_display_handler! {
     struct TabDisplay {}
     impl DisplayHandler {
+        fn on_cursor_change(&self, browser: Option<&mut Browser>, _cursor: ::std::os::raw::c_ulong, type_: CursorType, _custom: Option<&CursorInfo>) -> ::std::os::raw::c_int {
+            // shortcut: custom (image) cursors show the default arrow; add when a site needs it
+            if let Some(b) = browser { crate::page::set_cursor(b, type_); }
+            1
+        }
         fn on_fullscreen_mode_change(&self, browser: Option<&mut Browser>, fullscreen: ::std::os::raw::c_int) {
             let Some(b) = browser else { return };
             window::in_owner(b, || window::page_fullscreen(fullscreen != 0));
@@ -506,36 +469,12 @@ wrap_find_handler! {
     }
 }
 
-wrap_keyboard_handler! {
-    struct UiKeys {}
-    impl KeyboardHandler {
-        fn on_pre_key_event(&self, browser: Option<&mut Browser>, event: Option<&KeyEvent>, _os_event: Option<&mut sys::_XEvent>, _is_shortcut: Option<&mut ::std::os::raw::c_int>) -> ::std::os::raw::c_int {
-            // Only prompts focus the tab bar (window::focus_active); the palette handles its own keys.
-            let (Some(b), Some(e)) = (browser, event) else { return 0 };
-            if e.type_ != KeyEventType::RAWKEYDOWN || modes::mode() != modes::Mode::Prompt { return 0; }
-            window::in_owner(b, || modes::on_key(e.windows_key_code, e.character, e.modifiers)) as i32
-        }
-    }
-}
-
-wrap_keyboard_handler! {
-    struct TabKeys {}
-    impl KeyboardHandler {
-        fn on_pre_key_event(&self, browser: Option<&mut Browser>, event: Option<&KeyEvent>, _os_event: Option<&mut sys::_XEvent>, _is_shortcut: Option<&mut ::std::os::raw::c_int>) -> ::std::os::raw::c_int {
-            // Decide on RAWKEYDOWN only; consuming it makes Chromium drop the CHAR/KEYUP (S3).
-            let (Some(b), Some(e)) = (browser, event) else { return 0 };
-            if e.type_ != KeyEventType::RAWKEYDOWN { return 0; }
-            window::in_owner(b, || modes::on_key(e.windows_key_code, e.character, e.modifiers)) as i32
-        }
-    }
-}
-
 wrap_life_span_handler! {
-    struct NovaLifeSpan {}
+    struct NovaLifeSpan { pid: u64 }
     impl LifeSpanHandler {
         fn on_before_popup(
             &self,
-            _browser: Option<&mut Browser>,
+            browser: Option<&mut Browser>,
             _frame: Option<&mut Frame>,
             _popup_id: ::std::os::raw::c_int,
             _target_url: Option<&CefString>,
@@ -543,29 +482,31 @@ wrap_life_span_handler! {
             target_disposition: WindowOpenDisposition,
             _user_gesture: ::std::os::raw::c_int,
             _popup_features: Option<&PopupFeatures>,
-            _window_info: Option<&mut WindowInfo>,
-            _client: Option<&mut Option<Client>>,
-            _settings: Option<&mut BrowserSettings>,
+            window_info: Option<&mut WindowInfo>,
+            client: Option<&mut Option<Client>>,
+            settings: Option<&mut BrowserSettings>,
             _extra_info: Option<&mut Option<DictionaryValue>>,
             _no_javascript_access: Option<&mut ::std::os::raw::c_int>,
         ) -> ::std::os::raw::c_int {
-            // Allow it: CEF then hands us the popup's BrowserView, which becomes a tab
-            // (window.rs adopt_popup) and keeps window.opener working.
-            BACKGROUND_POPUP.set(target_disposition == WindowOpenDisposition::NEW_BACKGROUND_TAB);
+            // Allow it, windowless with a page of its own: it becomes a tab next to its
+            // opener (page::created, window.rs adopt_popup) and keeps window.opener working.
+            let (Some(b), Some(info), Some(client)) = (browser, window_info, client) else { return 1 };
+            if let Some(s) = settings { s.windowless_frame_rate = 60; } // as window.rs page_settings
+            let foreground = target_disposition != WindowOpenDisposition::NEW_BACKGROUND_TAB;
+            crate::page::popup(b, foreground, info, client);
             0
         }
-        // A closing tab must never close the window (CEF's default for Views), and a
-        // detached tab has no window: CloseHostWindow then hits a CHECK. We finish the
-        // close ourselves: window.rs keeps the removed BrowserView until here, then drops
-        // it (posted, not while CEF is inside DoClose), and that destroys the browser.
+        // The tab goes away in window.rs (did_close, posted: not while CEF is inside
+        // DoClose); false lets CEF destroy the browser (no OS window to close).
         fn do_close(&self, browser: Option<&mut Browser>) -> ::std::os::raw::c_int {
             if let Some(b) = browser {
                 post_task(ThreadId::UI, Some(&mut ReleaseClosing::new(b.clone())));
             }
-            1
+            0
         }
-        fn on_after_created(&self, _browser: Option<&mut Browser>) {
+        fn on_after_created(&self, browser: Option<&mut Browser>) {
             OPEN.set(OPEN.get() + 1);
+            if let Some(b) = browser { crate::page::created(self.pid, b); }
         }
         fn on_before_close(&self, browser: Option<&mut Browser>) {
             if let Some(b) = browser {

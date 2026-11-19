@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- New interface: the window, tab bar, URL box, search pill, which-key, tab
+  menu, password list, questions and messages are native GTK, the same as
+  novabrowser-webkit. Pages are drawn off-screen by Chromium and shown in
+  the GTK window. The URL box floats over the page, which shows blurred
+  behind it. No more popup flash.
+- Right-click menus on pages are GTK menus.
+- DevTools open in a tab next to the page; `devtools` again closes it.
+- Needs gtk4 and libadwaita.
+- Not yet: dragging files or links into pages, or out of them.
+
 ## 0.1.13 (2026-11-19)
 
 - Popups rebuilt as solid cards: the URL box is a drop-down card under the
