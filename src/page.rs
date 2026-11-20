@@ -31,6 +31,8 @@ pub struct Inner {
     clicks: Cell<i32>,
     /// touchpad scroll not yet sent (Chromium takes whole pixels)
     wheel: Cell<(f64, f64)>,
+    /// touchpad coasting after the fingers lift (GTK's kinetic velocity, decaying)
+    fling: RefCell<Option<glib::SourceId>>,
     /// hardware codes of keys whose press the page got (modes.rs eats some presses;
     /// the page must not see their release)
     down: RefCell<Vec<u32>>,
@@ -111,6 +113,7 @@ impl Page {
             pointer: Cell::new((0.0, 0.0)),
             clicks: Cell::new(1),
             wheel: Cell::new((0.0, 0.0)),
+            fling: RefCell::new(None),
             down: RefCell::new(Vec::new()),
             in_key: Cell::new(false),
             composing: Cell::new(false),
@@ -210,17 +213,39 @@ impl Page {
         });
         w.add_controller(up);
 
-        let scroll = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::BOTH_AXES);
+        // KINETIC: a touchpad swipe ends with its velocity (decelerate), so the page
+        // coasts like in GTK apps and Chrome; CEF's wheel events have no momentum
+        let scroll = gtk::EventControllerScroll::new(
+            gtk::EventControllerScrollFlags::BOTH_AXES | gtk::EventControllerScrollFlags::KINETIC,
+        );
+        let m = me.clone();
+        scroll.connect_scroll_begin(move |_| {
+            if let Some(p) = m() { p.stop_fling(); }
+        });
         let m = me.clone();
         scroll.connect_scroll(move |c, dx, dy| {
             let Some(p) = m() else { return glib::Propagation::Proceed };
-            let (px, rest) = wheel_px(p.0.wheel.get(), dx, dy, c.unit() == gdk::ScrollUnit::Wheel);
-            p.0.wheel.set(rest);
-            let (x, y) = p.0.pointer.get();
-            if let Some(h) = p.host().filter(|_| px != (0, 0)) {
-                h.send_mouse_wheel_event(Some(&mouse(x, y, c.current_event_state())), px.0, px.1);
-            }
+            p.stop_fling();
+            p.wheel(dx, dy, c.unit() == gdk::ScrollUnit::Wheel, c.current_event_state());
             glib::Propagation::Stop
+        });
+        let m = me.clone();
+        scroll.connect_decelerate(move |c, vx, vy| {
+            let Some(p) = m() else { return };
+            p.stop_fling();
+            let (state, mut v, m) = (c.current_event_state(), (vx, vy), m.clone());
+            let id = glib::timeout_add_local(std::time::Duration::from_millis(FLING_TICK_MS), move || {
+                let Some(p) = m() else { return glib::ControlFlow::Break };
+                let Some(next) = fling_step(v) else {
+                    p.0.fling.take(); // ends itself: nothing to remove
+                    return glib::ControlFlow::Break;
+                };
+                v = next;
+                let dt = FLING_TICK_MS as f64 / 1000.0;
+                p.wheel(v.0 * dt, v.1 * dt, false, state);
+                glib::ControlFlow::Continue
+            });
+            p.0.fling.replace(Some(id));
         });
         w.add_controller(scroll);
 
@@ -333,6 +358,22 @@ impl Page {
                 });
             }
         });
+    }
+
+    /// Scroll the page by touchpad pixels or wheel notches (`wheel_px`).
+    fn wheel(&self, dx: f64, dy: f64, notches: bool, state: gdk::ModifierType) {
+        let (px, rest) = wheel_px(self.0.wheel.get(), dx, dy, notches);
+        self.0.wheel.set(rest);
+        let (x, y) = self.0.pointer.get();
+        if let Some(h) = self.host().filter(|_| px != (0, 0)) {
+            h.send_mouse_wheel_event(Some(&mouse(x, y, state)), px.0, px.1);
+        }
+    }
+
+    fn stop_fling(&self) {
+        if let Some(id) = self.0.fling.take() {
+            id.remove();
+        }
     }
 
     fn check_size(&self) {
@@ -752,6 +793,15 @@ fn button(n: u32) -> Option<MouseButtonType> {
     }
 }
 
+const FLING_TICK_MS: u64 = 16;
+
+/// Next coasting velocity (px/s) one tick later: slows ~5% a tick (gone in about a
+/// second, like GTK's kinetic scrolling); None once it is too slow to see.
+fn fling_step(v: (f64, f64)) -> Option<(f64, f64)> {
+    let v = (v.0 * 0.95, v.1 * 0.95);
+    (v.0.hypot(v.1) >= 30.0).then_some(v)
+}
+
 /// Scroll (`dx`, `dy`: notches for a wheel, else touchpad pixels) as whole Chromium
 /// pixels (100 a notch, like Chrome; up/left positive) plus what is left for next time.
 fn wheel_px(rest: (f64, f64), dx: f64, dy: f64, notches: bool) -> ((i32, i32), (f64, f64)) {
@@ -816,6 +866,16 @@ mod tests {
         assert_eq!(menu_label("&Back"), "Back");
         assert_eq!(menu_label("Save &As…"), "Save As…");
         assert_eq!(menu_label("Fish && Chips"), "Fish & Chips");
+    }
+
+    #[test]
+    fn fling_slows_then_stops() {
+        let (mut v, mut ticks) = ((0.0, 2000.0), 0);
+        while let Some(n) = fling_step(v) {
+            assert!(n.1 < v.1);
+            (v, ticks) = (n, ticks + 1);
+        }
+        assert!((40..120).contains(&ticks), "{ticks}");
     }
 
     #[test]

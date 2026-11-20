@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.17 (2026-11-20)
+
+- Touchpad scrolling coasts after your fingers lift, like Chrome and GTK apps,
+  instead of stopping dead. Touching the touchpad again stops it.
+
 ## 0.1.16 (2026-11-20)
 
 - Copy and paste work again with other apps. Text copied in a page (Ctrl+C,
