@@ -200,6 +200,13 @@ wrap_client! {
                 if let Ok(y) = y.parse() { window::set_scroll(b, y); }
                 return 1;
             }
+            if name == "nova.copy" {
+                // copied in the page (renderer.rs COPY_JS): only after a trusted copy or a
+                // successful writeText, the same a page could do with the clipboard anyway
+                let text = m.argument_list().map(|l| CefString::from(&l.string(0)).to_string()).unwrap_or_default();
+                crate::clipboard::write(&text, false);
+                return 1;
+            }
             if name == "nova.nav" {
                 // mouse back/forward button (renderer.rs); a page can only move its own tab
                 let dir = m.argument_list().map(|l| CefString::from(&l.string(0)).to_string()).unwrap_or_default();

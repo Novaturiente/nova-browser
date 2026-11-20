@@ -49,7 +49,7 @@ wrap_v8_handler! {
             exception: Option<&mut CefString>,
         ) -> ::std::os::raw::c_int {
             let name = name.map(|n| n.to_string()).unwrap_or_default();
-            if name != "send" && name != "report" && name != "scroll" && name != "nav" {
+            if name != "send" && name != "report" && name != "scroll" && name != "nav" && name != "copy" {
                 return 0;
             }
             let arg = arguments.and_then(|a| a.first()).and_then(|a| a.as_ref()).filter(|a| a.is_string() != 0);
@@ -59,7 +59,7 @@ wrap_v8_handler! {
                 if let Some(e) = exception { e.try_set("nova.send(str): expected a string"); }
                 return 1;
             };
-            let kind = match name.as_str() { "report" => "nova.creds", "scroll" => "nova.scroll", "nav" => "nova.nav", _ => "nova.send" };
+            let kind = match name.as_str() { "report" => "nova.creds", "scroll" => "nova.scroll", "nav" => "nova.nav", "copy" => "nova.copy", _ => "nova.send" };
             let msg = process_message_create(Some(&s(kind))).expect("process_message_create");
             msg.argument_list().expect("argument_list").set_string(0, Some(&CefString::from(&arg.string_value())));
             frame.send_process_message(ProcessId::BROWSER, Some(&mut msg.clone()));
@@ -144,9 +144,34 @@ fn install_helper(frame: &Frame, context: &mut V8Context) {
             HELPERS.with_borrow_mut(|h| h.insert(frame_id(frame), obj));
         }
     }
+    install_fn(context, COPY_JS, "copy");
     if frame.is_main() != 0 {
         install_scroll(context);
         install_nav(context);
+    }
+}
+
+/// Copied text for the system clipboard (client.rs): off-screen Chromium can't reach
+/// it. Trusted copy/cut events (Ctrl+C, the menu) report the selection, or what the
+/// page put in clipboardData; navigator.clipboard.writeText reports once it succeeded.
+const COPY_JS: &str = "(function(r){\
+const sel=()=>{const a=document.activeElement;\
+if(a&&/^(INPUT|TEXTAREA)$/.test(a.tagName)&&typeof a.selectionStart==='number')return a.value.slice(a.selectionStart,a.selectionEnd);\
+return String(getSelection())};\
+for(const k of['copy','cut'])addEventListener(k,e=>{if(!e.isTrusted||!e.clipboardData)return;\
+let s=sel(),set=false;const d=e.clipboardData,o=d.setData.bind(d);\
+d.setData=(t,v)=>{if(/^text(\\/plain)?$/i.test(t)){s=String(v);set=true}return o(t,v)};\
+setTimeout(()=>{if(s&&(set||!e.defaultPrevented))r(s)})},true);\
+const c=navigator.clipboard;if(c&&c.writeText){const w=c.writeText.bind(c);\
+c.writeText=t=>w(t).then(v=>{r(String(t));return v})}})";
+
+/// Evaluate `js` (a function taking our callback) and call it with native `name`.
+fn install_fn(context: &mut V8Context, js: &str, name: &str) {
+    let (mut ret, mut exc) = (None, None);
+    context.eval(Some(&s(js)), Some(&s(&format!("novabrowser://{name}.js"))), 1, Some(&mut ret), Some(&mut exc));
+    if let Some(f) = ret {
+        let r = v8_value_create_function(Some(&s(name)), Some(&mut NovaV8Handler::new()));
+        f.execute_function_with_context(Some(context), None, Some(&[r]));
     }
 }
 

@@ -230,6 +230,11 @@ impl Page {
         let m = me.clone();
         keys.connect_key_pressed(move |c, key, code, state| {
             let Some(p) = m() else { return glib::Propagation::Proceed };
+            if !p.0.composing.get() && is_paste(p.vk(key, code, state), modifiers(state)) {
+                // Chromium's own paste only sees its internal clipboard (clipboard.rs)
+                if let Some(b) = p.browser() { crate::clipboard::paste(&b); }
+                return glib::Propagation::Stop;
+            }
             p.send_key(key, code, state, true);
             p.0.down.borrow_mut().push(code);
             p.0.in_key.set(true);
@@ -345,15 +350,19 @@ impl Page {
         }
     }
 
+    /// Windows key code of a key; on a non-Latin layout the key's code on the first
+    /// layout (Ctrl+C on с), as Chromium does.
+    fn vk(&self, key: gdk::Key, code: u32, state: gdk::ModifierType) -> i32 {
+        match crate::keys_vk::vk(key) {
+            0 => self.0.widget.display().translate_key(code, state, 0).map_or(0, |(k, ..)| crate::keys_vk::vk(k)),
+            vk => vk,
+        }
+    }
+
     fn send_key(&self, key: gdk::Key, code: u32, state: gdk::ModifierType, down: bool) {
         let Some(h) = self.host() else { return };
         let ch = key.to_unicode().map_or(0, |c| c as u32 as u16);
-        let mut vk = crate::keys_vk::vk(key);
-        if vk == 0 {
-            // a non-Latin layout: the key's code on the first layout (Ctrl+C on с), as Chromium does
-            let first = self.0.widget.display().translate_key(code, state, 0);
-            vk = first.map_or(0, |(k, ..)| crate::keys_vk::vk(k));
-        }
+        let mut vk = self.vk(key, code, state);
         if self.0.composing.get() {
             vk = 0xE5; // VKEY_PROCESSKEY: the input method has this key, not the page
         }
@@ -523,9 +532,20 @@ pub fn context_menu(browser: &Browser, x: i32, y: i32, model: &MenuModel, cb: &R
         }
         b.set_sensitive(model.is_enabled_at(i) != 0);
         let (id, cb, pop) = (model.command_id_at(i), cb.clone(), pop.clone());
+        // Chromium's Paste reads its internal clipboard only; ours reads the system one
+        let paste = id == sys::cef_menu_id_t::MENU_ID_PASTE as i32;
+        if paste {
+            b.set_sensitive(true);
+        }
+        let browser = browser.clone();
         b.connect_clicked(move |_| {
             if let Some(c) = cb.take() {
-                c.cont(id, EventFlags::default());
+                if paste {
+                    c.cancel();
+                    crate::clipboard::paste(&browser);
+                } else {
+                    c.cont(id, EventFlags::default());
+                }
             }
             pop.popdown();
         });
@@ -716,6 +736,11 @@ const SHIFT: u32 = 1 << 1;
 const CTRL: u32 = 1 << 2;
 const ALT: u32 = 1 << 3;
 
+/// Ctrl+V, Ctrl+Shift+V or Shift+Insert (Windows key codes V and INSERT).
+fn is_paste(vk: i32, mods: u32) -> bool {
+    (vk == 0x56 && mods & (CTRL | ALT) == CTRL) || (vk == 0x2D && mods & (CTRL | ALT | SHIFT) == SHIFT)
+}
+
 /// CEF mouse button for GTK button `n`; side buttons: None (the renderer turns them
 /// into back/forward).
 fn button(n: u32) -> Option<MouseButtonType> {
@@ -791,6 +816,12 @@ mod tests {
         assert_eq!(menu_label("&Back"), "Back");
         assert_eq!(menu_label("Save &As…"), "Save As…");
         assert_eq!(menu_label("Fish && Chips"), "Fish & Chips");
+    }
+
+    #[test]
+    fn paste_keys() {
+        assert!(is_paste(0x56, CTRL) && is_paste(0x56, CTRL | SHIFT) && is_paste(0x2D, SHIFT));
+        assert!(!is_paste(0x56, 0) && !is_paste(0x56, CTRL | ALT) && !is_paste(0x2D, CTRL | SHIFT) && !is_paste(0x43, CTRL));
     }
 
     #[test]

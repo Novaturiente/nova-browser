@@ -14,6 +14,24 @@ pub fn write(text: &str, primary: bool) {
     c.set_text(text);
 }
 
+/// Paste the system clipboard's text into `browser`'s focused frame. Off-screen
+/// Chromium has no Wayland focus, so it never sees the system clipboard: hand the page
+/// a paste event with the text, and insert it when the page doesn't take it.
+/// shortcut: text only (no images or HTML); read other types too if pages need them.
+pub fn paste(browser: &Browser) {
+    let Some(d) = gtk::gdk::Display::default() else { return };
+    let b = browser.clone();
+    d.clipboard().read_text_async(None::<&gtk::gio::Cancellable>, move |r| {
+        let (Ok(Some(text)), Some(f)) = (r, b.focused_frame().or_else(|| b.main_frame())) else { return };
+        let js = format!("{PASTE_JS}({})", serde_json::Value::from(text.as_str()));
+        f.execute_java_script(Some(&CefString::from(js.as_str())), None, 0);
+    });
+}
+
+const PASTE_JS: &str = "(t=>{const a=document.activeElement||document.body,d=new DataTransfer();d.setData('text/plain',t);\
+if(a.dispatchEvent(new ClipboardEvent('paste',{clipboardData:d,bubbles:true,cancelable:true,composed:true})))\
+document.execCommand('insertText',false,t)})";
+
 /// (program, args) tried in order: Wayland tool first, then X11.
 fn tools(primary: bool, copy: bool) -> [(&'static str, Vec<&'static str>); 2] {
     let sel = if primary { "primary" } else { "clipboard" };

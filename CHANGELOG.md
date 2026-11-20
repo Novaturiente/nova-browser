@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.16 (2026-11-20)
+
+- Copy and paste work again with other apps. Text copied in a page (Ctrl+C,
+  Ctrl+X, the right-click menu, a site's copy button) reaches the system
+  clipboard, and Ctrl+V, Shift+Insert, the menu's Paste and `:paste` paste
+  from it. Pasting is text only for now.
+
 ## 0.1.15 (2026-11-20)
 
 - Tabs look like Safari again (as in 0.1.13): rounded squares, plain
