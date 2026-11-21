@@ -39,7 +39,13 @@ pub struct Inner {
     /// inside the input method's filter for a key press: a one-char commit is typing
     in_key: Cell<bool>,
     composing: Cell<bool>,
+    /// `mobile-toggle`: phone-width viewport, touch and a phone user agent
+    mobile: Cell<bool>,
 }
+
+/// Viewport width and user agent of `mobile-toggle` (iOS freezes the OS token at 18_7).
+const MOBILE_WIDTH: i32 = 390;
+pub const MOBILE_UA: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.0 Mobile/15E148 Safari/604.1";
 
 #[derive(Clone)]
 pub struct Page(Rc<Inner>);
@@ -117,6 +123,7 @@ impl Page {
             down: RefCell::new(Vec::new()),
             in_key: Cell::new(false),
             composing: Cell::new(false),
+            mobile: Cell::new(false),
         });
         PAGES.with_borrow_mut(|p| {
             p.retain(|_, w| w.strong_count() > 0);
@@ -133,6 +140,34 @@ impl Page {
 
     pub fn browser(&self) -> Option<Browser> {
         self.0.browser.borrow().clone()
+    }
+
+    pub fn is_mobile(&self) -> bool {
+        self.0.mobile.get()
+    }
+
+    /// Turn mobile view on or off; takes effect now for the viewport, on the next load for the UA.
+    pub fn set_mobile(&self, on: bool) {
+        self.0.mobile.set(on);
+        self.apply_mobile();
+    }
+
+    /// Chromium's device emulation (as Chrome's device mode): a centred phone-width
+    /// viewport at full height, with touch. Resent after navigation and resizes.
+    pub fn apply_mobile(&self) {
+        let Some(b) = self.browser() else { return };
+        let send = |m: &str, p: serde_json::Value| crate::devtools::send(&b, m, p);
+        if self.is_mobile() {
+            let (w, h) = self.view_size();
+            send("Emulation.setDeviceMetricsOverride", serde_json::json!({
+                "width": MOBILE_WIDTH.min(w), "height": h, "deviceScaleFactor": 0, "mobile": true,
+                "screenWidth": w, "screenHeight": h, "positionX": (w - MOBILE_WIDTH).max(0) / 2, "positionY": 0,
+            }));
+            send("Emulation.setTouchEmulationEnabled", serde_json::json!({ "enabled": true, "maxTouchPoints": 5 }));
+        } else {
+            send("Emulation.clearDeviceMetricsOverride", serde_json::json!({}));
+            send("Emulation.setTouchEmulationEnabled", serde_json::json!({ "enabled": false }));
+        }
     }
 
     fn host(&self) -> Option<BrowserHost> {
@@ -389,6 +424,9 @@ impl Page {
             h.notify_screen_info_changed();
             h.was_resized();
         }
+        if self.is_mobile() {
+            self.apply_mobile();
+        }
     }
 
     /// Windows key code of a key; on a non-Latin layout the key's code on the first
@@ -486,7 +524,7 @@ fn window_info() -> WindowInfo {
     }
 }
 
-// ---- popups and DevTools: CEF creates the browser, it becomes a tab
+// ---- popups: CEF creates the browser, it becomes a tab
 
 /// `on_before_popup`: make the popup windowless with a page of its own; it becomes a
 /// tab of `opener`'s window in `created`.
@@ -498,21 +536,6 @@ pub fn popup(opener: &Browser, foreground: bool, info: &mut WindowInfo, client: 
     ADOPT.with_borrow_mut(|a| a.insert(p.0.pid, (opener.clone(), foreground)));
     // the page lives in PAGES (weak) until adopted: keep it alive meanwhile
     KEEP.with_borrow_mut(|k| k.push(p));
-}
-
-/// DevTools for `browser`, in a new tab next to it.
-pub fn devtools(browser: &Browser) {
-    let Some(h) = browser.host() else { return };
-    let p = Page::blank();
-    ADOPT.with_borrow_mut(|a| a.insert(p.0.pid, (browser.clone(), true)));
-    let pid = p.0.pid;
-    KEEP.with_borrow_mut(|k| k.push(p));
-    h.show_dev_tools(
-        Some(&window_info()),
-        Some(&mut crate::client::TabClient::new(pid)),
-        Some(&BrowserSettings { windowless_frame_rate: 60, ..Default::default() }),
-        None,
-    );
 }
 
 thread_local! {

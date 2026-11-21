@@ -170,6 +170,13 @@ Extra HTTP headers sent with every request: `{Header: value}`. Per site.
 - Type: dict
 - Default: `"{}"`
 
+### `content.user_agent`
+
+User agent string sent to sites and shown as `navigator.userAgent`. Per site. `"safari"` or `"webkit"` (the shared default) keeps Chromium's own user agent.
+
+- Type: string
+- Default: `"\"safari\""`
+
 ### `content.headers.do_not_track`
 
 Send `DNT: 1`. Per site.

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.18 (2026-11-21)
+
+- Mobile view per tab: `:mobile-toggle` gives the current tab a 390 px wide
+  viewport, touch and an iPhone user agent, like Chrome's device mode. Other
+  tabs and the window stay as they are. Run it again to turn it off.
+- `content.user_agent` works in this edition: set a custom user agent per
+  site with `pattern()` or `:set -u`. Sites see it in requests and in
+  `navigator.userAgent`.
+- DevTools (`F12`) open in their own working window again, instead of a
+  blank tab. `F12` again closes them.
+
 ## 0.1.17 (2026-11-20)
 
 - Touchpad scrolling coasts after your fingers lift, like Chrome and GTK apps,

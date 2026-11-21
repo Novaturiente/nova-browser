@@ -555,16 +555,14 @@ pub fn adopt_popup(page: Page, foreground: bool, opener: &Browser) {
     add_tab(page, url, String::new(), foreground, Some(at));
 }
 
-/// `devtools`: close the DevTools tab the active tab opened, else open one next to it.
-/// (CEF's close_dev_tools leaves a windowless DevTools page running.)
+/// `devtools`: open or close this tab's DevTools. CEF 154 always makes them a native
+/// Chrome window (a windowless request gets no frames), so they can't be a tab or pane.
 pub fn toggle_devtools(browser: &Browser) {
-    let n = S.with_borrow(|s| {
-        let key = s.tabs.get(s.active)?.key;
-        s.tabs.iter().position(|t| t.opener == key && t.url.starts_with("devtools:"))
-    });
-    match n {
-        Some(n) => remove(n),
-        None => crate::page::devtools(browser),
+    let Some(h) = browser.host() else { return };
+    if h.has_dev_tools() != 0 {
+        h.close_dev_tools();
+    } else {
+        h.show_dev_tools(Some(&WindowInfo::default()), None, None, None);
     }
 }
 
@@ -861,6 +859,10 @@ pub fn set_url(browser: &Browser, url: String) {
         }
     });
     apply_dark(browser);
+    // a new renderer (first page, cross-site) starts without the emulation
+    if let Some(p) = crate::page::of(browser).filter(Page::is_mobile) {
+        p.apply_mobile();
+    }
 }
 
 /// Per-site dark mode (S5): `pattern()` values of colors.webpage.darkmode.enabled
@@ -1330,6 +1332,7 @@ fn hibernate_browser(id: i32, manual: bool) {
         let tj = tab_json(&s.tabs[n]);
         let t = &mut s.tabs[n];
         let old = std::mem::replace(&mut t.page, Page::new(&url));
+        t.page.set_mobile(old.is_mobile()); // no browser yet: only keeps the flag
         t.back = strs(&tj["back"]);
         t.fwd = strs(&tj["fwd"]).into_iter().rev().collect();
         t.scroll_to = tj["scroll"].as_i64().filter(|y| *y > 0);

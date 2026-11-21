@@ -255,6 +255,15 @@ pub fn set_headers(req: &mut Request, url: &str) {
     }
 }
 
+/// `content.user_agent` for `url`: a custom string, or "" for Chromium's own UA.
+/// "safari"/"webkit" (the shared default) only mean something to the WebKit edition.
+pub fn user_agent_for(url: &str) -> String {
+    match config::get().get_for("content.user_agent", url).as_str() {
+        Some("safari" | "webkit") | None => String::new(),
+        Some(custom) => custom.to_string(),
+    }
+}
+
 /// "en-US,en;q=0.9" -> "en-US,en": CEF wants bare languages and adds q-values itself.
 pub fn language_list(header: &str) -> String {
     header

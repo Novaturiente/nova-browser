@@ -2,10 +2,43 @@
 //! Our interface is native GTK (chrome/); web pages can't drive the browser.
 use crate::{adblock, commands, modes, net, window};
 use cef::*;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 
 thread_local! {
     static OPEN: Cell<i32> = const { Cell::new(0) };
+    /// browser id → the `content.user_agent` override last set on it ("" = none).
+    static USER_AGENT: RefCell<HashMap<i32, String>> = RefCell::new(HashMap::new());
+}
+
+/// Point the tab's UA override at its mobile view's UA, else `content.user_agent` for `url`. Chromium fixed
+/// `navigator.userAgent` for this navigation before on_before_browse, so when the UA
+/// changes a plain GET is cancelled (true) and loaded again; back/forward, redirects
+/// and POSTs keep going with only the header changed.
+fn apply_user_agent(b: &Browser, f: &Frame, r: &Request, url: &str, is_redirect: bool) -> bool {
+    let want = match crate::page::of(b) {
+        Some(p) if p.is_mobile() => crate::page::MOBILE_UA.to_string(),
+        _ => net::user_agent_for(url),
+    };
+    let changed = USER_AGENT.with_borrow_mut(|m| m.insert(b.identifier(), want.clone()).unwrap_or_default() != want);
+    if !changed {
+        return false;
+    }
+    crate::devtools::send(b, "Emulation.setUserAgentOverride", serde_json::json!({ "userAgent": want }));
+    let back_forward = r.transition_type().get_raw() & TransitionType::FORWARD_BACK_FLAG.get_raw() != 0;
+    let restart = !is_redirect && !back_forward && CefString::from(&r.method()).to_string() == "GET";
+    if restart {
+        // shortcut: 50 ms lets the cancelled navigation unwind (an immediate load_url was dropped on cross-site loads); raise it if restarts get lost.
+        post_delayed_task(ThreadId::UI, Some(&mut LoadUrl::new(f.clone(), url.to_string())), 50);
+    }
+    restart
+}
+
+wrap_task! {
+    struct LoadUrl { frame: Frame, url: String }
+    impl Task {
+        fn execute(&self) { self.frame.load_url(Some(&self.url.as_str().into())); }
+    }
 }
 
 /// Live CEF browsers (tabs whose page was created and not closed yet).
@@ -328,9 +361,13 @@ wrap_request_handler! {
             post_task(ThreadId::UI, Some(&mut OpenTab::new(url.to_string(), foreground, b.clone())));
             1
         }
-        fn on_before_browse(&self, browser: Option<&mut Browser>, frame: Option<&mut Frame>, request: Option<&mut Request>, _user_gesture: ::std::os::raw::c_int, _is_redirect: ::std::os::raw::c_int) -> ::std::os::raw::c_int {
+        fn on_before_browse(&self, browser: Option<&mut Browser>, frame: Option<&mut Frame>, request: Option<&mut Request>, _user_gesture: ::std::os::raw::c_int, is_redirect: ::std::os::raw::c_int) -> ::std::os::raw::c_int {
             if let (Some(b), Some(f), Some(r)) = (browser, frame, request) {
-                if f.is_main() != 0 { adblock::on_navigate(b, &CefString::from(&r.url()).to_string()); }
+                if f.is_main() != 0 {
+                    let url = CefString::from(&r.url()).to_string();
+                    if apply_user_agent(b, f, r, &url, is_redirect != 0) { return 1; }
+                    adblock::on_navigate(b, &url);
+                }
             }
             0
         }
@@ -523,6 +560,7 @@ wrap_life_span_handler! {
         fn on_before_close(&self, browser: Option<&mut Browser>) {
             if let Some(b) = browser {
                 crate::devtools::forget(b);
+                USER_AGENT.with_borrow_mut(|m| m.remove(&b.identifier()));
                 adblock::forget(b);
                 crate::permissions::forget(b);
                 crate::passwords::forget(b);

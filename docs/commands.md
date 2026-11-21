@@ -51,7 +51,8 @@ or a 1-based number; without one they act on the current tab.
 | `close [-s]` | Close this window (`-s`: save the session first). |
 | `quit [-s]` | Close every window and exit (`-s`: save the session first). |
 | `fullscreen [--leave]` | Toggle window fullscreen; `--leave` only leaves page fullscreen. |
-| `devtools` | Toggle Chromium DevTools for this tab. |
+| `devtools` | Toggle Chromium DevTools for this tab, in a separate window. |
+| `mobile-toggle` | Toggle mobile view for this tab: a 390 px wide viewport, touch, and an iPhone user agent. |
 
 ## Scrolling and zoom
 
