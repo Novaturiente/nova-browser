@@ -52,7 +52,7 @@ or a 1-based number; without one they act on the current tab.
 | `quit [-s]` | Close every window and exit (`-s`: save the session first). |
 | `fullscreen [--leave]` | Toggle window fullscreen; `--leave` only leaves page fullscreen. |
 | `devtools` | Toggle Chromium DevTools for this tab, in a separate window. |
-| `mobile-toggle` | Toggle mobile view for this tab: a 390 px wide viewport, touch, and an iPhone user agent. |
+| `mobile-toggle [device] [device]` | Toggle mobile view for this tab: the device's viewport, touch and user agent. The tab shows the page inside a device frame at the device's real size, zoomed out to fit. With two devices (default `iphone-16 ipad-air`) it shows the same page on both, side by side; each scrolls on its own, and navigating or reloading either one updates both. Drag a device's bottom-right corner to resize it. Devices: `iphone-se`, `iphone-16`, `iphone-16-pro-max`, `pixel-9`, `galaxy-s24`, `ipad-mini`, `ipad-air`, `ipad-pro-13`, `galaxy-tab-s9`. |
 
 ## Scrolling and zoom
 

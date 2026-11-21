@@ -16,9 +16,9 @@ thread_local! {
 /// changes a plain GET is cancelled (true) and loaded again; back/forward, redirects
 /// and POSTs keep going with only the header changed.
 fn apply_user_agent(b: &Browser, f: &Frame, r: &Request, url: &str, is_redirect: bool) -> bool {
-    let want = match crate::page::of(b) {
-        Some(p) if p.is_mobile() => crate::page::MOBILE_UA.to_string(),
-        _ => net::user_agent_for(url),
+    let want = match crate::page::of(b).and_then(|p| p.device()) {
+        Some(d) => d.ua.to_string(),
+        None => net::user_agent_for(url),
     };
     let changed = USER_AGENT.with_borrow_mut(|m| m.insert(b.identifier(), want.clone()).unwrap_or_default() != want);
     if !changed {

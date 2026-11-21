@@ -361,10 +361,14 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
         "reload" => {
             let b = need()?;
             if !window::reload_crashed(&b) {
-                if cmd.flag("-f", "--force") {
-                    b.reload_ignore_cache()
-                } else {
-                    b.reload()
+                // mobile view: the other device reloads too
+                let twin = crate::page::of(&b).and_then(|p| p.twin()).and_then(|p| p.browser());
+                for b in [Some(b), twin].into_iter().flatten() {
+                    if cmd.flag("-f", "--force") {
+                        b.reload_ignore_cache()
+                    } else {
+                        b.reload()
+                    }
                 }
             }
         }
@@ -461,13 +465,8 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
         "devtools" => {
             window::toggle_devtools(&need()?);
         }
-        "mobile-toggle" => {
-            // shortcut: not in nova-core's NAMES, so `:` completion doesn't list it; add it there when nova-core is next bumped
-            let b = need()?;
-            let p = crate::page::of(&b).ok_or("no page")?;
-            p.set_mobile(!p.is_mobile());
-            b.reload(); // the new user agent applies from the next load
-        }
+        // shortcut: not in nova-core's NAMES, so `:` completion doesn't list it; add it there when nova-core is next bumped
+        "mobile-toggle" => window::mobile_toggle(&cmd.args)?,
         "mode-enter" => modes::enter(match cmd.args.first().map(String::as_str) {
             Some("insert") => modes::Mode::Insert,
             Some("passthrough") => modes::Mode::Passthrough,

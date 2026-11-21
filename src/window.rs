@@ -700,17 +700,17 @@ pub fn show(n: usize) {
     }
     stack.set_visible_child(&w);
     new.ensure(&page_settings());
-    if let Some(h) = old.and_then(|o| o.browser()).and_then(|b| b.host()) {
+    // a split mobile view's side page hides and shows with its tab
+    let hosts = |p: &Page| [Some(p.clone()), p.twin()].into_iter().flatten().filter_map(|p| p.browser()?.host());
+    for h in old.iter().flat_map(hosts) {
         h.was_hidden(1);
     }
     // browser() is None until CEF has created it
-    if let Some(b) = new.browser() {
-        if thaw {
-            devtools::send(&b, "Page.setWebLifecycleState", serde_json::json!({"state": "active"}));
-        }
-        if let Some(h) = b.host() {
-            h.was_hidden(0);
-        }
+    if let Some(b) = new.browser().filter(|_| thaw) {
+        devtools::send(&b, "Page.setWebLifecycleState", serde_json::json!({"state": "active"}));
+    }
+    for h in hosts(&new) {
+        h.was_hidden(0);
     }
     // qutebrowser leaves insert/passthrough when the tab changes
     if modes::mode() != Mode::Command {
@@ -824,12 +824,52 @@ fn unparent(p: &Page) {
 /// Close a removed tab's browser (CEF destroys it after DoClose). A tab that was never
 /// shown has no browser and nothing to close.
 fn release(page: Page) {
+    if let Some(h) = page.unstage().and_then(|s| s.browser()?.host()) {
+        h.close_browser(1);
+    }
     if CLOSED.get() {
         return; // DoClose already ran
     }
     if let Some(h) = page.browser().and_then(|b| b.host()) {
         h.close_browser(1);
     }
+}
+
+/// `mobile-toggle [device] [device]`: show the active tab's page as the first device;
+/// with a second, the same page as that device too, on its right. Off if on.
+pub fn mobile_toggle(devices: &[String]) -> Result<(), String> {
+    let page = S.with_borrow(|s| s.tabs.get(s.active).map(|t| t.page.clone())).ok_or("no active tab")?;
+    let b = page.browser().ok_or("no page")?;
+    if page.device().is_some() {
+        if let Some(h) = page.unstage().and_then(|s| s.browser()?.host()) {
+            h.close_browser(1);
+        }
+        page.set_device(None);
+        b.reload(); // the user agent applies from the next load
+        return Ok(());
+    }
+    let names = match devices {
+        [] => &["iphone-16".to_string(), "ipad-air".to_string()][..],
+        d => d,
+    };
+    let found = names.iter().map(|n| crate::page::device(n)).collect::<Result<Vec<_>, _>>()?;
+    let [first, rest @ ..] = &found[..] else { unreachable!() };
+    if rest.len() > 1 {
+        return Err("usage: mobile-toggle [device] [device]".into());
+    }
+    page.set_device(Some(first));
+    let side = rest.first().map(|second| {
+        let url = b.main_frame().map(|f| CefString::from(&f.url()).to_string()).unwrap_or_default();
+        let side = Page::new(&url);
+        side.set_device(Some(second)); // before its first load: the UA picks it up
+        side
+    });
+    page.stage(side.clone());
+    if let Some(side) = side {
+        side.ensure(&page_settings());
+    }
+    b.reload();
+    Ok(())
 }
 
 /// Apply `f` to the tab owning `browser`, then redraw the bars.
@@ -854,14 +894,21 @@ pub fn set_url(browser: &Browser, url: String) {
             if !url.starts_with("devtools:") {
                 history::visit(&url, typed);
             }
-            t.url = url;
+            t.url = url.clone();
             t.scroll = 0;
         }
     });
     apply_dark(browser);
+    let Some(p) = crate::page::of(browser) else { return };
     // a new renderer (first page, cross-site) starts without the emulation
-    if let Some(p) = crate::page::of(browser).filter(Page::is_mobile) {
+    if p.device().is_some() {
         p.apply_mobile();
+    }
+    // the two pages of a split mobile view follow each other (it stops once both match)
+    if let Some(f) = p.twin().and_then(|t| t.browser()?.main_frame()) {
+        if CefString::from(&f.url()).to_string() != url {
+            f.load_url(Some(&CefString::from(url.as_str())));
+        }
     }
 }
 
@@ -1332,7 +1379,6 @@ fn hibernate_browser(id: i32, manual: bool) {
         let tj = tab_json(&s.tabs[n]);
         let t = &mut s.tabs[n];
         let old = std::mem::replace(&mut t.page, Page::new(&url));
-        t.page.set_mobile(old.is_mobile()); // no browser yet: only keeps the flag
         t.back = strs(&tj["back"]);
         t.fwd = strs(&tj["fwd"]).into_iter().rev().collect();
         t.scroll_to = tj["scroll"].as_i64().filter(|y| *y > 0);

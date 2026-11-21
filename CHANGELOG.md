@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.19 (2026-11-21)
+
+- Mobile view shows devices: `<Space>m` (`:mobile-toggle`) draws the page in
+  an iPhone 16 and an iPad Air (landscape) frame side by side, at their real
+  sizes, zoomed out to fit and centred. Each scrolls on its own; following a
+  link or reloading in either updates both.
+- Pick devices with `:mobile-toggle <device> [device]` (iPhone SE/16/16 Pro
+  Max, Pixel 9, Galaxy S24, iPad mini/Air/Pro 13, Galaxy Tab S9); one device
+  shows it alone.
+- Drag a device's bottom-right corner to resize its width and height, like
+  Chrome's responsive mode.
+
 ## 0.1.18 (2026-11-21)
 
 - Mobile view per tab: `:mobile-toggle` gives the current tab a 390 px wide

@@ -14,6 +14,8 @@ use std::rc::{Rc, Weak};
 
 pub struct Inner {
     pid: u64,
+    /// what the tab shows: `widget`, or a split of it and `side` (mobile-toggle)
+    frame: gtk::Box,
     /// the page area: the picture, with `<select>` popups on a layer above
     widget: gtk::Overlay,
     picture: gtk::Picture,
@@ -39,13 +41,70 @@ pub struct Inner {
     /// inside the input method's filter for a key press: a one-char commit is typing
     in_key: Cell<bool>,
     composing: Cell<bool>,
-    /// `mobile-toggle`: phone-width viewport, touch and a phone user agent
-    mobile: Cell<bool>,
+    /// `mobile-toggle`: the emulated device, its size now (CSS px, the corner grip
+    /// changes it) and the zoom that fits the devices on the stage
+    device: Cell<Option<&'static Device>>,
+    dsize: Cell<(i32, i32)>,
+    dscale: Cell<f64>,
+    /// mobile view: on the main page, the stage it shows instead of itself; on each
+    /// page, the bezel holding it and its label
+    stage: RefCell<Option<gtk::Overlay>>,
+    bezel: RefCell<Option<(gtk::Overlay, gtk::Box, gtk::Label)>>,
+    /// a second device's page, right of this one; it follows this page's URL and back (`main`)
+    side: RefCell<Option<Page>>,
+    main: RefCell<Weak<Inner>>,
 }
 
-/// Viewport width and user agent of `mobile-toggle` (iOS freezes the OS token at 18_7).
-const MOBILE_WIDTH: i32 = 390;
-pub const MOBILE_UA: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.0 Mobile/15E148 Safari/604.1";
+/// Mobile view stage: device bezel width, gap between devices, margin, label height (px).
+const BEZEL: i32 = 14;
+const GAP: i32 = 40;
+const MARGIN: i32 = 24;
+const LABEL: i32 = 28;
+
+pub const CSS: &str = "
+window.nova .nova-stage { background: radial-gradient(circle at 50% 40%, #2c3038, #101114); }
+window.nova .nova-device { background: #0b0b0d; border-radius: 46px; padding: 14px;
+  box-shadow: 0 0 0 2px #3b3f47, 0 0 0 3px #08080a, 0 24px 60px rgba(0,0,0,.55); }
+window.nova .nova-device.tablet { border-radius: 30px; }
+window.nova .nova-screen { border-radius: 32px; }
+window.nova .nova-device.tablet .nova-screen { border-radius: 16px; }
+window.nova .nova-device-label { color: rgba(255,255,255,.65); font-size: 12px; }
+window.nova .nova-grip { min-width: 22px; min-height: 22px; border-radius: 0 0 46px 0;
+  background: linear-gradient(135deg, transparent 55%, rgba(255,255,255,.35) 55%, rgba(255,255,255,.35) 62%, transparent 62%, transparent 72%, rgba(255,255,255,.35) 72%, rgba(255,255,255,.35) 79%, transparent 79%); }
+";
+
+pub struct Device {
+    pub name: &'static str,
+    /// CSS px; wider than tall = landscape
+    w: i32,
+    h: i32,
+    pub ua: &'static str,
+}
+
+// iOS freezes the OS token at 18_7; Android sends Chrome's reduced UA
+const IPHONE: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.0 Mobile/15E148 Safari/604.1";
+const IPAD: &str = "Mozilla/5.0 (iPad; CPU OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.0 Mobile/15E148 Safari/604.1";
+const ANDROID: &str = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Mobile Safari/537.36";
+const ANDROID_TAB: &str = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36";
+
+pub const DEVICES: &[Device] = &[
+    Device { name: "iphone-se", w: 375, h: 667, ua: IPHONE },
+    Device { name: "iphone-16", w: 393, h: 852, ua: IPHONE },
+    Device { name: "iphone-16-pro-max", w: 440, h: 956, ua: IPHONE },
+    Device { name: "pixel-9", w: 412, h: 923, ua: ANDROID },
+    Device { name: "galaxy-s24", w: 360, h: 780, ua: ANDROID },
+    Device { name: "ipad-mini", w: 1024, h: 768, ua: IPAD },
+    Device { name: "ipad-air", w: 1180, h: 820, ua: IPAD },
+    Device { name: "ipad-pro-13", w: 1376, h: 1032, ua: IPAD },
+    Device { name: "galaxy-tab-s9", w: 1280, h: 800, ua: ANDROID_TAB },
+];
+
+pub fn device(name: &str) -> Result<&'static Device, String> {
+    DEVICES.iter().find(|d| d.name == name).ok_or_else(|| {
+        let names: Vec<_> = DEVICES.iter().map(|d| d.name).collect();
+        format!("unknown device {name}; one of: {}", names.join(", "))
+    })
+}
 
 #[derive(Clone)]
 pub struct Page(Rc<Inner>);
@@ -105,8 +164,11 @@ impl Page {
         widget.add_overlay(&layer);
         let im = gtk::IMMulticontext::new();
         im.set_client_widget(Some(&widget));
+        let frame = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        frame.append(&widget);
         let inner = Rc::new(Inner {
             pid,
+            frame,
             widget,
             picture,
             layer,
@@ -123,7 +185,13 @@ impl Page {
             down: RefCell::new(Vec::new()),
             in_key: Cell::new(false),
             composing: Cell::new(false),
-            mobile: Cell::new(false),
+            device: Cell::new(None),
+            dsize: Cell::new((0, 0)),
+            dscale: Cell::new(1.0),
+            stage: RefCell::new(None),
+            bezel: RefCell::new(None),
+            side: RefCell::new(None),
+            main: RefCell::new(Weak::new()),
         });
         PAGES.with_borrow_mut(|p| {
             p.retain(|_, w| w.strong_count() > 0);
@@ -135,38 +203,198 @@ impl Page {
     }
 
     pub fn widget(&self) -> gtk::Widget {
-        self.0.widget.clone().upcast()
+        self.0.frame.clone().upcast()
     }
 
     pub fn browser(&self) -> Option<Browser> {
         self.0.browser.borrow().clone()
     }
 
-    pub fn is_mobile(&self) -> bool {
-        self.0.mobile.get()
+    pub fn device(&self) -> Option<&'static Device> {
+        self.0.device.get()
     }
 
-    /// Turn mobile view on or off; takes effect now for the viewport, on the next load for the UA.
-    pub fn set_mobile(&self, on: bool) {
-        self.0.mobile.set(on);
+    /// Emulate `d` at its own size (None: stop); the viewport changes now, the UA on the next load.
+    pub fn set_device(&self, d: Option<&'static Device>) {
+        self.0.device.set(d);
+        if let Some(d) = d {
+            self.0.dsize.set((d.w, d.h));
+        }
         self.apply_mobile();
     }
 
-    /// Chromium's device emulation (as Chrome's device mode): a centred phone-width
-    /// viewport at full height, with touch. Resent after navigation and resizes.
+    /// The other page of a two-device mobile view.
+    pub fn twin(&self) -> Option<Page> {
+        self.0.side.borrow().clone().or_else(|| self.0.main.borrow().upgrade().map(Page))
+    }
+
+    /// This page and its side page, if any.
+    fn devices(&self) -> Vec<Page> {
+        [Some(self.clone()), self.0.side.borrow().clone()].into_iter().flatten().collect()
+    }
+
+    /// Mobile view: show this page (and `side`, which then follows it) as devices on a
+    /// stage, centred and zoomed out to fit, each resized from its corner grip. The
+    /// caller sets their devices first and creates side's browser.
+    pub fn stage(&self, side: Option<Page>) {
+        let stage = gtk::Overlay::new();
+        stage.add_css_class("nova-stage");
+        let floor = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        floor.set_hexpand(true);
+        floor.set_vexpand(true);
+        stage.set_child(Some(&floor));
+        self.0.frame.remove(&self.0.widget);
+        if let Some(s) = side {
+            s.0.frame.remove(&s.0.widget);
+            s.0.main.replace(Rc::downgrade(&self.0));
+            self.0.side.replace(Some(s));
+        }
+        for p in self.devices() {
+            let bezel = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+            bezel.add_css_class("nova-device");
+            if p.0.dsize.get().0 > 600 {
+                bezel.add_css_class("tablet");
+            }
+            p.0.widget.add_css_class("nova-screen");
+            p.0.widget.set_overflow(gtk::Overflow::Hidden);
+            bezel.append(&p.0.widget);
+            let dev = gtk::Overlay::new();
+            dev.set_child(Some(&bezel));
+            let grip = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+            grip.add_css_class("nova-grip");
+            grip.set_halign(gtk::Align::End);
+            grip.set_valign(gtk::Align::End);
+            grip.set_cursor_from_name(Some("se-resize"));
+            dev.add_overlay(&grip);
+            let label = gtk::Label::new(None);
+            label.add_css_class("nova-device-label");
+            stage.add_overlay(&label);
+            stage.add_overlay(&dev);
+            p.0.bezel.replace(Some((dev, bezel, label)));
+        }
+        // drag a grip: resize its device (CSS px) at the zoom the drag began with. On the
+        // stage, not the grip: the grip moves as the device grows, and its offsets would too.
+        // Twice the motion, since the centred device's corner moves half its growth.
+        let drag = gtk::GestureDrag::new();
+        let start: Rc<RefCell<Option<(Page, i32, i32, f64)>>> = Rc::default();
+        let (weak, st) = (Rc::downgrade(&self.0), start.clone());
+        drag.connect_drag_begin(move |g, x, y| {
+            let me = weak.upgrade().map(Page);
+            let hit = g.widget().and_then(|s| s.pick(x, y, gtk::PickFlags::DEFAULT));
+            let on = me.into_iter().flat_map(|m| m.devices()).find(|p| {
+                let b = p.0.bezel.borrow();
+                let grip = b.as_ref().and_then(|(d, ..)| d.last_child());
+                hit.as_ref().zip(grip).is_some_and(|(h, g)| h == &g || h.is_ancestor(&g))
+            });
+            match on {
+                Some(p) => {
+                    let (w, h) = p.0.dsize.get();
+                    st.replace(Some((p.clone(), w, h, p.0.dscale.get())));
+                    g.set_state(gtk::EventSequenceState::Claimed);
+                }
+                None => {
+                    g.set_state(gtk::EventSequenceState::Denied);
+                }
+            }
+        });
+        let st = start.clone();
+        drag.connect_drag_update(move |g, dx, dy| {
+            let Some((p, w, h, s)) = st.borrow().clone() else { return };
+            p.0.dsize.set(((w + (2.0 * dx / s) as i32).max(200), (h + (2.0 * dy / s) as i32).max(200)));
+            if let Some(stage) = g.widget() {
+                stage.queue_allocate();
+            }
+        });
+        drag.connect_drag_end(move |_, _, _| {
+            start.take();
+        });
+        stage.add_controller(drag);
+        let weak = Rc::downgrade(&self.0);
+        stage.connect_get_child_position(move |stage, w| {
+            let me = Page(weak.upgrade()?);
+            let (rw, rh) = (stage.width(), stage.height());
+            me.place(rw, rh).into_iter().find_map(|(p, label, dev)| {
+                let b = p.0.bezel.borrow();
+                let (d, _, l) = b.as_ref()?;
+                (w == d.upcast_ref::<gtk::Widget>()).then_some(dev).or((w == l.upcast_ref::<gtk::Widget>()).then_some(label))
+            })
+        });
+        self.0.frame.append(&stage);
+        self.0.stage.replace(Some(stage));
+    }
+
+    /// Lay out the devices on a `rw` x `rh` stage: one zoom (at most 1) that fits them
+    /// side by side, each centred by height. Sets each page's zoom; returns each page
+    /// with its label and bezel rectangles.
+    fn place(&self, rw: i32, rh: i32) -> Vec<(Page, gdk::Rectangle, gdk::Rectangle)> {
+        let pages = self.devices();
+        let n = pages.len() as i32;
+        let sum_w: i32 = pages.iter().map(|p| p.0.dsize.get().0).sum();
+        let max_h = pages.iter().map(|p| p.0.dsize.get().1).max().unwrap_or(1);
+        let room_w = rw - 2 * MARGIN - GAP * (n - 1) - 2 * BEZEL * n;
+        let room_h = rh - 2 * MARGIN - LABEL - 2 * BEZEL;
+        let s = (room_w as f64 / sum_w.max(1) as f64).min(room_h as f64 / max_h as f64).clamp(0.1, 1.0);
+        let px = |v: i32| (v as f64 * s).round() as i32;
+        let total: i32 = pages.iter().map(|p| px(p.0.dsize.get().0) + 2 * BEZEL).sum::<i32>() + GAP * (n - 1);
+        let mut x = (rw - total) / 2;
+        pages
+            .into_iter()
+            .map(|p| {
+                p.0.dscale.set(s);
+                let (w, h) = p.0.dsize.get();
+                let (bw, bh) = (px(w) + 2 * BEZEL, px(h) + 2 * BEZEL);
+                let y = ((rh - LABEL - bh) / 2).max(0);
+                let label = gdk::Rectangle::new(x, y, bw, LABEL);
+                let dev = gdk::Rectangle::new(x, y + LABEL, bw, bh);
+                x += bw + GAP;
+                (p, label, dev)
+            })
+            .collect()
+    }
+
+    /// Undo `stage` (no-op if not staged); returns the side page for the caller to close.
+    pub fn unstage(&self) -> Option<Page> {
+        let stage = self.0.stage.take()?;
+        for p in self.devices() {
+            if let Some((_, bezel, _)) = p.0.bezel.take() {
+                bezel.remove(&p.0.widget);
+            }
+            p.0.widget.remove_css_class("nova-screen");
+            p.0.widget.set_overflow(gtk::Overflow::Visible);
+        }
+        self.0.frame.remove(&stage);
+        self.0.frame.append(&self.0.widget);
+        self.0.side.take()
+    }
+
+    /// Chromium's device emulation (as Chrome's device mode), with touch: the device's
+    /// size, zoomed to fit its bezel on the stage. Resent after navigation and resizes.
     pub fn apply_mobile(&self) {
+        if let Some((_, _, label)) = self.0.bezel.borrow().as_ref() {
+            let ((w, h), s) = (self.0.dsize.get(), self.0.dscale.get());
+            let name = self.device().map_or("", |d| d.name);
+            label.set_text(&format!("{name}   {w} × {h}   {:.0}%", s * 100.0));
+        }
         let Some(b) = self.browser() else { return };
         let send = |m: &str, p: serde_json::Value| crate::devtools::send(&b, m, p);
-        if self.is_mobile() {
-            let (w, h) = self.view_size();
-            send("Emulation.setDeviceMetricsOverride", serde_json::json!({
-                "width": MOBILE_WIDTH.min(w), "height": h, "deviceScaleFactor": 0, "mobile": true,
-                "screenWidth": w, "screenHeight": h, "positionX": (w - MOBILE_WIDTH).max(0) / 2, "positionY": 0,
-            }));
-            send("Emulation.setTouchEmulationEnabled", serde_json::json!({ "enabled": true, "maxTouchPoints": 5 }));
-        } else {
-            send("Emulation.clearDeviceMetricsOverride", serde_json::json!({}));
-            send("Emulation.setTouchEmulationEnabled", serde_json::json!({ "enabled": false }));
+        match self.device() {
+            Some(_) => {
+                let ((w, h), s) = (self.0.dsize.get(), self.0.dscale.get());
+                send("Emulation.setDeviceMetricsOverride", serde_json::json!({
+                    "width": w, "height": h, "deviceScaleFactor": 0, "mobile": true, "scale": s,
+                    "screenWidth": w, "screenHeight": h,
+                    "screenOrientation": if w > h {
+                        serde_json::json!({ "type": "landscapePrimary", "angle": 90 })
+                    } else {
+                        serde_json::json!({ "type": "portraitPrimary", "angle": 0 })
+                    },
+                }));
+                send("Emulation.setTouchEmulationEnabled", serde_json::json!({ "enabled": true, "maxTouchPoints": 5 }));
+            }
+            None => {
+                send("Emulation.clearDeviceMetricsOverride", serde_json::json!({}));
+                send("Emulation.setTouchEmulationEnabled", serde_json::json!({ "enabled": false }));
+            }
         }
     }
 
@@ -424,7 +652,7 @@ impl Page {
             h.notify_screen_info_changed();
             h.was_resized();
         }
-        if self.is_mobile() {
+        if self.device().is_some() {
             self.apply_mobile();
         }
     }
@@ -552,6 +780,11 @@ pub fn created(pid: u64, browser: &Browser) {
         return;
     };
     p.0.browser.replace(Some(browser.clone()));
+    if p.device().is_some() {
+        // before the first page's scripts run; a DevTools call inside on_after_created segfaults
+        let p = p.clone();
+        glib::idle_add_local_once(move || p.apply_mobile());
+    }
     if let Some(h) = browser.host() {
         h.was_resized();
         if p.0.widget.has_focus() {
