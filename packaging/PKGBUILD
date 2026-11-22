@@ -18,19 +18,15 @@ conflicts=(novabrowser)
 # libcef.so ships with debug info (~1.4 GB); strip keeps ~280 MB
 options=(strip !lto !debug)
 # Own CEF build (packaging/cef-patches: codecs, privacy patch, PartitionAlloc), x86-64-v3 only.
-_cef=cef-154.0.34-novabrowser-x86_64-v3
+_cef=cef-158.0.3-novabrowser-x86_64-v3
 source=("$pkgname::git+$url.git"
-        "$_cef.tar.zst::$url/releases/download/cef-154.0.34-nova1/$_cef.tar.zst")
+        "$_cef.tar.zst::$url/releases/download/cef-158.0.3-nova1/$_cef.tar.zst")
 sha256sums=(SKIP
-            a88ace6b3f2857e28a9ca9446c041a5cd729a15aa2e838caa7e3d8f9906e285f)
+            51288605db103cb5454322cc54228e5ee993fe4490f8cbacb6c80745b051441a)
 
-# CEF to build against: $NOVA_CEF if set, else our build on AVX2 (x86-64-v3) CPUs,
-# else the official prebuilt that cef-dll-sys downloads (no H.264, no privacy patch).
-_cef_path() {
-  if [[ -n ${NOVA_CEF:-} ]]; then echo "$NOVA_CEF"
-  elif /lib/ld-linux-x86-64.so.2 --help 2>/dev/null | grep -q 'x86-64-v3 (supported'; then echo "$srcdir/cef-own"
-  else echo "$srcdir/cef"; fi
-}
+# CEF to build against: $NOVA_CEF if set, else our build. No official-CEF fallback: the
+# app needs our build's experimental API (on_accelerated_paint2).
+_cef_path() { echo "${NOVA_CEF:-$srcdir/cef-own}"; }
 
 pkgver() {
   cd "$pkgname"
@@ -38,11 +34,13 @@ pkgver() {
 }
 
 prepare() {
+  /lib/ld-linux-x86-64.so.2 --help 2>/dev/null | grep -q 'x86-64-v3 (supported' || {
+    error "novabrowser needs an x86-64-v3 CPU (AVX2: Intel Haswell / AMD Excavator or newer)"
+    return 1
+  }
   cd "$pkgname"
   export CARGO_HOME="$srcdir/cargo-home"
   cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
-  [[ $(_cef_path) == "$srcdir/cef" ]] && \
-    warning "CPU lacks x86-64-v3 (AVX2): using the official prebuilt CEF (no H.264/AAC, no privacy patch)"
   echo "CEF: $(_cef_path)"
 }
 
@@ -51,7 +49,6 @@ build() {
   export CARGO_HOME="$srcdir/cargo-home"
   export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$srcdir=/build"  # no build paths in panic messages
   export CFLAGS="${CFLAGS:-} -ffile-prefix-map=$srcdir=/build"  # QuickJS C sources use __FILE__
-  # $srcdir/cef: cef-dll-sys downloads the matching official minimal build (sha1-checked) there
   CEF_PATH="$(_cef_path)"; export CEF_PATH
   cargo build --release --frozen
 }

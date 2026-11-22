@@ -101,6 +101,7 @@ wrap_browser_process_handler! {
             modes::init();
             net::apply_cookie_policy();
             apply_spellcheck();
+            window::apply_dark_default();
             if let Some(ctx) = request_context_get_global_context() {
                 // signin: no Google sign-in here, stops the accounts.google.com ListAccounts poll.
                 // safebrowsing: without a Google API key its list fetch only gets HTTP 400.
@@ -217,25 +218,12 @@ fn switches(cfg: &config::Config) -> Vec<(String, Option<String>)> {
         "light" => blink.push("preferredColorScheme=1".to_string()),
         _ => {}
     }
-    // Dark mode is on for every page; per-site exclusions switch it off per tab (window.rs).
-    if cfg.bool("colors.webpage.darkmode.enabled") || cfg_any_dark_site(cfg) {
-        blink.push("forceDarkModeEnabled=true".into());
-        let alg = match cfg.str("colors.webpage.darkmode.algorithm").as_str() {
-            "brightness-rgb" => 1,
-            "lightness-hsl" => 2,
-            _ => 3,
-        };
-        let (policy, classifier) = match cfg.str("colors.webpage.darkmode.policy.images").as_str() {
-            "always" => (0, None),
-            "never" => (1, None),
-            "smart-simple" => (2, Some(1)),
-            _ => (2, Some(0)),
-        };
-        let mut dm = format!("InversionAlgorithm={alg},ImagePolicy={policy}");
-        if let Some(c) = classifier {
-            dm.push_str(&format!(",ImageClassifierPolicy={c}"));
-        }
-        out.push(("dark-mode-settings".into(), Some(dm)));
+    // Force dark is per page from a content setting (window.rs apply_dark) with Dark
+    // Reader's colour maps (blink-dark-reader.patch); Chromium 158 ignores the old
+    // `dark-mode-settings` switch, so `algorithm` has no effect. Images: Chromium's icon
+    // classifier, or untouched with `policy.images = never`.
+    if cfg.str("colors.webpage.darkmode.policy.images") == "never" {
+        add("enable-blink-features", Some("AutoDarkModeSkipImages"));
     }
     if !blink.is_empty() {
         out.push(("blink-settings".into(), Some(blink.join(","))));
@@ -243,13 +231,6 @@ fn switches(cfg: &config::Config) -> Vec<(String, Option<String>)> {
     out
 }
 
-/// Dark mode off globally but on for some pattern: still start Chromium with it.
-fn cfg_any_dark_site(cfg: &config::Config) -> bool {
-    cfg.any_pattern_value(
-        "colors.webpage.darkmode.enabled",
-        &serde_json::Value::Bool(true),
-    )
-}
 
 /// `novabrowser [switches] [url]`: first non-switch argument; bare hosts get https://.
 fn start_url() -> Option<String> {
@@ -448,7 +429,8 @@ fn main() {
             return;
         }
     }
-    let _ = api_hash(sys::CEF_API_VERSION_LAST, 0);
+    // experimental: libcef calls on_accelerated_paint2 only for this version (cef-rs sys/build.rs)
+    let _ = api_hash(sys::CEF_API_VERSION_EXPERIMENTAL, 0);
     let args = args::Args::new();
     // Before CEF: config sets Chromium switches. Subprocesses don't need it (they
     // get switches on their command line); loading there would just cost startup.

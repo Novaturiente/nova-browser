@@ -1,0 +1,269 @@
+diff -ru a/third_party/blink/renderer/platform/graphics/dark_mode_filter.cc b/third_party/blink/renderer/platform/graphics/dark_mode_filter.cc
+--- a/third_party/blink/renderer/platform/graphics/dark_mode_filter.cc	2026-11-22 16:45:05.188928670 +0530
++++ b/third_party/blink/renderer/platform/graphics/dark_mode_filter.cc	2026-11-22 16:45:36.423509731 +0530
+@@ -4,6 +4,7 @@
+ 
+ #include "third_party/blink/renderer/platform/graphics/dark_mode_filter.h"
+ 
++#include <algorithm>
+ #include <cmath>
+ #include <optional>
+ 
+@@ -85,21 +86,189 @@
+   return color_filter;
+ }
+ 
++// novabrowser: Dark Reader's dynamic-theme colour maps (MIT,
++// github.com/darkreader/darkreader, src/inject/dynamic-theme/modify-colors.ts:
++// modifyBgHSL, modifyFgHSL, modifyBorderHSL) with its default dark theme
++// (background #181a1b, text #e8e6e3, brightness/contrast 100, no sepia or
++// grayscale, so its final colour matrix is the identity). Same maths as
++// novabrowser-webkit's WebKit patch 0001-color-filter-roles.patch.
++namespace darkreader {
++
++enum class Role : uint64_t { kBackground, kBorder, kForeground };
++
++// double, like Dark Reader's JS numbers (float flips the l < 0.2 / s < 0.24
++// thresholds)
++struct HSLA {
++  double h, s, l, a;
++};
++
++double Scale(double x,
++             double in_low,
++             double in_high,
++             double out_low,
++             double out_high) {
++  return (x - in_low) * (out_high - out_low) / (in_high - in_low) + out_low;
++}
++
++HSLA ToHSL(double r, double g, double b, double a) {
++  const double max = std::max({r, g, b});
++  const double min = std::min({r, g, b});
++  const double c = max - min;
++  const double l = (max + min) / 2;
++  if (!c)
++    return {0, 0, l, a};
++  double h = (max == r   ? std::fmod((g - b) / c, 6.0)
++              : max == g ? (b - r) / c + 2
++                         : (r - g) / c + 4) *
++             60;
++  if (h < 0)
++    h += 360;
++  return {h, c / (1 - std::abs(2 * l - 1)), l, a};
++}
++
++SkColor4f FromHSL(const HSLA& x) {
++  const double c = (1 - std::abs(2 * x.l - 1)) * x.s;
++  const double y = c * (1 - std::abs(std::fmod(x.h / 60, 2.0) - 1));
++  const double m = x.l - c / 2;
++  double r = 0, g = 0, b = 0;
++  if (x.h < 60) {
++    r = c;
++    g = y;
++  } else if (x.h < 120) {
++    r = y;
++    g = c;
++  } else if (x.h < 180) {
++    g = c;
++    b = y;
++  } else if (x.h < 240) {
++    g = y;
++    b = c;
++  } else if (x.h < 300) {
++    r = y;
++    b = c;
++  } else {
++    r = c;
++    b = y;
++  }
++  auto clamp = [](double v) {
++    return static_cast<float>(std::clamp(v, 0.0, 1.0));
++  };
++  return {clamp(r + m), clamp(g + m), clamp(b + m), static_cast<float>(x.a)};
++}
++
++const HSLA& BgPole() {
++  static const HSLA pole = ToHSL(0x18 / 255.0, 0x1a / 255.0, 0x1b / 255.0, 1);
++  return pole;
++}
++
++const HSLA& FgPole() {
++  static const HSLA pole = ToHSL(0xe8 / 255.0, 0xe6 / 255.0, 0xe3 / 255.0, 1);
++  return pole;
++}
++
++HSLA Background(const HSLA& x) {
++  constexpr double kMaxBgLightness = 0.4;
++  const HSLA& pole = BgPole();
++  const bool is_dark = x.l < 0.5;
++  const bool is_blue = x.h > 200 && x.h < 280;
++  const bool is_neutral = x.s < 0.12 || (x.l > 0.8 && is_blue);
++  if (is_dark) {
++    const double lx = Scale(x.l, 0, 0.5, 0, kMaxBgLightness);
++    if (is_neutral)
++      return {pole.h, pole.s, lx, x.a};
++    return {x.h, x.s, lx, x.a};
++  }
++  double lx = Scale(x.l, 0.5, 1, kMaxBgLightness, pole.l);
++  if (is_neutral)
++    return {pole.h, pole.s, lx, x.a};
++  double hx = x.h;
++  if (x.h > 60 && x.h < 180) {
++    hx = x.h > 120 ? Scale(x.h, 120, 180, 135, 180)
++                   : Scale(x.h, 60, 120, 60, 105);
++  }
++  // lower the lightness when the result is in the lower yellow spectrum
++  if (hx > 40 && hx < 80)
++    lx *= 0.75;
++  return {hx, x.s, lx, x.a};
++}
++
++HSLA Foreground(const HSLA& x) {
++  constexpr double kMinFgLightness = 0.55;
++  const HSLA& pole = FgPole();
++  auto blue_hue = [](double h) { return Scale(h, 205, 245, 205, 220); };
++  const bool is_light = x.l > 0.5;
++  const bool is_neutral = x.l < 0.2 || x.s < 0.24;
++  const bool is_blue = !is_neutral && x.h > 205 && x.h < 245;
++  if (is_light) {
++    const double lx = Scale(x.l, 0.5, 1, kMinFgLightness, pole.l);
++    if (is_neutral)
++      return {pole.h, pole.s, lx, x.a};
++    return {is_blue ? blue_hue(x.h) : x.h, x.s, lx, x.a};
++  }
++  if (is_neutral)
++    return {pole.h, pole.s, Scale(x.l, 0, 0.5, pole.l, kMinFgLightness), x.a};
++  if (is_blue) {
++    return {blue_hue(x.h), x.s,
++            Scale(x.l, 0, 0.5, pole.l, std::min(1.0, kMinFgLightness + 0.05)),
++            x.a};
++  }
++  return {x.h, x.s, Scale(x.l, 0, 0.5, pole.l, kMinFgLightness), x.a};
++}
++
++HSLA Border(const HSLA& x) {
++  const bool is_dark = x.l < 0.5;
++  const bool is_neutral = x.l < 0.2 || x.s < 0.24;
++  double hx = x.h, sx = x.s;
++  if (is_neutral) {
++    const HSLA& pole = is_dark ? FgPole() : BgPole();
++    hx = pole.h;
++    sx = pole.s;
++  }
++  return {hx, sx, Scale(x.l, 0, 1, 0.5, 0.2), x.a};
++}
++
++Role RoleFor(DarkModeFilter::ElementRole role) {
++  switch (role) {
++    case DarkModeFilter::ElementRole::kBackground:
++    case DarkModeFilter::ElementRole::kSelection:
++      return Role::kBackground;
++    case DarkModeFilter::ElementRole::kBorder:
++      return Role::kBorder;
++    default:  // text, list markers, SVG paint
++      return Role::kForeground;
++  }
++}
++
++SkColor4f Map(const SkColor4f& color, Role role) {
++  // from 8-bit channels, as Dark Reader parses CSS colours
++  const SkColor c = color.toSkColor();
++  const HSLA x = ToHSL(SkColorGetR(c) / 255.0, SkColorGetG(c) / 255.0,
++                       SkColorGetB(c) / 255.0, color.fA);
++  return FromHSL(role == Role::kBackground ? Background(x)
++                 : role == Role::kBorder   ? Border(x)
++                                           : Foreground(x));
++}
++
++}  // namespace darkreader
++
+ }  // namespace
+ 
+ // DarkModeInvertedColorCache - Implements cache for inverted colors.
++// novabrowser: keyed by colour and Dark Reader role (each role has its own map).
+ class DarkModeInvertedColorCache {
+  public:
+   DarkModeInvertedColorCache() : cache_(kMaxCacheSize) {}
+   ~DarkModeInvertedColorCache() = default;
+ 
+-  SkColor4f GetInvertedColor(DarkModeColorFilter* filter, SkColor4f color) {
+-    SkColor key = color.toSkColor();
++  SkColor4f GetInvertedColor(SkColor4f color, DarkModeFilter::ElementRole role) {
++    const darkreader::Role dr_role = darkreader::RoleFor(role);
++    const uint64_t key =
++        (static_cast<uint64_t>(dr_role) << 32) | color.toSkColor();
+     auto it = cache_.Get(key);
+     if (it != cache_.end())
+       return it->second;
+ 
+-    SkColor4f inverted_color = filter->InvertColor(color);
++    SkColor4f inverted_color = darkreader::Map(color, dr_role);
+     cache_.Put(key, inverted_color);
+     return inverted_color;
+   }
+@@ -109,7 +278,7 @@
+   size_t size() { return cache_.size(); }
+ 
+  private:
+-  base::HashingLRUCache<SkColor, SkColor4f> cache_;
++  base::HashingLRUCache<uint64_t, SkColor4f> cache_;
+ };
+ 
+ DarkModeFilter::DarkModeFilter(const DarkModeSettings& settings)
+@@ -149,17 +318,8 @@
+   }();
+ 
+   switch (role) {
+-    case ElementRole::kBorder: {
+-      if (color == SkColor4f{0.0f, 0.0f, 0.0f, color.fA})
+-        return color;
+-
+-      if (color_utils::GetContrastRatio(color, background) <
+-          color_utils::kMinimumReadableContrastRatio)
+-        return color;
+-
+-      return AdjustDarkenColor(Color::FromSkColor4f(color).Dark().toSkColor4f(),
+-                               role, background);
+-    }
++    // novabrowser: no border darkening, Dark Reader's border map already puts
++    // borders at 20-50% lightness.
+     case ElementRole::kSelection: {
+       if (!immutable_.color_filter)
+         return color;
+@@ -187,8 +347,7 @@
+     return color;
+ 
+   if (ShouldApplyToColor(color, role)) {
+-    return inverted_color_cache_->GetInvertedColor(
+-        immutable_.color_filter.get(), color);
++    return inverted_color_cache_->GetInvertedColor(color, role);
+   }
+ 
+   return color;
+@@ -259,8 +418,7 @@
+   cc::PaintFlags dark_mode_flags = flags;
+   SkColor4f flags_color = flags.getColor4f();
+   if (ShouldApplyToColor(flags_color, role)) {
+-    flags_color = inverted_color_cache_->GetInvertedColor(
+-        immutable_.color_filter.get(), flags_color);
++    flags_color = inverted_color_cache_->GetInvertedColor(flags_color, role);
+   }
+   dark_mode_flags.setColor(AdjustDarkenColor(
+       flags_color, role,
+diff -ru a/third_party/blink/renderer/platform/graphics/dark_mode_settings_builder.cc b/third_party/blink/renderer/platform/graphics/dark_mode_settings_builder.cc
+--- a/third_party/blink/renderer/platform/graphics/dark_mode_settings_builder.cc	2026-11-22 16:45:05.192466677 +0530
++++ b/third_party/blink/renderer/platform/graphics/dark_mode_settings_builder.cc	2026-11-22 16:45:36.422195778 +0530
+@@ -19,8 +19,10 @@
+ namespace {
+ 
+ // Default values for dark mode settings.
+-const constexpr int kDefaultForegroundBrightnessThreshold = 150;
+-const constexpr int kDefaultBackgroundBrightnessThreshold = 205;
++// novabrowser: every colour goes through Dark Reader's maps (dark_mode_filter.cc),
++// which keep dark backgrounds dark and light text light, so classify none out.
++const constexpr int kDefaultForegroundBrightnessThreshold = 255;
++const constexpr int kDefaultBackgroundBrightnessThreshold = 0;
+ 
+ template <typename T>
+ T Clamp(T value, T min_value, T max_value) {

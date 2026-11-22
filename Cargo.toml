@@ -1,13 +1,15 @@
 [package]
 name = "novabrowser"
-version = "0.1.19"
+version = "0.1.20"
 edition = "2021"
 license = "GPL-3.0-or-later"
 publish = false
 
 [dependencies]
 adblock = { version = "0.13.3", default-features = false, features = ["embedded-domain-resolver", "full-regex-handling"] }
-cef = "=154.5.0"  # exact: must match the CEF binary version (154.0.34)
+# our cef-rs branch nova-158: bindings from our CEF 158.0.3 build, experimental API
+# (on_accelerated_paint2, packaging/cef-patches/osr-hold-texture.patch)
+cef = { git = "https://github.com/Novaturiente/cef-rs", rev = "1e2efc0c8fe65216acf8a011ec1d03019e5f8db9" }
 # the window and its interface (src/chrome/, from novabrowser-webkit); pages are off-screen
 # CEF browsers drawn as GTK textures (src/page.rs)
 gtk = { package = "gtk4", version = "0.11", features = ["v4_14"] }

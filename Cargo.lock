@@ -267,9 +267,8 @@ dependencies = [
 
 [[package]]
 name = "cef"
-version = "154.5.0+154.0.34"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "495579dcbddc7917da3c64d19de23771744743463dc77dddb6bddfd0ce97930b"
+version = "158.0.0+158.0.3"
+source = "git+https://github.com/Novaturiente/cef-rs?rev=1e2efc0c8fe65216acf8a011ec1d03019e5f8db9#1e2efc0c8fe65216acf8a011ec1d03019e5f8db9"
 dependencies = [
  "anyhow",
  "cargo_metadata",
@@ -287,9 +286,8 @@ dependencies = [
 
 [[package]]
 name = "cef-dll-sys"
-version = "154.5.0+154.0.34"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a52b7101d21b13aaa09e5047510bc6b6720140de0ee2a65d132b9fd70fbf5f69"
+version = "158.0.0+158.0.3"
+source = "git+https://github.com/Novaturiente/cef-rs?rev=1e2efc0c8fe65216acf8a011ec1d03019e5f8db9#1e2efc0c8fe65216acf8a011ec1d03019e5f8db9"
 dependencies = [
  "anyhow",
  "cc",
@@ -475,9 +473,8 @@ dependencies = [
 
 [[package]]
 name = "download-cef"
-version = "3.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "05ee509499d14dc47da5f824e4bb1bd558ceb259adc5475956265d48787a80da"
+version = "3.0.1"
+source = "git+https://github.com/Novaturiente/cef-rs?rev=1e2efc0c8fe65216acf8a011ec1d03019e5f8db9#1e2efc0c8fe65216acf8a011ec1d03019e5f8db9"
 dependencies = [
  "bzip2",
  "clap",
@@ -1367,7 +1364,7 @@ dependencies = [
 
 [[package]]
 name = "novabrowser"
-version = "0.1.19"
+version = "0.1.20"
 dependencies = [
  "adblock",
  "cef",

@@ -548,21 +548,21 @@ What `prefers-color-scheme` reports to pages. Restart needed.
 
 ### `colors.webpage.darkmode.enabled`
 
-Chromium's forced dark mode for pages. Per site; `<Space>td` toggles it for a site.
+Forced dark mode for pages, with Dark Reader's colour maps (backgrounds to #181a1b, text to #e8e6e3, hues kept; pages already dark stay dark). Per site; `<Space>td` toggles it for a site and the change shows at once.
 
 - Type: bool
 - Default: `"false"`
 
 ### `colors.webpage.darkmode.algorithm`
 
-How forced dark mode inverts colours. Restart needed.
+Ignored: Chromium 158 has one dark-mode algorithm, and novabrowser's CEF build replaces it with Dark Reader's colour maps.
 
 - Type: `lightness-cielab` / `lightness-hsl` / `brightness-rgb`
 - Default: `"\"lightness-cielab\""`
 
 ### `colors.webpage.darkmode.policy.images`
 
-Whether forced dark mode also inverts images. Restart needed.
+Whether forced dark mode also inverts images. `never` leaves every image alone; the other values let Chromium invert icon-like images. Restart needed.
 
 - Type: `always` / `never` / `smart` / `smart-simple`
 - Default: `"\"smart\""`

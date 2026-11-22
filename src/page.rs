@@ -28,6 +28,8 @@ pub struct Inner {
     /// last size told to CEF, in logical px, and the scale with it
     size: Cell<(i32, i32)>,
     scale: Cell<f64>,
+    /// frame rate last told to CEF (the monitor's refresh rate), 0 = not yet
+    hz: Cell<i32>,
     pointer: Cell<(f64, f64)>,
     /// click count of the last press (its release repeats it)
     clicks: Cell<i32>,
@@ -178,6 +180,7 @@ impl Page {
             pending: RefCell::new(None),
             size: Cell::new((0, 0)),
             scale: Cell::new(0.0),
+            hz: Cell::new(0),
             pointer: Cell::new((0.0, 0.0)),
             clicks: Cell::new(1),
             wheel: Cell::new((0.0, 0.0)),
@@ -617,6 +620,7 @@ impl Page {
                 clock.connect_after_paint(move |_| {
                     if let Some(p) = m() {
                         p.check_size();
+                        p.check_rate();
                     }
                 });
             }
@@ -654,6 +658,21 @@ impl Page {
         }
         if self.device().is_some() {
             self.apply_mobile();
+        }
+    }
+
+    /// Frames as often as the window's monitor refreshes (page_settings' 60 until the
+    /// browser exists); follows the window to another monitor.
+    fn check_rate(&self) {
+        let w = &self.0.widget;
+        let Some(m) = w.native().and_then(|n| n.surface()).and_then(|s| w.display().monitor_at_surface(&s)) else { return };
+        let hz = (m.refresh_rate() + 500) / 1000; // mHz
+        if hz <= 0 || hz == self.0.hz.get() {
+            return;
+        }
+        if let Some(h) = self.host() {
+            h.set_windowless_frame_rate(hz);
+            self.0.hz.set(hz);
         }
     }
 

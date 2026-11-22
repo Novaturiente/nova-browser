@@ -28,8 +28,6 @@ struct Tab {
     can_back: bool,
     can_fwd: bool,
     muted: bool,
-    /// Dark-mode override sent to this tab: None = none sent, Some(None) = cleared.
-    dark: Option<Option<bool>>,
     /// History from a restored session that CEF can't hold (it can't restore
     /// navigation entries): `back` oldest first, `fwd` nearest last. Used once
     /// the real history runs out, via `location.replace` (see `go`).
@@ -113,8 +111,6 @@ struct State {
     start_url: Option<String>,
     /// Message to show once the window exists (config errors at startup).
     startup: Option<(String, String)>,
-    /// Chromium was started with force-dark on (switches are fixed at startup).
-    dark_global: bool,
     /// Slot taken by a window (created or being created); slots are never reused.
     claimed: bool,
     /// Session part (one window's tabs) to open when this window is created.
@@ -247,9 +243,6 @@ pub fn create(start_url: Option<String>) {
 
 /// Open a new window (`open -w`, session restore); it opens `start_url` or `restore`'s tabs.
 fn create_window(start_url: Option<String>, restore: Option<Value>) {
-    let cfg = config::get();
-    let dark = cfg.bool("colors.webpage.darkmode.enabled")
-        || cfg.any_pattern_value("colors.webpage.darkmode.enabled", &Value::Bool(true));
     // the first window takes the slot startup messages were queued in
     let slot = WINS.with_borrow_mut(|w| {
         let slot = match w.iter().position(|s| !s.claimed) {
@@ -263,7 +256,6 @@ fn create_window(start_url: Option<String>, restore: Option<Value>) {
         s.claimed = true;
         s.start_url = start_url;
         s.restore = restore;
-        s.dark_global = dark;
         slot
     });
     in_slot(slot, || build_window(slot));
@@ -485,7 +477,6 @@ fn add_tab(page: Page, url: String, title: String, foreground: bool, opener: Opt
             can_back: false,
             can_fwd: false,
             muted: false,
-            dark: None,
             back: Vec::new(),
             fwd: Vec::new(),
             scroll: 0,
@@ -898,7 +889,6 @@ pub fn set_url(browser: &Browser, url: String) {
             t.scroll = 0;
         }
     });
-    apply_dark(browser);
     let Some(p) = crate::page::of(browser) else { return };
     // a new renderer (first page, cross-site) starts without the emulation
     if p.device().is_some() {
@@ -912,36 +902,38 @@ pub fn set_url(browser: &Browser, url: String) {
     }
 }
 
-/// Per-site dark mode (S5): `pattern()` values of colors.webpage.darkmode.enabled
-/// override Chromium's global force-dark for this tab; the override survives navigation.
-fn apply_dark(browser: &Browser) {
-    let id = browser.identifier();
-    let cfg = config::get();
-    let send = in_owner(browser, || {
-        S.with_borrow_mut(|s| {
-            let global = s.dark_global;
-            let t = s.tabs.iter_mut().find(|t| bid(&t.page) == Some(id))?;
-            // our own data: pages follow the UI theme, never force-dark
-            let want = !t.url.starts_with("data:")
-                && cfg.get_for("colors.webpage.darkmode.enabled", &t.url).as_bool().unwrap_or(false);
-            let over = (want != global).then_some(want);
-            // Resend overrides every time: one sent before the renderer exists is lost
-            // (first page of a new tab). Clear only once.
-            let prev = t.dark.replace(over);
-            (over.is_some() || matches!(prev, Some(Some(_)))).then_some(over)
-        })
-    });
-    match send {
-        Some(Some(on)) => devtools::send(
-            browser,
-            "Emulation.setAutoDarkModeOverride",
-            serde_json::json!({ "enabled": on }),
-        ),
-        Some(None) => {
-            devtools::send(browser, "Emulation.setAutoDarkModeOverride", serde_json::json!({}))
-        }
-        None => {}
+const DARK: &str = "colors.webpage.darkmode.enabled";
+
+/// Dark mode everywhere or not: the default of Chromium's AUTO_DARK_WEB_CONTENT content
+/// setting, which our CEF build reads per page (packaging/cef-patches/per-site-dark.patch;
+/// http(s) pages only, so our data: pages follow the UI theme). At startup and on config
+/// changes.
+pub fn apply_dark_default() {
+    if std::env::var_os("NOVA_TMP_NODARK").is_some() { return; } // TEMP
+    let Some(ctx) = request_context_get_global_context() else { return };
+    let v = if config::get().bool(DARK) { ContentSettingValues::ALLOW } else { ContentSettingValues::BLOCK };
+    ctx.set_content_setting(None, None, ContentSettingTypes::AUTO_DARK_WEB_CONTENT, v);
+}
+
+/// Per-site dark mode: `pattern()` values of colors.webpage.darkmode.enabled become an
+/// exception for `url`'s origin, set before each main-frame navigation (client.rs) so the
+/// page paints dark or light from the start; a change recomputes open pages at once.
+/// shortcut: one value per origin, so path patterns (`*://host/path/*`) hold for the last
+/// page navigated on that origin; fine while patterns are per host (dark-toggle).
+pub fn apply_dark(url: &str) {
+    if !url.starts_with("http") || std::env::var_os("NOVA_TMP_NODARK").is_some() { // TEMP
+        return;
     }
+    let Some(ctx) = request_context_get_global_context() else { return };
+    let cfg = config::get();
+    let want = cfg.get_for(DARK, url).as_bool().unwrap_or(false);
+    let v = match (want, cfg.bool(DARK)) {
+        (w, g) if w == g => ContentSettingValues::DEFAULT,
+        (true, _) => ContentSettingValues::ALLOW,
+        _ => ContentSettingValues::BLOCK,
+    };
+    let u = CefString::from(url);
+    ctx.set_content_setting(Some(&u), Some(&u), ContentSettingTypes::AUTO_DARK_WEB_CONTENT, v);
 }
 
 pub fn set_title(browser: &Browser, title: String) {
@@ -983,7 +975,6 @@ pub fn set_loading(browser: &Browser, loading: bool, back: bool, fwd: bool) {
         let js = format!("scrollTo(0,{y});setTimeout(()=>scrollY||scrollTo(0,{y}),1000)");
         f.execute_java_script(Some(&CefString::from(js.as_str())), None, 0);
     }
-    apply_dark(browser);
 }
 
 pub fn set_scroll(browser: &Browser, y: i64) {
@@ -1387,7 +1378,6 @@ fn hibernate_browser(id: i32, manual: bool) {
         t.progress = 0.0;
         t.can_back = false;
         t.can_fwd = false;
-        t.dark = None;
         t.frozen = false;
         Some(old)
     });
@@ -2002,16 +1992,16 @@ pub fn config_changed() {
     modes::init();
     crate::net::apply_cookie_policy();
     crate::apply_spellcheck();
+    apply_dark_default();
     // every window, not just the one that ran :set
     let slots: Vec<usize> =
         WINS.with_borrow(|w| (0..w.len()).filter(|&i| w[i].window.is_some()).collect());
     for i in slots {
         in_slot(i, || {
             apply_layout();
-            let browsers: Vec<Browser> =
-                S.with_borrow(|s| s.tabs.iter().filter_map(|t| t.page.browser()).collect());
-            for b in &browsers {
-                apply_dark(b);
+            let urls: Vec<String> = S.with_borrow(|s| s.tabs.iter().map(|t| t.url.clone()).collect());
+            for u in &urls {
+                apply_dark(u);
             }
             refresh();
         });

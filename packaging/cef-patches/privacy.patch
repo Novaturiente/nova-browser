@@ -24,30 +24,3 @@ index 9fd11c9f72..93ac39c324 100644
  #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
    RegisterRecoveryImprovedComponent(cus, g_browser_process->local_state());
  #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
-diff --git a/components/signin/internal/identity_manager/gaia_cookie_manager_service.cc b/components/signin/internal/identity_manager/gaia_cookie_manager_service.cc
-index db2e0266aa..5cf36c4102 100644
---- a/components/signin/internal/identity_manager/gaia_cookie_manager_service.cc
-+++ b/components/signin/internal/identity_manager/gaia_cookie_manager_service.cc
-@@ -525,21 +525,7 @@ GaiaCookieManagerService::GetCachedListAccounts() {
- }
- 
- void GaiaCookieManagerService::TriggerListAccounts() {
--  // Callers suspect that a check to Gaia needs to be done, don't rely on the
--  // in progress request, conditions might have changed while the request is
--  // in-flight.
--  // Note: /ListAccounts requests is optimized in `OptimizeListAccounts()`
--  // called in `HandleNextRequest()`. Only if there are no other requests in the
--  // queue that `HandleNextRequest()` won't be called before executing
--  // /ListAccounts.
--  requests_.push_back(GaiaCookieRequest::CreateListAccountsRequest());
--  if (requests_.size() == 1) {
--    fetcher_retries_ = 0;
--    listAccountsUnexpectedServerResponseRetried_ = false;
--    signin_client_->DelayNetworkCall(
--        base::BindOnce(&GaiaCookieManagerService::StartFetchingListAccounts,
--                       weak_ptr_factory_.GetWeakPtr()));
--  }
-+  // novabrowser: no Google sign-in; never send the account cookies to Gaia.
- }
- 
- void GaiaCookieManagerService::TriggerListAccountsIfStale() {

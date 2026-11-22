@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.20 (2026-11-22)
+
+- Runs on our own CEF 158.0.3 build (Chromium 158), up from 154.
+- Forced dark mode uses Dark Reader's colours: white backgrounds become
+  `#181a1b`, black text becomes `#e8e6e3`, and colours keep their hue.
+  Pages that are already dark stay as they are.
+- `<Space>td` (`dark-toggle`) switches a site dark or light at once,
+  without a reload.
+- `colors.webpage.darkmode.algorithm` is ignored now: there is one
+  algorithm. `colors.webpage.darkmode.policy.images = never` leaves all
+  images alone.
+- A tab shown again no longer stays blank when many pages are visible.
+- Sites see "Google Chrome" in the browser brand list (`Sec-CH-UA`).
+- Page animations follow your monitor's refresh rate instead of 60 fps.
+
 ## 0.1.19 (2026-11-21)
 
 - Mobile view shows devices: `<Space>m` (`:mobile-toggle`) draws the page in

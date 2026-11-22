@@ -1,0 +1,130 @@
+--- a/components/content_settings/core/browser/content_settings_registry.cc
++++ b/components/content_settings/core/browser/content_settings_registry.cc
+@@ -593,7 +593,10 @@
+            /*allowlisted_primary_schemes=*/{},
+            /*valid_settings=*/{CONTENT_SETTING_ALLOW, CONTENT_SETTING_BLOCK},
+            WebsiteSettingsInfo::TOP_ORIGIN_ONLY_SCOPE,
+-           WebsiteSettingsRegistry::PLATFORM_ANDROID
++           // novabrowser: per-site force dark on Linux too (CEF reads it in
++           // chrome_content_browser_client_cef.cc)
++           WebsiteSettingsRegistry::PLATFORM_ANDROID |
++               WebsiteSettingsRegistry::PLATFORM_LINUX
+ #if BUILDFLAG(USE_BLINK)
+                | WebsiteSettingsRegistry::PLATFORM_IOS
+ #endif
+diff --git a/cef/libcef/browser/chrome/chrome_content_browser_client_cef.cc b/cef/libcef/browser/chrome/chrome_content_browser_client_cef.cc
+index f98b76b..9a3435b 100644
+--- a/cef/libcef/browser/chrome/chrome_content_browser_client_cef.cc
++++ b/cef/libcef/browser/chrome/chrome_content_browser_client_cef.cc
+@@ -29,6 +29,8 @@
+ #include "cef/libcef/common/cef_switches.h"
+ #include "cef/libcef/common/command_line_impl.h"
+ #include "chrome/browser/chrome_browser_main.h"
++#include "chrome/browser/content_settings/host_content_settings_map_factory.h"
++#include "components/content_settings/core/browser/host_content_settings_map.h"
+ #include "chrome/browser/net/system_network_context_manager.h"
+ #include "chrome/browser/picture_in_picture/picture_in_picture_window_manager.h"
+ #include "chrome/browser/profiles/profile.h"
+@@ -438,6 +440,25 @@ void ChromeContentBrowserClientCef::CreateWindowResult(
+   CefBrowserInfoManager::GetInstance()->CreateWindowResult(opener, success);
+ }
+ 
++namespace {
++
++// novabrowser: force dark per site from the AUTO_DARK_WEB_CONTENT content
++// setting (its default = dark everywhere or not, exceptions per origin), for
++// http(s) pages only: the browser's own data: and chrome: pages never.
++bool ForceDarkForContents(content::WebContents* web_contents) {
++  const GURL& url = web_contents->GetLastCommittedURL();
++  if (!url.SchemeIsHTTPOrHTTPS()) {
++    return false;
++  }
++  auto* map = HostContentSettingsMapFactory::GetForProfile(
++      Profile::FromBrowserContext(web_contents->GetBrowserContext()));
++  return map && map->GetContentSetting(
++                    url, url, ContentSettingsType::AUTO_DARK_WEB_CONTENT) ==
++                    CONTENT_SETTING_ALLOW;
++}
++
++}  // namespace
++
+ void ChromeContentBrowserClientCef::OverrideWebPreferences(
+     content::WebContents* web_contents,
+     content::SiteInstance& main_frame_site,
+@@ -446,6 +467,7 @@ void ChromeContentBrowserClientCef::OverrideWebPreferences(
+ 
+   ChromeContentBrowserClient::OverrideWebPreferences(web_contents,
+                                                      main_frame_site, prefs);
++  prefs->force_dark_mode_enabled = ForceDarkForContents(web_contents);
+ 
+   SkColor base_background_color;
+   auto browser = CefBrowserHostBase::GetBrowserForContents(web_contents);
+@@ -482,6 +504,19 @@ void ChromeContentBrowserClientCef::OverrideWebPreferences(
+   web_contents->SetPageBaseBackgroundColor(base_background_color);
+ }
+ 
++bool ChromeContentBrowserClientCef::OverrideWebPreferencesAfterNavigation(
++    content::WebContents* web_contents,
++    content::SiteInstance& main_frame_site,
++    blink::web_pref::WebPreferences* prefs) {
++  bool changed =
++      ChromeContentBrowserClient::OverrideWebPreferencesAfterNavigation(
++          web_contents, main_frame_site, prefs);
++  const bool dark = ForceDarkForContents(web_contents);
++  changed |= prefs->force_dark_mode_enabled != dark;
++  prefs->force_dark_mode_enabled = dark;
++  return changed;
++}
++
+ void ChromeContentBrowserClientCef::WillCreateURLLoaderFactory(
+     content::BrowserContext* browser_context,
+     content::RenderFrameHost* frame,
+diff --git a/cef/libcef/browser/chrome/chrome_content_browser_client_cef.h b/cef/libcef/browser/chrome/chrome_content_browser_client_cef.h
+index adc603a..66a473d 100644
+--- a/cef/libcef/browser/chrome/chrome_content_browser_client_cef.h
++++ b/cef/libcef/browser/chrome/chrome_content_browser_client_cef.h
+@@ -74,6 +74,10 @@ class ChromeContentBrowserClientCef : public ChromeContentBrowserClient {
+   void OverrideWebPreferences(content::WebContents* web_contents,
+                               content::SiteInstance& main_frame_site,
+                               blink::web_pref::WebPreferences* prefs) override;
++  bool OverrideWebPreferencesAfterNavigation(
++      content::WebContents* web_contents,
++      content::SiteInstance& main_frame_site,
++      blink::web_pref::WebPreferences* prefs) override;
+   void WillCreateURLLoaderFactory(
+       content::BrowserContext* browser_context,
+       content::RenderFrameHost* frame,
+diff --git a/cef/libcef/browser/request_context_impl.cc b/cef/libcef/browser/request_context_impl.cc
+index 40dc090..8d7ed8a 100644
+--- a/cef/libcef/browser/request_context_impl.cc
++++ b/cef/libcef/browser/request_context_impl.cc
+@@ -8,6 +8,8 @@
+ #include "base/logging.h"
+ #include "base/strings/stringprintf.h"
+ #include "cef/libcef/browser/browser_context.h"
++#include "cef/libcef/browser/browser_host_base.h"
++#include "cef/libcef/browser/browser_info_manager.h"
+ #include "cef/libcef/browser/context.h"
+ #include "cef/libcef/browser/prefs/pref_helper.h"
+ #include "cef/libcef/browser/setting_helper.h"
+@@ -987,6 +989,20 @@ void CefRequestContextImpl::SetContentSettingInternal(
+           requesting_gurl, top_level_gurl, *setting_type, *content_setting);
+     }
+   }
++
++  // novabrowser: per-site force dark is read when web preferences are
++  // computed (chrome_content_browser_client_cef.cc); recompute them for open
++  // pages so a change shows now.
++  if (content_type == CEF_CONTENT_SETTING_TYPE_AUTO_DARK_WEB_CONTENT) {
++    for (const auto& browser_info :
++         CefBrowserInfoManager::GetInstance()->GetBrowserInfoList()) {
++      if (auto browser = browser_info->browser()) {
++        if (auto* web_contents = browser->GetWebContents()) {
++          web_contents->OnWebPreferencesChanged();
++        }
++      }
++    }
++  }
+ }
+ 
+ void CefRequestContextImpl::SetChromeColorSchemeInternal(

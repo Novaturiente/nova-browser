@@ -1,0 +1,833 @@
+diff --git a/include/cef_render_handler.h b/include/cef_render_handler.h
+index 66aa606de7..52a69ff78b 100644
+--- a/include/cef_render_handler.h
++++ b/include/cef_render_handler.h
+@@ -43,6 +43,7 @@
+ #include "include/cef_accessibility_handler.h"
+ #include "include/cef_base.h"
+ #include "include/cef_browser.h"
++#include "include/cef_callback.h"
+ #include "include/cef_drag_data.h"
+ 
+ ///
+@@ -172,6 +173,31 @@ class CefRenderHandler : public virtual CefBaseRefCounted {
+                                   const RectList& dirtyRects,
+                                   const CefAcceleratedPaintInfo& info) {}
+ 
++#if CEF_API_ADDED(CEF_EXPERIMENTAL)
++  ///
++  /// Called when an element has been rendered to the shared texture handle.
++  /// Same as the variant without |callback|, except that the resource described
++  /// by |info|, including its handles, stays valid and unmodified until the
++  /// frame is released. Executing |callback| (Continue or Cancel) or releasing
++  /// its last reference releases the frame once this call returns; do either on
++  /// any thread once all GPU work that reads the resource has completed. |info|
++  /// itself is only valid during this call, so copy any values needed later. At
++  /// most 4 frames are held per popup or page, and a new popup or page, such as
++  /// after a cross-site navigation, starts a new count. Further paints are
++  /// dropped until one is released, and the popup or page is then repainted
++  /// whole. Return true to handle the paint, or false to call the variant
++  /// without |callback| instead.
++  ///
++  /*--cef(added=experimental,capi_name=on_accelerated_paint2)--*/
++  virtual bool OnAcceleratedPaint(CefRefPtr<CefBrowser> browser,
++                                  PaintElementType type,
++                                  const RectList& dirtyRects,
++                                  const CefAcceleratedPaintInfo& info,
++                                  CefRefPtr<CefCallback> callback) {
++    return false;
++  }
++#endif  // CEF_API_ADDED(CEF_EXPERIMENTAL)
++
+   ///
+   /// Called to retrieve the size of the touch handle for the specified
+   /// |orientation|.
+diff --git a/libcef/browser/osr/render_widget_host_view_osr.cc b/libcef/browser/osr/render_widget_host_view_osr.cc
+index a4298bd55a..8a6da48611 100644
+--- a/libcef/browser/osr/render_widget_host_view_osr.cc
++++ b/libcef/browser/osr/render_widget_host_view_osr.cc
+@@ -24,6 +24,7 @@
+ #include "cef/libcef/browser/osr/touch_selection_controller_client_osr.h"
+ #include "cef/libcef/browser/osr/video_consumer_osr.h"
+ #include "cef/libcef/browser/thread_util.h"
++#include "cef/libcef/common/api_version_util.h"
+ #include "components/input/cursor_manager.h"
+ #include "components/input/render_widget_host_input_event_router.h"
+ #include "components/input/switches.h"
+@@ -1792,7 +1793,8 @@ void CefRenderWidgetHostViewOSR::OnPaint(const gfx::Rect& damage_rect,
+ void CefRenderWidgetHostViewOSR::OnAcceleratedPaint(
+     const gfx::Rect& damage_rect,
+     const gfx::Size& pixel_size,
+-    const CefAcceleratedPaintInfo& info) {
++    const CefAcceleratedPaintInfo& info,
++    CefRefPtr<CefCallback> callback) {
+   TRACE_EVENT0("cef", "CefRenderWidgetHostViewOSR::OnAcceleratedPaint");
+ 
+   // Workaround for https://github.com/chromiumembedded/cef/issues/2817
+@@ -1814,9 +1816,12 @@ void CefRenderWidgetHostViewOSR::OnAcceleratedPaint(
+   // The client may close the browser and destroy this object from within the
+   // callback.
+   auto weak_this = weak_ptr_factory_.GetWeakPtr();
+-  handler->OnAcceleratedPaint(browser_impl_.get(),
+-                              IsPopupWidget() ? PET_POPUP : PET_VIEW, rcList,
+-                              info);
++  CefRefPtr<CefBrowser> browser = browser_impl_.get();
++  const auto type = IsPopupWidget() ? PET_POPUP : PET_VIEW;
++  if (!CEF_API_IS_ADDED(CEF_EXPERIMENTAL) ||
++      !handler->OnAcceleratedPaint(browser, type, rcList, info, callback)) {
++    handler->OnAcceleratedPaint(browser, type, rcList, info);
++  }
+   if (!weak_this) {
+     return;
+   }
+diff --git a/libcef/browser/osr/render_widget_host_view_osr.h b/libcef/browser/osr/render_widget_host_view_osr.h
+index e31ae96ed5..8f9114ef68 100644
+--- a/libcef/browser/osr/render_widget_host_view_osr.h
++++ b/libcef/browser/osr/render_widget_host_view_osr.h
+@@ -18,6 +18,7 @@
+ #include "cc/layers/deadline_policy.h"
+ #include "cef/include/cef_base.h"
+ #include "cef/include/cef_browser.h"
++#include "cef/include/cef_callback.h"
+ #include "cef/libcef/browser/alloy/alloy_browser_host_impl.h"
+ #include "cef/libcef/browser/osr/external_begin_frame_request_state.h"
+ #include "cef/libcef/browser/osr/host_display_client_osr.h"
+@@ -277,7 +278,8 @@ class CefRenderWidgetHostViewOSR
+                const void* pixels);
+   void OnAcceleratedPaint(const gfx::Rect& damage_rect,
+                           const gfx::Size& pixel_size,
+-                          const CefAcceleratedPaintInfo& info);
++                          const CefAcceleratedPaintInfo& info,
++                          CefRefPtr<CefCallback> callback);
+ 
+   void OnBeginFame(base::TimeTicks frame_time);
+ 
+diff --git a/libcef/browser/osr/video_consumer_osr.cc b/libcef/browser/osr/video_consumer_osr.cc
+index 46700e3506..13cd7acf7e 100644
+--- a/libcef/browser/osr/video_consumer_osr.cc
++++ b/libcef/browser/osr/video_consumer_osr.cc
+@@ -4,8 +4,13 @@
+ 
+ #include "cef/libcef/browser/osr/video_consumer_osr.h"
+ 
++#include <utility>
++
++#include "base/functional/callback_helpers.h"
+ #include "build/build_config.h"
++#include "cef/include/cef_callback.h"
+ #include "cef/libcef/browser/osr/render_widget_host_view_osr.h"
++#include "cef/libcef/browser/thread_util.h"
+ #include "media/base/video_frame_metadata.h"
+ #include "media/capture/mojom/video_capture_buffer.mojom.h"
+ #include "media/capture/mojom/video_capture_types.mojom.h"
+@@ -13,17 +18,51 @@
+ 
+ namespace {
+ 
+-// Helper to always call Done() at the end of OnFrameCaptured().
+-class ScopedVideoFrameDone {
++// The capturer redelivers unchanged frames without taking a buffer from its
++// pool, so the pool does not bound how many frames a client holds.
++constexpr int kMaxHeldFrames = 4;
++
++// Holds a shared texture frame and its handles until executed or destroyed.
++// Releases on the UI thread, where |on_released_| reaches the consumer, and in
++// a later task when executed so that the frame outlives the paint call. Closing
++// |callbacks_| releases the frame like Done() (see viz::InFlightFrameDelivery).
++class CefAcceleratedPaintCallbackImpl : public CefCallback {
+  public:
+-  explicit ScopedVideoFrameDone(
++  CefAcceleratedPaintCallbackImpl(
++      media::mojom::VideoBufferHandlePtr data,
+       mojo::PendingRemote<viz::mojom::FrameSinkVideoConsumerFrameCallbacks>
+-          callbacks)
+-      : callbacks_(std::move(callbacks)) {}
+-  ~ScopedVideoFrameDone() { callbacks_->Done(); }
++          callbacks,
++      base::OnceClosure on_released)
++      : on_released_(std::move(on_released)),
++        data_(std::move(data)),
++        callbacks_(std::move(callbacks)) {}
++
++  CefAcceleratedPaintCallbackImpl(const CefAcceleratedPaintCallbackImpl&) =
++      delete;
++  CefAcceleratedPaintCallbackImpl& operator=(
++      const CefAcceleratedPaintCallbackImpl&) = delete;
++
++  void Continue() override {
++    CEF_POST_TASK(
++        CEF_UIT,
++        base::BindOnce(&CefAcceleratedPaintCallbackImpl::ReleaseFrame, this));
++  }
++
++  void Cancel() override { Continue(); }
+ 
+  private:
+-  mojo::Remote<viz::mojom::FrameSinkVideoConsumerFrameCallbacks> callbacks_;
++  void ReleaseFrame() {
++    data_.reset();
++    callbacks_.reset();
++    on_released_.RunAndReset();
++  }
++
++  base::ScopedClosureRunner on_released_;
++  media::mojom::VideoBufferHandlePtr data_;
++  mojo::PendingRemote<viz::mojom::FrameSinkVideoConsumerFrameCallbacks>
++      callbacks_;
++
++  IMPLEMENT_REFCOUNTING_DELETE_ON_UIT(CefAcceleratedPaintCallbackImpl);
+ };
+ 
+ }  // namespace
+@@ -85,6 +124,14 @@ void CefVideoConsumerOSR::RequestRefreshFrame(
+   video_capturer_->RequestRefreshFrame();
+ }
+ 
++void CefVideoConsumerOSR::OnFrameReleased() {
++  --held_frames_;
++  if (std::exchange(repaint_on_release_, false)) {
++    // Frames were dropped with their damage, so repaint the whole view.
++    RequestRefreshFrame(gfx::Rect(size_in_pixels_));
++  }
++}
++
+ // Frame size values are as follows:
+ //   info->coded_size = Width and height of the video frame. Not all pixels in
+ //   this region are valid.
+@@ -99,8 +146,7 @@ void CefVideoConsumerOSR::OnFrameCaptured(
+     const gfx::Rect& content_rect,
+     mojo::PendingRemote<viz::mojom::FrameSinkVideoConsumerFrameCallbacks>
+         callbacks) {
+-  ScopedVideoFrameDone scoped_done(std::move(callbacks));
+-
++  // Destroying |callbacks| returns the frame to the capturer's pool.
+   media::VideoFrameMetadata metadata = info->metadata;
+   gfx::Rect damage_rect;
+ 
+@@ -127,6 +173,11 @@ void CefVideoConsumerOSR::OnFrameCaptured(
+ 
+   // If it is GPU Texture OSR.
+   if (use_shared_texture_) {
++    if (held_frames_ == kMaxHeldFrames) {
++      repaint_on_release_ = true;
++      return;
++    }
++
+     CHECK(data->is_gpu_memory_buffer_handle() &&
+           (info->pixel_format == media::PIXEL_FORMAT_ARGB ||
+            info->pixel_format == media::PIXEL_FORMAT_ABGR));
+@@ -180,7 +231,6 @@ void CefVideoConsumerOSR::OnFrameCaptured(
+     paint_info.extra = extra;
+     paint_info.shared_texture_handle = gmb_handle.dxgi_handle().buffer_handle();
+     paint_info.format = pixel_format;
+-    view_->OnAcceleratedPaint(damage_rect, info->coded_size, paint_info);
+ #elif BUILDFLAG(IS_APPLE)
+     auto& gmb_handle = data->get_gpu_memory_buffer_handle();
+     cef_accelerated_paint_info_t paint_info = {
+@@ -188,7 +238,6 @@ void CefVideoConsumerOSR::OnFrameCaptured(
+     paint_info.extra = extra;
+     paint_info.shared_texture_io_surface = gmb_handle.io_surface().get();
+     paint_info.format = pixel_format;
+-    view_->OnAcceleratedPaint(damage_rect, info->coded_size, paint_info);
+ #elif BUILDFLAG(IS_LINUX)
+     auto& gmb_handle = data->get_gpu_memory_buffer_handle();
+     auto& native_pixmap = gmb_handle.native_pixmap_handle();
+@@ -210,8 +259,14 @@ void CefVideoConsumerOSR::OnFrameCaptured(
+       cef_plane.fd = plane.fd.get();
+       paint_info.planes[cef_plain_index++] = cef_plane;
+     }
+-    view_->OnAcceleratedPaint(damage_rect, info->coded_size, paint_info);
+ #endif
++    ++held_frames_;
++    view_->OnAcceleratedPaint(
++        damage_rect, info->coded_size, paint_info,
++        new CefAcceleratedPaintCallbackImpl(
++            std::move(data), std::move(callbacks),
++            base::BindOnce(&CefVideoConsumerOSR::OnFrameReleased,
++                           weak_ptr_factory_.GetWeakPtr())));
+     return;
+   }
+ 
+diff --git a/libcef/browser/osr/video_consumer_osr.h b/libcef/browser/osr/video_consumer_osr.h
+index c5aad5c6e9..3fafd334bf 100644
+--- a/libcef/browser/osr/video_consumer_osr.h
++++ b/libcef/browser/osr/video_consumer_osr.h
+@@ -5,6 +5,7 @@
+ 
+ #include "base/functional/callback.h"
+ #include "base/memory/raw_ptr.h"
++#include "base/memory/weak_ptr.h"
+ #include "components/viz/host/client_frame_sink_video_capturer.h"
+ #include "media/capture/mojom/video_capture_types.mojom.h"
+ 
+@@ -39,6 +40,8 @@ class CefVideoConsumerOSR : public viz::mojom::FrameSinkVideoConsumer {
+   void OnNewCaptureVersion(
+       const media::CaptureVersion& capture_version) override {}
+ 
++  void OnFrameReleased();
++
+   const bool use_shared_texture_;
+ 
+   const raw_ptr<CefRenderWidgetHostViewOSR> view_;
+@@ -46,6 +49,13 @@ class CefVideoConsumerOSR : public viz::mojom::FrameSinkVideoConsumer {
+ 
+   gfx::Size size_in_pixels_;
+   std::optional<gfx::Rect> bounds_in_pixels_;
++
++  // Shared texture frames delivered and not yet released by the client. Not
++  // reset by capture restarts.
++  int held_frames_ = 0;
++  bool repaint_on_release_ = false;
++
++  base::WeakPtrFactory<CefVideoConsumerOSR> weak_ptr_factory_{this};
+ };
+ 
+ #endif  // LIBCEF_BROWSER_OSR_VIDEO_CONSUMER_OSR_H_
+diff --git a/tests/cefclient/browser/client_handler_osr.cc b/tests/cefclient/browser/client_handler_osr.cc
+index 667e22063e..94c4d2385f 100644
+--- a/tests/cefclient/browser/client_handler_osr.cc
++++ b/tests/cefclient/browser/client_handler_osr.cc
+@@ -140,6 +140,35 @@ void ClientHandlerOsr::OnAcceleratedPaint(
+   osr_delegate_->OnAcceleratedPaint(browser, type, dirtyRects, info);
+ }
+ 
++#if CEF_API_ADDED(CEF_EXPERIMENTAL)
++bool ClientHandlerOsr::OnAcceleratedPaint(
++    CefRefPtr<CefBrowser> browser,
++    CefRenderHandler::PaintElementType type,
++    const CefRenderHandler::RectList& dirtyRects,
++    const CefAcceleratedPaintInfo& info,
++    CefRefPtr<CefCallback> callback) {
++  CEF_REQUIRE_UI_THREAD();
++  if (frames_to_hold_ == 0) {
++    return false;
++  }
++  // The delegate draws synchronously, so holding drawn frames only exercises
++  // retention: releasing them at once would also be safe.
++  OnAcceleratedPaint(browser, type, dirtyRects, info);
++  held_frames_.push_back(callback);
++  SetFramesToHold(frames_to_hold_);
++  return true;
++}
++#endif  // CEF_API_ADDED(CEF_EXPERIMENTAL)
++
++void ClientHandlerOsr::SetFramesToHold(size_t count) {
++  CEF_REQUIRE_UI_THREAD();
++  frames_to_hold_ = count;
++  while (held_frames_.size() > count) {
++    held_frames_.front()->Continue();
++    held_frames_.pop_front();
++  }
++}
++
+ bool ClientHandlerOsr::StartDragging(
+     CefRefPtr<CefBrowser> browser,
+     CefRefPtr<CefDragData> drag_data,
+diff --git a/tests/cefclient/browser/client_handler_osr.h b/tests/cefclient/browser/client_handler_osr.h
+index 7409081eae..2594395a49 100644
+--- a/tests/cefclient/browser/client_handler_osr.h
++++ b/tests/cefclient/browser/client_handler_osr.h
+@@ -6,6 +6,8 @@
+ #define CEF_TESTS_CEFCLIENT_BROWSER_CLIENT_HANDLER_OSR_H_
+ #pragma once
+ 
++#include <deque>
++
+ #include "tests/cefclient/browser/client_handler.h"
+ 
+ namespace client {
+@@ -91,6 +93,11 @@ class ClientHandlerOsr : public ClientHandler,
+   // OsrDelegate to detach itself before destruction.
+   void DetachOsrDelegate();
+ 
++  // Holds the |count| most recent shared texture frames after painting them,
++  // releasing older ones. Zero releases each frame when its paint returns.
++  void SetFramesToHold(size_t count);
++  size_t frames_to_hold() const { return frames_to_hold_; }
++
+   // CefClient methods.
+   CefRefPtr<CefRenderHandler> GetRenderHandler() override { return this; }
+   CefRefPtr<CefAccessibilityHandler> GetAccessibilityHandler() override {
+@@ -123,6 +130,13 @@ class ClientHandlerOsr : public ClientHandler,
+                           CefRenderHandler::PaintElementType type,
+                           const CefRenderHandler::RectList& dirtyRects,
+                           const CefAcceleratedPaintInfo& info) override;
++#if CEF_API_ADDED(CEF_EXPERIMENTAL)
++  bool OnAcceleratedPaint(CefRefPtr<CefBrowser> browser,
++                          CefRenderHandler::PaintElementType type,
++                          const CefRenderHandler::RectList& dirtyRects,
++                          const CefAcceleratedPaintInfo& info,
++                          CefRefPtr<CefCallback> callback) override;
++#endif  // CEF_API_ADDED(CEF_EXPERIMENTAL)
+   bool StartDragging(CefRefPtr<CefBrowser> browser,
+                      CefRefPtr<CefDragData> drag_data,
+                      CefRenderHandler::DragOperationsMask allowed_ops,
+@@ -152,6 +166,8 @@ class ClientHandlerOsr : public ClientHandler,
+ 
+   // Only accessed on the UI thread.
+   OsrDelegate* osr_delegate_;
++  size_t frames_to_hold_ = 0;
++  std::deque<CefRefPtr<CefCallback>> held_frames_;
+ 
+   // Include the default reference counting implementation.
+   IMPLEMENT_REFCOUNTING(ClientHandlerOsr);
+diff --git a/tests/cefclient/browser/resource.h b/tests/cefclient/browser/resource.h
+index 37c561d055..69cf5a7032 100644
+--- a/tests/cefclient/browser/resource.h
++++ b/tests/cefclient/browser/resource.h
+@@ -42,7 +42,8 @@
+ #define ID_TESTS_MUTE_AUDIO 32716
+ #define ID_TESTS_UNMUTE_AUDIO 32717
+ #define ID_TESTS_DUMP_WITHOUT_CRASHING 32718
+-#define ID_TESTS_LAST 32718
++#define ID_TESTS_OSR_HOLD_FRAMES 32719
++#define ID_TESTS_LAST 32719
+ #define IDC_STATIC -1
+ #define IDS_BINARY_TRANSFER_HTML 1000
+ #define IDS_BINDING_HTML 1001
+diff --git a/tests/cefclient/browser/root_window_gtk.cc b/tests/cefclient/browser/root_window_gtk.cc
+index 4ca8407b95..fd294acc44 100644
+--- a/tests/cefclient/browser/root_window_gtk.cc
++++ b/tests/cefclient/browser/root_window_gtk.cc
+@@ -1192,6 +1192,7 @@ GtkWidget* RootWindowGtk::CreateMenuBar() {
+   if (with_osr_) {
+     AddMenuEntry(test_menu, "Set FPS", ID_TESTS_OSR_FPS);
+     AddMenuEntry(test_menu, "Set Scale Factor", ID_TESTS_OSR_DSF);
++    AddMenuEntry(test_menu, "Hold Frames", ID_TESTS_OSR_HOLD_FRAMES);
+   }
+   AddMenuEntry(test_menu, "Begin Tracing", ID_TESTS_TRACING_BEGIN);
+   AddMenuEntry(test_menu, "End Tracing", ID_TESTS_TRACING_END);
+diff --git a/tests/cefclient/browser/root_window_win.cc b/tests/cefclient/browser/root_window_win.cc
+index 50614971a3..27358f593d 100644
+--- a/tests/cefclient/browser/root_window_win.cc
++++ b/tests/cefclient/browser/root_window_win.cc
+@@ -1193,6 +1193,7 @@ void RootWindowWin::OnCreate(LPCREATESTRUCT lpCreateStruct) {
+         if (hTestMenu) {
+           ::RemoveMenu(hTestMenu, ID_TESTS_OSR_FPS, MF_BYCOMMAND);
+           ::RemoveMenu(hTestMenu, ID_TESTS_OSR_DSF, MF_BYCOMMAND);
++          ::RemoveMenu(hTestMenu, ID_TESTS_OSR_HOLD_FRAMES, MF_BYCOMMAND);
+         }
+       }
+     }
+diff --git a/tests/cefclient/browser/test_runner.cc b/tests/cefclient/browser/test_runner.cc
+index 94f4a1b903..34f2280657 100644
+--- a/tests/cefclient/browser/test_runner.cc
++++ b/tests/cefclient/browser/test_runner.cc
+@@ -21,6 +21,7 @@
+ #include "tests/cefclient/browser/base_client_handler.h"
+ #include "tests/cefclient/browser/binary_transfer_test.h"
+ #include "tests/cefclient/browser/binding_test.h"
++#include "tests/cefclient/browser/client_handler_osr.h"
+ #include "tests/cefclient/browser/component_test.h"
+ #include "tests/cefclient/browser/config_test.h"
+ #include "tests/cefclient/browser/dialog_test.h"
+@@ -169,6 +170,7 @@ void RunDialogWindowTest(CefRefPtr<CefBrowser> browser) {
+ const char kPrompt[] = "Prompt.";
+ const char kPromptFPS[] = "FPS";
+ const char kPromptDSF[] = "DSF";
++const char kPromptHoldFrames[] = "HoldFrames";
+ 
+ // Handles execution of prompt results.
+ class PromptHandler : public CefMessageRouterBrowserSide::Handler {
+@@ -203,6 +205,11 @@ class PromptHandler : public CefMessageRouterBrowserSide::Handler {
+         SetFPS(browser, atoi(value.c_str()));
+       } else if (type == kPromptDSF) {
+         SetDSF(browser, static_cast<float>(atof(value.c_str())));
++      } else if (type == kPromptHoldFrames) {
++        if (auto handler = ClientHandlerOsr::GetForClient(
++                browser->GetHost()->GetClient())) {
++          handler->SetFramesToHold(std::max(atoi(value.c_str()), 0));
++        }
+       }
+     }
+ 
+@@ -263,6 +270,20 @@ void PromptFPS(CefRefPtr<CefBrowser> browser) {
+   Prompt(browser, kPromptFPS, "Enter FPS", ss.str());
+ }
+ 
++void PromptHoldFrames(CefRefPtr<CefBrowser> browser) {
++  if (!CefCurrentlyOn(TID_UI)) {
++    // Execute on the UI thread.
++    CefPostTask(TID_UI, base::BindOnce(&PromptHoldFrames, browser));
++    return;
++  }
++
++  const size_t frames_to_hold =
++      ClientHandlerOsr::GetForClient(browser->GetHost()->GetClient())
++          ->frames_to_hold();
++  Prompt(browser, kPromptHoldFrames, "Enter frames to hold, 0 to release all",
++         std::to_string(frames_to_hold));
++}
++
+ void PromptDSF(CefRefPtr<CefBrowser> browser) {
+   if (!MainMessageLoop::Get()->RunsTasksOnCurrentThread()) {
+     // Execute on the main thread.
+@@ -582,6 +603,9 @@ void RunTest(CefRefPtr<CefBrowser> browser, int id) {
+     case ID_TESTS_OSR_DSF:
+       PromptDSF(browser);
+       break;
++    case ID_TESTS_OSR_HOLD_FRAMES:
++      PromptHoldFrames(browser);
++      break;
+     case ID_TESTS_TRACING_BEGIN:
+       BeginTracing();
+       break;
+diff --git a/tests/cefclient/cefclient_mac.mm b/tests/cefclient/cefclient_mac.mm
+index 3670c3b0d7..f9b5962559 100644
+--- a/tests/cefclient/cefclient_mac.mm
++++ b/tests/cefclient/cefclient_mac.mm
+@@ -71,6 +71,7 @@ - (IBAction)menuTestsZoomOut:(id)sender;
+ - (IBAction)menuTestsZoomReset:(id)sender;
+ - (IBAction)menuTestsSetFPS:(id)sender;
+ - (IBAction)menuTestsSetScaleFactor:(id)sender;
++- (IBAction)menuTestsHoldFrames:(id)sender;
+ - (IBAction)menuTestsTracingBegin:(id)sender;
+ - (IBAction)menuTestsTracingEnd:(id)sender;
+ - (IBAction)menuTestsPrint:(id)sender;
+@@ -222,6 +223,7 @@ - (void)createApplication:(id)object {
+       // Remove the OSR-related menu items when not using OSR.
+       RemoveMenuItem(tests_menu.submenu, @selector(menuTestsSetFPS:));
+       RemoveMenuItem(tests_menu.submenu, @selector(menuTestsSetScaleFactor:));
++      RemoveMenuItem(tests_menu.submenu, @selector(menuTestsHoldFrames:));
+     }
+     if (!main_context->UseViewsGlobal()) {
+       // Remove the Views-related menu items when not using Views.
+@@ -295,6 +297,10 @@ - (IBAction)menuTestsSetScaleFactor:(id)sender {
+   [self testsItemSelected:ID_TESTS_OSR_DSF];
+ }
+ 
++- (IBAction)menuTestsHoldFrames:(id)sender {
++  [self testsItemSelected:ID_TESTS_OSR_HOLD_FRAMES];
++}
++
+ - (IBAction)menuTestsTracingBegin:(id)sender {
+   [self testsItemSelected:ID_TESTS_TRACING_BEGIN];
+ }
+diff --git a/tests/cefclient/mac/English.lproj/MainMenu.xib b/tests/cefclient/mac/English.lproj/MainMenu.xib
+index 7b8584252d..d0938b4d9a 100644
+--- a/tests/cefclient/mac/English.lproj/MainMenu.xib
++++ b/tests/cefclient/mac/English.lproj/MainMenu.xib
+@@ -404,6 +404,12 @@
+                                     <action selector="menuTestsSetScaleFactor:" target="-2" id="S47-BI-RtO"/>
+                                 </connections>
+                             </menuItem>
++                            <menuItem title="Hold Frames" id="hFr-Ho-ld1">
++                                <modifierMask key="keyEquivalentModifierMask"/>
++                                <connections>
++                                    <action selector="menuTestsHoldFrames:" target="-2" id="hFr-Ac-tn1"/>
++                                </connections>
++                            </menuItem>
+                             <menuItem title="Begin Tracing" id="na7-bM-yBE">
+                                 <modifierMask key="keyEquivalentModifierMask"/>
+                                 <connections>
+diff --git a/tests/cefclient/win/cefclient.rc b/tests/cefclient/win/cefclient.rc
+index 476e5c695a..c10e0f3095 100644
+--- a/tests/cefclient/win/cefclient.rc
++++ b/tests/cefclient/win/cefclient.rc
+@@ -100,6 +100,7 @@ BEGIN
+         MENUITEM "Zoom Reset",                  ID_TESTS_ZOOM_RESET
+         MENUITEM "Set FPS",                     ID_TESTS_OSR_FPS
+         MENUITEM "Set Scale Factor",            ID_TESTS_OSR_DSF
++        MENUITEM "Hold Frames",                 ID_TESTS_OSR_HOLD_FRAMES
+         MENUITEM "Begin Tracing",               ID_TESTS_TRACING_BEGIN
+         MENUITEM "End Tracing",                 ID_TESTS_TRACING_END
+         MENUITEM "Print",                       ID_TESTS_PRINT
+diff --git a/tests/ceftests/os_rendering_unittest.cc b/tests/ceftests/os_rendering_unittest.cc
+index bda496bfa0..325233ff1b 100644
+--- a/tests/ceftests/os_rendering_unittest.cc
++++ b/tests/ceftests/os_rendering_unittest.cc
+@@ -2235,6 +2235,277 @@ class ExternalBeginFrameTimingTestHandler : public RoutingTestHandler,
+   IMPLEMENT_REFCOUNTING(ExternalBeginFrameTimingTestHandler);
+ };
+ 
++#if CEF_API_ADDED(CEF_EXPERIMENTAL)
++// Matches the limit documented for OnAcceleratedPaint with a callback.
++constexpr size_t kMaxHeldFrames = 4;
++
++// A green marker shows that the page has loaded, and each frame paints a
++// different background color.
++constexpr char kAnimatedPage[] = R"(
++  <html><body>
++  <div style="position:fixed;left:0;top:0;width:4px;height:4px;
++              background:#00ff00"></div><script>
++  let frame = 0;
++  function animate() {
++    ++frame;
++    document.documentElement.style.backgroundColor =
++        'rgb(' + (frame & 255) + ',' + ((frame >> 8) & 255) + ',128)';
++    requestAnimationFrame(animate);
++  }
++  requestAnimationFrame(animate);
++  </script></body></html>)";
++
++// A static page until a small square starts animating, so that paints dropped
++// at the limit carry less damage than the whole view.
++constexpr char kSquarePage[] = R"(
++  <html><body>
++  <div id="square" style="position:fixed;left:0;top:0;width:4px;height:4px">
++  </div><script>
++  let frame = 0;
++  function animate() {
++    ++frame;
++    document.getElementById('square').style.background =
++        'rgb(' + (frame & 255) + ',0,0)';
++    requestAnimationFrame(animate);
++  }
++  </script></body></html>)";
++
++// Both tests release the frames still held once the browser is gone.
++enum class HoldTest {
++  // Held frames keep their pixels across a capture restart while frames
++  // released from another thread outnumber the capturer's pool.
++  kPixels,
++  // Unchanged frames redelivered by Invalidate() count toward the limit, paints
++  // are dropped at the limit, and dropping the last reference to a held
++  // callback on another thread repaints the whole view.
++  kLimit,
++};
++
++class AcceleratedPaintCallbackTestHandler : public TestHandler,
++                                            public CefRenderHandler {
++ public:
++  explicit AcceleratedPaintCallbackTestHandler(HoldTest test) : test_(test) {}
++
++  bool readback_unavailable() const { return readback_unavailable_; }
++
++  bool shared_texture_unavailable() const {
++    return shared_texture_unavailable_;
++  }
++
++  void ReleaseHeldFrames() {
++    for (const auto& frame : held_frames_) {
++      frame.callback->Continue();
++    }
++    held_frames_.clear();
++  }
++
++  void RunTest() override {
++    SetTestTimeout(15000);
++    if (test_ == HoldTest::kPixels) {
++      pixel_reader_ = osr_unittests::CreateSharedTexturePixelReader();
++      if (!pixel_reader_->Initialize()) {
++        readback_unavailable_ = true;
++        DestroyTest();
++        return;
++      }
++    }
++    const char kUrl[] = "https://tests/accelerated_paint_callback";
++    AddResource(kUrl, test_ == HoldTest::kPixels ? kAnimatedPage : kSquarePage,
++                "text/html");
++    CefWindowInfo window_info;
++    window_info.SetAsWindowless(kNullWindowHandle);
++    window_info.shared_texture_enabled = true;
++    CefBrowserSettings settings;
++    settings.windowless_frame_rate = 60;
++    CefBrowserHost::CreateBrowser(window_info, this, kUrl, settings, nullptr,
++                                  nullptr);
++  }
++
++  CefRefPtr<CefRenderHandler> GetRenderHandler() override { return this; }
++
++  void GetViewRect(CefRefPtr<CefBrowser> browser, CefRect& rect) override {
++    rect = CefRect(0, 0, kViewWidth, kViewHeight);
++  }
++
++  void OnPaint(CefRefPtr<CefBrowser> browser,
++               PaintElementType type,
++               const RectList& dirty_rects,
++               const void* buffer,
++               int width,
++               int height) override {
++    // Chromium delivers OnPaint when GPU compositing is unavailable.
++    if (!shared_texture_unavailable_) {
++      shared_texture_unavailable_ = true;
++      DestroyTest();
++    }
++  }
++
++  void OnAcceleratedPaint(CefRefPtr<CefBrowser> browser,
++                          PaintElementType type,
++                          const RectList& dirty_rects,
++                          const CefAcceleratedPaintInfo& info) override {
++    ++fallback_paints_;
++    if (pixel_reader_) {
++      uint32_t marker = 0;
++      uint32_t background = 0;
++      EXPECT_TRUE(pixel_reader_->Read(info, &marker, &background));
++    }
++  }
++
++  bool OnAcceleratedPaint(CefRefPtr<CefBrowser> browser,
++                          PaintElementType type,
++                          const RectList& dirty_rects,
++                          const CefAcceleratedPaintInfo& info,
++                          CefRefPtr<CefCallback> callback) override {
++    if (type != PET_VIEW || finished_) {
++      return true;
++    }
++    if (fallback_paints_ == 0) {
++      // A static page paints again only when invalidated.
++      browser->GetHost()->Invalidate(PET_VIEW);
++      // Declining still leaves the frame to the variant without |callback|.
++      callback->Cancel();
++      return false;
++    }
++    if (test_ == HoldTest::kPixels) {
++      OnPixelsPaint(browser, info, callback);
++    } else {
++      OnLimitPaint(browser, dirty_rects, info, callback);
++    }
++    return true;
++  }
++
++  void DestroyTest() override {
++    finished_ = true;
++    if (!readback_unavailable_ && !shared_texture_unavailable_) {
++      EXPECT_EQ(1, fallback_paints_);
++      EXPECT_EQ(test_ == HoldTest::kPixels ? kExecutedFrames : 0U,
++                executed_callbacks_.size());
++    }
++    executed_callbacks_.clear();
++    if (pixel_reader_) {
++      pixel_reader_->Cleanup();
++      pixel_reader_.reset();
++    }
++    TestHandler::DestroyTest();
++  }
++
++ private:
++  struct HeldFrame {
++    CefAcceleratedPaintInfo info;
++    CefRefPtr<CefCallback> callback;
++    uint32_t background = 0;
++  };
++
++  void OnPixelsPaint(CefRefPtr<CefBrowser> browser,
++                     const CefAcceleratedPaintInfo& info,
++                     CefRefPtr<CefCallback> callback) {
++    uint32_t marker = 0;
++    uint32_t background = 0;
++    EXPECT_TRUE(pixel_reader_->Read(info, &marker, &background));
++    if (marker != 0xff00ff00U) {
++      // The page has not loaded yet.
++      return;
++    }
++    if (held_frames_.size() < kHeldFrames) {
++      held_frames_.push_back({info, callback, background});
++      if (held_frames_.size() == kHeldFrames) {
++        // Restarting capture replaces the capturer's pool.
++        CefPostTask(TID_UI, base::BindOnce(
++                                [](CefRefPtr<CefBrowser> browser) {
++                                  browser->GetHost()->WasHidden(true);
++                                  browser->GetHost()->WasHidden(false);
++                                },
++                                browser));
++      }
++      return;
++    }
++    // Keep a reference so that only executing the callback releases the frame.
++    executed_callbacks_.push_back(callback);
++    CefPostTask(TID_FILE_USER_VISIBLE,
++                base::BindOnce(&CefCallback::Continue, callback));
++    if (executed_callbacks_.size() == kExecutedFrames) {
++      for (const auto& frame : held_frames_) {
++        EXPECT_TRUE(pixel_reader_->Read(frame.info, &marker, &background));
++        EXPECT_EQ(frame.background, background);
++      }
++      EXPECT_NE(held_frames_.front().background,
++                held_frames_.back().background);
++      DestroyTest();
++    }
++  }
++
++  void OnLimitPaint(CefRefPtr<CefBrowser> browser,
++                    const RectList& dirty_rects,
++                    const CefAcceleratedPaintInfo& info,
++                    CefRefPtr<CefCallback> callback) {
++    if (released_one_) {
++      EXPECT_EQ(RectList{CefRect(0, 0, kViewWidth, kViewHeight)}, dirty_rects);
++      DestroyTest();
++      return;
++    }
++    EXPECT_LT(held_frames_.size(), kMaxHeldFrames);
++    held_frames_.push_back({info, callback});
++    // Invalidating redelivers the same frame, which is dropped at the limit.
++    browser->GetHost()->Invalidate(PET_VIEW);
++    if (held_frames_.size() == kMaxHeldFrames) {
++      browser->GetMainFrame()->ExecuteJavaScript("animate()", "", 0);
++      CefPostDelayedTask(
++          TID_UI,
++          base::BindOnce(&AcceleratedPaintCallbackTestHandler::ReleaseOne,
++                         this),
++          500);
++    }
++  }
++
++  void ReleaseOne() {
++    EXPECT_EQ(kMaxHeldFrames, held_frames_.size());
++    released_one_ = true;
++    CefPostTask(TID_FILE_USER_VISIBLE,
++                base::BindOnce([](CefRefPtr<CefCallback> callback) {},
++                               std::move(held_frames_.back().callback)));
++    held_frames_.pop_back();
++  }
++
++  static constexpr int kViewWidth = 160;
++  static constexpr int kViewHeight = 120;
++  static constexpr size_t kHeldFrames = 3;
++  // Well above the capturer's pool size.
++  static constexpr size_t kExecutedFrames = 32;
++
++  const HoldTest test_;
++  bool readback_unavailable_ = false;
++  bool shared_texture_unavailable_ = false;
++  bool finished_ = false;
++  bool released_one_ = false;
++  int fallback_paints_ = 0;
++  std::unique_ptr<osr_unittests::SharedTexturePixelReader> pixel_reader_;
++  std::vector<HeldFrame> held_frames_;
++  std::vector<CefRefPtr<CefCallback>> executed_callbacks_;
++
++  IMPLEMENT_REFCOUNTING(AcceleratedPaintCallbackTestHandler);
++};
++
++void RunAcceleratedPaintCallbackTest(HoldTest test) {
++  if (CefCommandLine::GetGlobalCommandLine()->HasSwitch("disable-gpu")) {
++    GTEST_SKIP() << "GPU is disabled";
++  }
++  CefRefPtr<AcceleratedPaintCallbackTestHandler> handler =
++      new AcceleratedPaintCallbackTestHandler(test);
++  handler->ExecuteTest();
++  handler->ReleaseHeldFrames();
++  const bool readback_unavailable = handler->readback_unavailable();
++  const bool shared_texture_unavailable = handler->shared_texture_unavailable();
++  ReleaseAndWaitForDestructor(handler);
++  if (readback_unavailable) {
++    GTEST_SKIP() << "Shared texture readback is unavailable";
++  }
++  if (shared_texture_unavailable) {
++    GTEST_SKIP() << "Shared texture painting is unavailable";
++  }
++}
++#endif  // CEF_API_ADDED(CEF_EXPERIMENTAL)
++
+ }  // namespace
+ 
+ TEST(OSRTest, SingleFramePaint) {
+@@ -2277,6 +2548,16 @@ TEST(OSRTest, DISABLED_ExternalBeginFrameTimingAccelerated) {
+   }
+ }
+ 
++#if CEF_API_ADDED(CEF_EXPERIMENTAL)
++TEST(OSRTest, AcceleratedPaintCallbackPixels) {
++  RunAcceleratedPaintCallbackTest(HoldTest::kPixels);
++}
++
++TEST(OSRTest, AcceleratedPaintCallbackLimit) {
++  RunAcceleratedPaintCallbackTest(HoldTest::kLimit);
++}
++#endif  // CEF_API_ADDED(CEF_EXPERIMENTAL)
++
+ // generic test
+ #define OSR_TEST(name, test_mode, scale_factor)      \
+   TEST(OSRTest, name) {                              \

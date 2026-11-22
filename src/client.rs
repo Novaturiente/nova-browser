@@ -367,6 +367,7 @@ wrap_request_handler! {
                     let url = CefString::from(&r.url()).to_string();
                     if apply_user_agent(b, f, r, &url, is_redirect != 0) { return 1; }
                     adblock::on_navigate(b, &url);
+                    crate::window::apply_dark(&url);
                 }
             }
             0
