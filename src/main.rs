@@ -149,8 +149,10 @@ wrap_app! {
             // and Topics.
             // WaylandFractionalScaleV1: off-screen pages take their scale from us
             // (page.rs screen_info); with it Chromium's Wayland code forced 1 (blurry at 150 %).
+            // FedCm: "Sign in with Google" prompts segfault the browser process in
+            // IdentityDialogController::TrySetAccountView (no Chrome tab UI in off-screen pages).
             const OFF: &str = "HttpsUpgrades,NetworkTimeServiceQuerying,AimEnabled,AimServerEligibilityEnabled,\
-                PreconnectToSearch,PreconnectFromKeyedService,BrowsingTopics,WaylandFractionalScaleV1";
+                PreconnectToSearch,PreconnectFromKeyedService,BrowsingTopics,WaylandFractionalScaleV1,FedCm";
             let df = CefString::from("disable-features");
             let old = CefString::from(&cmd.switch_value(Some(&df))).to_string();
             let merged = if old.is_empty() { OFF.to_string() } else { format!("{old},{OFF}") };

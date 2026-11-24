@@ -909,7 +909,6 @@ const DARK: &str = "colors.webpage.darkmode.enabled";
 /// http(s) pages only, so our data: pages follow the UI theme). At startup and on config
 /// changes.
 pub fn apply_dark_default() {
-    if std::env::var_os("NOVA_TMP_NODARK").is_some() { return; } // TEMP
     let Some(ctx) = request_context_get_global_context() else { return };
     let v = if config::get().bool(DARK) { ContentSettingValues::ALLOW } else { ContentSettingValues::BLOCK };
     ctx.set_content_setting(None, None, ContentSettingTypes::AUTO_DARK_WEB_CONTENT, v);
@@ -921,7 +920,7 @@ pub fn apply_dark_default() {
 /// shortcut: one value per origin, so path patterns (`*://host/path/*`) hold for the last
 /// page navigated on that origin; fine while patterns are per host (dark-toggle).
 pub fn apply_dark(url: &str) {
-    if !url.starts_with("http") || std::env::var_os("NOVA_TMP_NODARK").is_some() { // TEMP
+    if !url.starts_with("http") {
         return;
     }
     let Some(ctx) = request_context_get_global_context() else { return };

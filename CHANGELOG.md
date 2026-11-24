@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.21 (2026-11-24)
+
+- Pages with a "Sign in with Google" prompt (FedCM) no longer crash the
+  whole browser. FedCM is off; the normal Google sign-in button still works.
+
 ## 0.1.20 (2026-11-22)
 
 - Runs on our own CEF 158.0.3 build (Chromium 158), up from 154.
