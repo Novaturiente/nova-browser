@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.22 (2026-11-27)
+
+- Keyboard scrolling (`j`/`k`, `h`/`l`, `Ctrl-d`/`Ctrl-u`, `Ctrl-f`/`Ctrl-b`)
+  is as smooth as the mouse wheel instead of jumping.
+
 ## 0.1.21 (2026-11-24)
 
 - Pages with a "Sign in with Google" prompt (FedCM) no longer crash the

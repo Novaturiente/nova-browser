@@ -201,6 +201,18 @@ fn js(browser: &Browser, code: &str) {
     }
 }
 
+/// Scroll by (`dx`, `dy`) px (down/right positive) with a wheel event at the viewport
+/// centre, through the same host path as the mouse wheel so Chromium animates it
+/// (CDP's synthetic wheel uses precise-pixel deltas, which jump without animation).
+fn wheel(browser: &Browser, dx: f64, dy: f64) {
+    let (w, h) = window::content_size();
+    let at = MouseEvent { x: (w / 2.0) as i32, y: (h / 2.0) as i32, modifiers: 0 };
+    if let Some(host) = browser.host() {
+        // Chromium sign: positive scrolls up/left
+        host.send_mouse_wheel_event(Some(&at), -dx as i32, -dy as i32);
+    }
+}
+
 /// Scroll the element under the viewport centre (or the document) to `perc` percent.
 const SCROLL_TO_PERC_JS: &str = "((p, x) => { let e = document.elementFromPoint(innerWidth / 2, innerHeight / 2);\
  const ok = (e) => x ? e.scrollWidth > e.clientWidth && /auto|scroll/.test(getComputedStyle(e).overflowX)\
@@ -394,7 +406,7 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
                 }
                 d => return Err(format!("bad direction {d:?}")),
             };
-            devtools::wheel(&need()?, dx, dy);
+            wheel(&need()?, dx, dy);
         }
         "scroll-page" => {
             let f = |i: usize| {
@@ -405,7 +417,7 @@ fn run_one(cmd: &Cmd, count: Option<u32>) -> Result<(), String> {
                     .map_err(|e| e.to_string())
             };
             let (w, h) = window::content_size();
-            devtools::wheel(&need()?, f(0)? * w * n as f64, f(1)? * h * n as f64);
+            wheel(&need()?, f(0)? * w * n as f64, f(1)? * h * n as f64);
         }
         "scroll-to-perc" => {
             // qutebrowser: count is the percentage; no arg and no count = bottom (G)

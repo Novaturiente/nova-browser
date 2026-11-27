@@ -111,14 +111,6 @@ pub fn eval_in(browser: &Browser, ctx: i64, js: String, cb: impl FnOnce(Option<V
     });
 }
 
-/// A trusted mouse-wheel event at the viewport centre: scrolls whatever is
-/// under it (inner scroll containers too), with the page's smooth scrolling.
-pub fn wheel(browser: &Browser, dx: f64, dy: f64) {
-    let (w, h) = crate::window::content_size();
-    let p = json!({ "type": "mouseWheel", "x": w / 2.0, "y": h / 2.0, "deltaX": dx, "deltaY": dy });
-    send(browser, "Input.dispatchMouseEvent", p);
-}
-
 /// A trusted click (press + release) at viewport CSS px; `modifiers` per CDP (2 = Ctrl).
 pub fn click(browser: &Browser, x: f64, y: f64, button: &str, modifiers: i32) {
     for t in ["mouseMoved", "mousePressed", "mouseReleased"] {
